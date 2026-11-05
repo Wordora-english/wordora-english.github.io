@@ -2,7 +2,7 @@
 // Həmişə əvvəlcə internetdən götürür (yeniliklər dərhal çatsın),
 // internet yoxdursa, yadda saxlanmış nüsxəni göstərir.
 // Supabase sorğuları və PDF-lər heç vaxt yaddaşa yazılmır.
-const CACHE = "wordora-v6";
+const CACHE = "wordora-v7";
 const SHELL = ["./", "index.html", "login.html", "portal.html", "assets/css/style.css", "assets/js/app.js",
   "assets/js/config.js", "assets/img/logo-icon.png", "assets/img/favicon-32.png", "offline.html"];
 
@@ -22,7 +22,8 @@ self.addEventListener("fetch", (e) => {
   if (req.method !== "GET" || url.origin !== location.origin) return;   // Supabase, CDN — toxunmuruq
   if (url.pathname.includes("/vendor/") || url.pathname.endsWith(".pdf")) return;
   e.respondWith(
-    fetch(req)
+    // "no-cache": brauzer hər dəfə serverdən yeni versiya olub-olmadığını soruşur — yeniliklər dərhal görünür
+    fetch(req.url, { cache: "no-cache", credentials: "same-origin" })
       .then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
         return res;
