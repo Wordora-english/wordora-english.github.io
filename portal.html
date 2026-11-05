@@ -28,6 +28,7 @@
   </main>
 
   <script type="module">
+    import { downloadMaterial } from "./assets/js/materials.js";
     import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, STAR_SVG, showConfigWarning } from "./assets/js/app.js";
 
     showConfigWarning();
@@ -80,7 +81,7 @@
       const box = document.getElementById("mat-list");
       const { data, error } = await sb
         .from("materials")
-        .select("id, title, description, category, available_until, created_at")
+        .select("id, title, description, category, available_until, allow_download, created_at")
         .order("created_at", { ascending: false });
       if (error) { box.innerHTML = `<div class="card empty">${esc(translateError(error))}</div>`; return; }
       if (!data.length) { box.innerHTML = '<div class="card empty">Hələlik material yoxdur.</div>'; return; }
@@ -91,16 +92,24 @@
           <div class="mat-cat">${esc(cat)} <span class="muted">· ${items.length}</span></div>
           <div class="mat-grid">
             ${items.map((m) => `
-              <a class="mat" href="material.html?id=${encodeURIComponent(m.id)}">
+              <div class="mat">
                 <span class="mat-ico">PDF</span>
                 <span class="mat-body">
                   <span class="mat-title">${esc(m.title)}</span>
                   ${m.description ? `<span class="mat-desc">${esc(m.description)}</span>` : ""}
                   <span class="mat-meta">${formatDate(m.created_at).split(",")[0]}${m.available_until ? " · " + formatDate(m.available_until) + " tarixinə qədər" : ""}</span>
+                  <span class="mat-actions">
+                    <a class="btn btn-ghost btn-sm" href="material.html?id=${encodeURIComponent(m.id)}">👁 Bax</a>
+                    ${m.allow_download ? `<button class="btn btn-primary btn-sm" data-dl="${esc(m.id)}">⬇ Yüklə</button>` : '<span class="muted small">Yalnız baxış</span>'}
+                  </span>
                 </span>
-              </a>`).join("")}
+              </div>`).join("")}
           </div>
         </div>`).join("");
+      box.addEventListener("click", (e) => {
+        const b = e.target.closest("button[data-dl]");
+        if (b) downloadMaterial(b.dataset.dl, b);
+      });
     }
 
     async function start() {

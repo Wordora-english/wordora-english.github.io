@@ -229,7 +229,7 @@ textarea { min-height: 110px; resize: vertical; }
 .person .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; background: #f1eefb; color: var(--indigo); padding: .1rem .4rem; border-radius: 6px; }
 .person .note { font-size: .84rem; color: var(--bad); margin-top: .25rem; }
 .person .actions { display: flex; gap: .4rem; flex-wrap: wrap; }
-.pill { font-size: .72rem; font-weight: 700; padding: .15rem .5rem; border-radius: 99px; }
+.pill { font-size: .72rem; font-weight: 700; padding: .15rem .5rem; border-radius: 99px; white-space: nowrap; display: inline-block; }
 .pill.blocked, .pill.rejected { background: var(--bad-bg); color: var(--bad); }
 .pill.pending { background: var(--warn-bg); color: var(--warn); }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
@@ -294,3 +294,8 @@ textarea { min-height: 110px; resize: vertical; }
 .views td.n { text-align: right; white-space: nowrap; color: var(--muted); }
 .pill.off { background: #eceaf3; color: var(--muted); }
 .pill.on { background: var(--ok-bg); color: var(--ok); }
+.mat-actions { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-top: .5rem; }
+.mat:hover { border-color: var(--line); box-shadow: none; }
+@media (max-width: 560px) {
+  .viewer-bar .zoom span { display: none; }
+}

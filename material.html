@@ -42,6 +42,7 @@
   <div class="viewer-bar">
     <a class="btn btn-ghost btn-sm" href="portal.html#materials" aria-label="Geri">←</a>
     <div class="title" id="title">Yüklənir…</div>
+    <button class="btn btn-primary btn-sm hidden" id="download">⬇ Yüklə</button>
     <div class="zoom">
       <button class="btn btn-ghost btn-sm" id="zoom-out" aria-label="Kiçilt">−</button>
       <span id="zoom-val">100%</span>
@@ -54,6 +55,7 @@
   <script type="module">
     import { sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
     import { drawWatermark } from "./assets/js/watermark.js";
+    import { openMaterial, fetchMaterialBytes, downloadMaterial } from "./assets/js/materials.js";
     import * as pdfjsLib from "./assets/vendor/pdfjs/pdf.min.mjs";
 
     const VENDOR = new URL("./assets/vendor/pdfjs/", location.href).href;
@@ -71,7 +73,7 @@
       const k = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && ["p", "s", "c", "u", "a"].includes(k)) {
         e.preventDefault();
-        toast("Bu materialı çap etmək, yükləmək və ya kopyalamaq olmaz.", "err");
+        toast("Bu səhifədə çap etmək və kopyalamaq olmaz. Yükləmək üçün ⬇ Yüklə düyməsini istifadə et.", "err");
       }
     });
 
@@ -87,26 +89,20 @@
       if (me.status !== "approved") { location.href = "portal.html"; return; }
 
       // Serverdən icazə + su nişanı məlumatı (baxış da qeyd olunur)
-      const { data: rows, error } = await sb.rpc("open_material", { p_material: id });
-      if (error || !rows?.length) return fail(error ? translateError(error) : "Bu materiala giriş icazən yoxdur.");
-      const info = rows[0];
+      let info, bytes;
+      try { ({ info, wm } = await openMaterial(id, "view")); }
+      catch (err) { return fail(translateError(err)); }
       titleEl.textContent = info.title;
       document.title = `${info.title} — Wordora`;
-      wm = {
-        name: info.full_name,
-        code: info.student_code,
-        date: formatDate(info.opened_at),
-      };
 
-      // Faylı 60 saniyəlik gizli keçidlə al
-      const { data: signed, error: sErr } = await sb.storage.from("materials").createSignedUrl(info.file_path, 60);
-      if (sErr) return fail(translateError(sErr));
-      let bytes;
-      try {
-        const res = await fetch(signed.signedUrl, { cache: "no-store" });
-        if (!res.ok) throw new Error("Fayl açılmadı");
-        bytes = new Uint8Array(await res.arrayBuffer());
-      } catch (err) { return fail(translateError(err)); }
+      if (info.allow_download || me.role === "admin") {
+        const dl = document.getElementById("download");
+        dl.classList.remove("hidden");
+        dl.addEventListener("click", () => downloadMaterial(id, dl));
+      }
+
+      try { bytes = await fetchMaterialBytes(info.file_path); }
+      catch (err) { return fail(translateError(err)); }
 
       try {
         pdf = await pdfjsLib.getDocument({

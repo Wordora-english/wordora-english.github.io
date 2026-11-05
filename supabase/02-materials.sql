@@ -17,8 +17,12 @@ create table if not exists public.materials (
   target_classes  text[],                        -- boş / null = bütün siniflər
   is_published    boolean not null default true,
   available_until timestamptz,                   -- null = müddətsiz
+  allow_download  boolean not null default true, -- şagird su nişanlı PDF yükləyə bilər
   created_at      timestamptz not null default now()
 );
+
+-- Fayl əvvəllər işə salınıbsa, yeni sütunu əlavə et
+alter table public.materials add column if not exists allow_download boolean not null default true;
 
 alter table public.materials enable row level security;
 
@@ -67,8 +71,12 @@ create table if not exists public.material_views (
   id          bigint generated always as identity primary key,
   material_id uuid not null references public.materials(id) on delete cascade,
   user_id     uuid not null references public.profiles(id)  on delete cascade,
+  kind        text not null default 'view' check (kind in ('view', 'download')),
   viewed_at   timestamptz not null default now()
 );
+
+alter table public.material_views
+  add column if not exists kind text not null default 'view' check (kind in ('view', 'download'));
 
 create index if not exists material_views_material_idx on public.material_views (material_id, viewed_at desc);
 
@@ -84,38 +92,50 @@ create policy "views_admin_delete" on public.material_views
 
 revoke insert, update on public.material_views from anon, authenticated;
 
--- Material açılanda çağırılır: baxışı qeyd edir və su nişanı məlumatını
--- serverdən qaytarır (ad, şəxsi kod, server vaxtı).
-create or replace function public.open_material(p_material uuid)
+-- Material açılanda / yüklənəndə çağırılır: baxışı və ya yükləməni qeyd
+-- edir və su nişanı məlumatını serverdən qaytarır (ad, şəxsi kod, vaxt).
+drop function if exists public.open_material(uuid);
+drop function if exists public.open_material(uuid, text);
+create function public.open_material(p_material uuid, p_kind text default 'view')
 returns table (
-  title        text,
-  file_path    text,
-  full_name    text,
-  class_name   text,
-  student_code text,
-  opened_at    timestamptz
+  title          text,
+  file_path      text,
+  allow_download boolean,
+  full_name      text,
+  username       text,
+  class_name     text,
+  student_code   text,
+  opened_at      timestamptz
 )
 language plpgsql security definer set search_path = ''
 as $$
 begin
+  if p_kind not in ('view', 'download') then
+    raise exception 'Yanlış əməliyyat';
+  end if;
   if not public.can_view_material(p_material) then
     raise exception 'Bu materiala giriş icazən yoxdur';
   end if;
+  if p_kind = 'download' and not public.is_admin() and not exists (
+       select 1 from public.materials m where m.id = p_material and m.allow_download) then
+    raise exception 'Bu materialı yükləmək olmaz, yalnız baxmaq olar';
+  end if;
 
-  insert into public.material_views (material_id, user_id)
-  values (p_material, auth.uid());
+  insert into public.material_views (material_id, user_id, kind)
+  values (p_material, auth.uid(), p_kind);
 
   return query
-    select m.title, m.file_path, p.full_name, p.class_name, p.student_code, now()
+    select m.title, m.file_path, m.allow_download,
+           p.full_name, p.username, p.class_name, p.student_code, now()
       from public.materials m, public.profiles p
      where m.id = p_material and p.id = auth.uid();
 end;
 $$;
 
-revoke execute on function public.open_material(uuid)      from public, anon;
-revoke execute on function public.can_view_material(uuid)  from public, anon;
-grant  execute on function public.open_material(uuid)      to authenticated;
-grant  execute on function public.can_view_material(uuid)  to authenticated;
+revoke execute on function public.open_material(uuid, text) from public, anon;
+revoke execute on function public.can_view_material(uuid)   from public, anon;
+grant  execute on function public.open_material(uuid, text) to authenticated;
+grant  execute on function public.can_view_material(uuid)   to authenticated;
 
 -- ---------------------------------------------------------------------
 -- 3. Gizli fayl anbarı (bucket) — yalnız PDF, maksimum 50 MB

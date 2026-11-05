@@ -74,7 +74,12 @@
         <div class="field"><label>Kimlər görsün</label><div class="chk-row" id="mat-classes"></div><div class="hint">Heç biri seçilməsə — bütün siniflər görür.</div></div>
         <div class="row2">
           <div class="field"><label for="mat-until">Bu tarixə qədər açıq (istəyə görə)</label><input id="mat-until" type="datetime-local"></div>
-          <div class="field"><label>&nbsp;</label><label class="chk" style="width:max-content"><input type="checkbox" id="mat-pub" checked> Dərhal paylaş</label></div>
+          <div class="field"><label>&nbsp;</label>
+            <div class="chk-row">
+              <label class="chk"><input type="checkbox" id="mat-pub" checked> Dərhal paylaş</label>
+              <label class="chk"><input type="checkbox" id="mat-dl" checked> Şagirdlər yükləyə bilsin</label>
+            </div>
+          </div>
         </div>
         <button class="btn btn-primary" type="submit" id="mat-submit">Yüklə</button>
         <div class="progress hidden" id="mat-progress"><div></div></div>
@@ -220,19 +225,21 @@
       const box = document.getElementById("mat-list");
       const [{ data, error }, { data: views }] = await Promise.all([
         sb.from("materials").select("*").order("created_at", { ascending: false }),
-        sb.from("material_views").select("material_id, user_id"),
+        sb.from("material_views").select("material_id, user_id, kind"),
       ]);
       if (error) { box.innerHTML = `<div class="card empty">${esc(translateError(error))}</div>`; return; }
       materials = data;
       const stats = {};
       for (const v of views || []) {
-        const s = (stats[v.material_id] ||= { total: 0, users: new Set() });
-        s.total++; s.users.add(v.user_id);
+        const s = (stats[v.material_id] ||= { total: 0, dl: 0, users: new Set() });
+        if (v.kind === "download") s.dl++; else s.total++;
+        s.users.add(v.user_id);
       }
       if (!data.length) { box.innerHTML = '<div class="card empty">Hələ material yüklənməyib.</div>'; return; }
       const now = Date.now();
       box.innerHTML = data.map((m) => {
-        const s = stats[m.id] || { total: 0, users: new Set() };
+        const s = stats[m.id] || { total: 0, dl: 0, users: new Set() };
+        const dlPill = m.allow_download ? '<span class="pill on">⬇ Yüklənə bilər</span>' : '<span class="pill off">Yalnız baxış</span>';
         const expired = m.available_until && new Date(m.available_until).getTime() < now;
         const pill = !m.is_published ? '<span class="pill off">Gizli</span>'
                    : expired ? '<span class="pill off">Müddəti bitib</span>' : '<span class="pill on">Açıq</span>';
@@ -241,15 +248,16 @@
           <article class="card" id="m-${m.id}">
             <div style="display:flex;justify-content:space-between;gap:.6rem;flex-wrap:wrap;align-items:start">
               <div style="min-width:0">
-                <h3 style="font-size:1.05rem;margin-bottom:.2rem">${esc(m.title)} ${pill}</h3>
+                <h3 style="font-size:1.05rem;margin-bottom:.2rem">${esc(m.title)} ${pill} ${dlPill}</h3>
                 <div class="muted small">${esc(m.category)} · ${esc(classes)} · ${fmtSize(m.file_size)}${m.available_until ? " · " + formatDate(m.available_until) + " tarixinə qədər" : ""}</div>
                 ${m.description ? `<div class="small" style="margin-top:.3rem">${esc(m.description)}</div>` : ""}
-                <div class="small" style="margin-top:.4rem"><b>${s.users.size}</b> şagird · <b>${s.total}</b> dəfə baxılıb</div>
+                <div class="small" style="margin-top:.4rem"><b>${s.users.size}</b> şagird · <b>${s.total}</b> baxış · <b>${s.dl}</b> yükləmə</div>
               </div>
               <div class="actions" style="display:flex;gap:.4rem;flex-wrap:wrap">
                 <button class="btn btn-ghost btn-sm" data-mat="views" data-id="${m.id}">Kim baxıb</button>
                 <a class="btn btn-ghost btn-sm" href="material.html?id=${m.id}" target="_blank" rel="noopener">Bax</a>
                 <button class="btn btn-warn btn-sm" data-mat="toggle" data-id="${m.id}">${m.is_published ? "Gizlət" : "Paylaş"}</button>
+                <button class="btn btn-ghost btn-sm" data-mat="dl" data-id="${m.id}">${m.allow_download ? "Yükləməni bağla" : "Yükləməni aç"}</button>
                 <button class="btn btn-bad btn-sm" data-mat="delete" data-id="${m.id}">Sil</button>
               </div>
             </div>
@@ -267,6 +275,7 @@
       const target_classes = [...document.querySelectorAll("#mat-classes input:checked")].map((i) => i.value);
       const untilVal = document.getElementById("mat-until").value;
       const is_published = document.getElementById("mat-pub").checked;
+      const allow_download = document.getElementById("mat-dl").checked;
 
       if (!file) return toast("PDF faylı seç", "err");
       if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name)) return toast("Yalnız PDF fayl yükləmək olar", "err");
@@ -287,7 +296,7 @@
           title, category, description, file_path: path, file_size: file.size,
           target_classes: target_classes.length ? target_classes : null,
           available_until: untilVal ? new Date(untilVal).toISOString() : null,
-          is_published,
+          is_published, allow_download,
         });
         if (ins.error) { await sb.storage.from("materials").remove([path]); throw ins.error; }
         prog.firstElementChild.style.width = "100%";
@@ -312,6 +321,12 @@
         toast(m.is_published ? "Material gizlədildi" : "Material paylaşıldı", "ok");
         return loadMaterials();
       }
+      if (action === "dl") {
+        const { error } = await sb.from("materials").update({ allow_download: !m.allow_download }).eq("id", id);
+        if (error) return toast(translateError(error), "err");
+        toast(m.allow_download ? "Yükləmə bağlandı — yalnız baxış" : "Yükləmə açıldı", "ok");
+        return loadMaterials();
+      }
       if (action === "delete") {
         if (!confirm(`"${m.title}" tamamilə silinsin? Bunu geri qaytarmaq olmur.`)) return;
         const rm = await sb.storage.from("materials").remove([m.file_path]);
@@ -328,7 +343,7 @@
         box.innerHTML = '<div class="muted">Yüklənir…</div>';
         const { data, error } = await sb
           .from("material_views")
-          .select("viewed_at, user_id, profiles(full_name, class_name, student_code, role)")
+          .select("viewed_at, user_id, kind, profiles(full_name, class_name, student_code, role)")
           .eq("material_id", id)
           .order("viewed_at", { ascending: false })
           .limit(1000);
@@ -336,14 +351,15 @@
         const byUser = new Map();
         for (const v of data) {
           if (v.profiles?.role === "admin") continue;
-          const u = byUser.get(v.user_id) || { p: v.profiles, n: 0, last: v.viewed_at };
-          u.n++; byUser.set(v.user_id, u);
+          const u = byUser.get(v.user_id) || { p: v.profiles, n: 0, dl: 0, last: v.viewed_at };
+          if (v.kind === "download") u.dl++; else u.n++;
+          byUser.set(v.user_id, u);
         }
         if (!byUser.size) { box.innerHTML = '<div class="muted">Hələ heç bir şagird baxmayıb.</div>'; return; }
         box.innerHTML = `<table>${[...byUser.values()].map((u) => `
           <tr>
             <td><b>${esc(u.p?.full_name || "—")}</b> <span class="muted">${esc(classLabel(u.p?.class_name))}</span> <span class="code" style="font-family:ui-monospace,monospace;font-size:.78rem;color:var(--indigo)">${esc(u.p?.student_code || "")}</span></td>
-            <td class="n">${u.n} dəfə · son: ${formatDate(u.last)}</td>
+            <td class="n">👁 ${u.n} · ⬇ ${u.dl} · son: ${formatDate(u.last)}</td>
           </tr>`).join("")}</table>`;
       }
     }
