@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Davamiyyət — Wordora</title>
+  <meta name="theme-color" content="#0e1f3d">
+  <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
+  <style>
+    .att-bar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+    .att-bar input, .att-bar select { width: auto; flex: 0 1 190px; }
+    .att-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+    .att-row .nm { font-weight: 600; min-width: 0; }
+    .seg { display: flex; gap: 4px; }
+    .seg button { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 10px; padding: .45rem .6rem; font: 600 .85rem var(--font); cursor: pointer; min-width: 44px; }
+    .seg button.on[data-s="present"] { background: var(--ok); border-color: var(--ok); color: #fff; }
+    .seg button.on[data-s="late"] { background: var(--gold); border-color: var(--gold); color: var(--navy); }
+    .seg button.on[data-s="absent"] { background: var(--bad); border-color: var(--bad); color: #fff; }
+    .seg button.on[data-s="excused"] { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .att-sum { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .9rem; margin: 6px 0 12px; }
+    .grid-wrap { overflow-x: auto; }
+    .att-grid { border-collapse: collapse; font-size: .8rem; }
+    .att-grid th, .att-grid td { border: 1px solid var(--line); padding: 4px 5px; text-align: center; white-space: nowrap; }
+    .att-grid td.nm { text-align: left; position: sticky; left: 0; background: var(--card); font-weight: 600; }
+    .c-present { color: var(--ok); } .c-absent { color: var(--bad); font-weight: 800; } .c-late { color: var(--warn); font-weight: 800; } .c-excused { color: var(--blue); }
+    @media (max-width: 560px) { .seg button { min-width: 40px; padding: .45rem .45rem; } .seg .lbl { display: none; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="admin.html">← Admin panel</a></nav>
+    </div>
+  </header>
+
+  <main class="container" id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, toast, translateError, classLabel, CLASSES } from "./assets/js/app.js";
+    import { downloadXlsx } from "./assets/js/xlsx-lite.js";
+
+    const app = document.getElementById("app");
+    const ST = { present: ["✓", "Gəlib"], late: ["⏰", "Gecikib"], absent: ["✕", "Gəlməyib"], excused: ["📄", "Üzrlü"] };
+    const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+    let students = [], view = "day", date = today(), month = today().slice(0, 7), cls = "", marks = {}, saved = false, dirty = false;
+
+    async function loadStudents() {
+      const { data } = await sb.from("profiles").select("id, full_name, class_name").eq("role", "student").eq("status", "approved").order("full_name");
+      students = data || [];
+      if (!cls) cls = [...new Set(students.map((s) => s.class_name))].sort()[0] || CLASSES[0];
+    }
+
+    function shell() {
+      const classes = [...new Set([...students.map((s) => s.class_name)])].sort((a, b) => (Number(a) || 99) - (Number(b) || 99));
+      app.innerHTML = `
+        <h1 style="font-size:1.6rem">✅ Davamiyyət</h1>
+        <div class="tabs"><button class="tab ${view === "day" ? "active" : ""}" data-v="day">📅 Gün</button><button class="tab ${view === "month" ? "active" : ""}" data-v="month">🗓 Ay</button></div>
+        <div class="att-bar">
+          <select id="cls">${classes.map((c) => `<option value="${esc(c)}" ${c === cls ? "selected" : ""}>${esc(classLabel(c))}</option>`).join("")}</select>
+          ${view === "day" ? `<input type="date" id="date" value="${date}">` : `<input type="month" id="month" value="${month}"><button class="btn btn-ghost btn-sm" id="xlsx">⬇ Excel</button>`}
+        </div>
+        <div id="stage"><div class="spinner"></div></div>`;
+      app.querySelectorAll("[data-v]").forEach((b) => b.onclick = () => { if (dirty && !confirm("Yadda saxlanmamış dəyişikliklər itəcək. Davam?")) return; view = b.dataset.v; dirty = false; shell(); load(); });
+      document.getElementById("cls").onchange = (e) => { if (dirty && !confirm("Yadda saxlanmamış dəyişikliklər itəcək. Davam?")) { e.target.value = cls; return; } cls = e.target.value; dirty = false; load(); };
+      document.getElementById("date")?.addEventListener("change", (e) => { if (dirty && !confirm("Yadda saxlanmamış dəyişikliklər itəcək. Davam?")) { e.target.value = date; return; } date = e.target.value || today(); dirty = false; load(); });
+      document.getElementById("month")?.addEventListener("change", (e) => { month = e.target.value || month; load(); });
+      document.getElementById("xlsx")?.addEventListener("click", exportMonth);
+    }
+
+    const classStudents = () => students.filter((s) => s.class_name === cls);
+
+    async function load() { view === "day" ? loadDay() : loadMonth(); }
+
+    async function loadDay() {
+      const list = classStudents();
+      const { data, error } = await sb.from("attendance").select("user_id, status").eq("att_date", date).in("user_id", list.map((s) => s.id).concat(["00000000-0000-0000-0000-000000000000"]));
+      if (error) { document.getElementById("stage").innerHTML = `<div class="card empty">${esc(translateError(error))}<br><span class="small">10-attendance-messages-parent.sql işə salınıb?</span></div>`; return; }
+      saved = data.length > 0;
+      marks = Object.fromEntries(list.map((s) => [s.id, "present"]));
+      for (const r of data) marks[r.user_id] = r.status;
+      renderDay();
+    }
+
+    function renderDay() {
+      const list = classStudents();
+      const st = document.getElementById("stage");
+      if (!list.length) { st.innerHTML = '<div class="card empty">Bu sinifdə təsdiqlənmiş şagird yoxdur.</div>'; return; }
+      const cnt = (k) => list.filter((s) => marks[s.id] === k).length;
+      st.innerHTML = `
+        <div class="att-sum"><span class="c-present">✓ ${cnt("present")} gəlib</span><span class="c-late">⏰ ${cnt("late")} gecikib</span><span class="c-absent">✕ ${cnt("absent")} gəlməyib</span><span class="c-excused">📄 ${cnt("excused")} üzrlü</span>
+          <span class="muted">${saved && !dirty ? "· yadda saxlanılıb ✓" : dirty ? "· dəyişiklik var" : "· hələ yazılmayıb"}</span></div>
+        <div class="grid" style="gap:8px">${list.map((s) => `
+          <div class="att-row"><span class="nm">${esc(s.full_name)}</span>
+            <span class="seg">${Object.entries(ST).map(([k, [ic, lb]]) => `<button data-u="${s.id}" data-s="${k}" class="${marks[s.id] === k ? "on" : ""}" title="${lb}">${ic} <span class="lbl">${lb}</span></button>`).join("")}</span></div>`).join("")}
+        </div>
+        <div class="card savebar" style="margin-top:14px"><button class="btn btn-ghost btn-sm" id="all">Hamısı gəlib</button><button class="btn btn-primary" id="save">Yadda saxla</button></div>`;
+      st.querySelectorAll(".seg button").forEach((b) => b.onclick = () => { marks[b.dataset.u] = b.dataset.s; dirty = true; renderDay(); });
+      document.getElementById("all").onclick = () => { list.forEach((s) => (marks[s.id] = "present")); dirty = true; renderDay(); };
+      document.getElementById("save").onclick = saveDay;
+    }
+
+    async function saveDay() {
+      const rows = classStudents().map((s) => ({ user_id: s.id, att_date: date, status: marks[s.id] || "present", updated_at: new Date().toISOString() }));
+      const { error } = await sb.from("attendance").upsert(rows);
+      if (error) return toast(translateError(error), "err");
+      saved = true; dirty = false;
+      toast(`${classLabel(cls)} — ${date} yadda saxlandı ✓`, "ok");
+      renderDay();
+    }
+
+    let monthData = null;
+    async function loadMonth() {
+      const list = classStudents();
+      const [y, m] = month.split("-").map(Number);
+      const days = new Date(y, m, 0).getDate();
+      const from = `${month}-01`, to = `${month}-${String(days).padStart(2, "0")}`;
+      const { data, error } = await sb.from("attendance").select("user_id, att_date, status").gte("att_date", from).lte("att_date", to)
+        .in("user_id", list.map((s) => s.id).concat(["00000000-0000-0000-0000-000000000000"]));
+      if (error) { document.getElementById("stage").innerHTML = `<div class="card empty">${esc(translateError(error))}</div>`; return; }
+      const map = {};
+      for (const r of data) (map[r.user_id] ||= {})[Number(r.att_date.slice(8, 10))] = r.status;
+      const usedDays = [...new Set(data.map((r) => Number(r.att_date.slice(8, 10))))].sort((a, b) => a - b);
+      monthData = { list, map, usedDays, y, m };
+      const st = document.getElementById("stage");
+      if (!usedDays.length) { st.innerHTML = '<div class="card empty">Bu ay üçün davamiyyət yazılmayıb.</div>'; return; }
+      const count = (u, k) => Object.values(map[u] || {}).filter((v) => v === k).length;
+      st.innerHTML = `<div class="card grid-wrap"><table class="att-grid">
+        <tr><th style="text-align:left">Şagird</th>${usedDays.map((d) => `<th>${d}</th>`).join("")}<th>✓</th><th>⏰</th><th>✕</th><th>📄</th><th>%</th></tr>
+        ${list.map((s) => {
+          const p = count(s.id, "present") + count(s.id, "late"), all = Object.keys(map[s.id] || {}).length;
+          return `<tr><td class="nm">${esc(s.full_name)}</td>${usedDays.map((d) => { const v = map[s.id]?.[d]; return `<td class="c-${v || ""}">${v ? ST[v][0] : ""}</td>`; }).join("")}
+            <td>${count(s.id, "present")}</td><td>${count(s.id, "late")}</td><td>${count(s.id, "absent")}</td><td>${count(s.id, "excused")}</td><td><b>${all ? Math.round(p / all * 100) : "—"}</b></td></tr>`;
+        }).join("")}</table></div>
+        <p class="muted small">% — gəlib + gecikib / yazılmış günlər.</p>`;
+    }
+
+    function exportMonth() {
+      if (!monthData?.usedDays.length) return toast("Bu ay üçün məlumat yoxdur", "err");
+      const { list, map, usedDays, y, m } = monthData;
+      const L = { present: "+", late: "G", absent: "Q", excused: "Ü" };
+      const count = (u, k) => Object.values(map[u] || {}).filter((v) => v === k).length;
+      downloadXlsx(`davamiyyet_${classLabel(cls).replace(/\s+/g, "_")}_${y}_${String(m).padStart(2, "0")}.xlsx`, [{
+        name: `${classLabel(cls)} ${m}.${y}`, widths: [28, ...usedDays.map(() => 4), 8, 8, 8, 8, 7],
+        rows: [["Şagird", ...usedDays.map(String), "Gəlib", "Gecikib", "Qayıb", "Üzrlü", "%"],
+          ...list.map((s) => { const p = count(s.id, "present") + count(s.id, "late"), all = Object.keys(map[s.id] || {}).length;
+            return [s.full_name, ...usedDays.map((d) => L[map[s.id]?.[d]] || ""), count(s.id, "present"), count(s.id, "late"), count(s.id, "absent"), count(s.id, "excused"), all ? Math.round(p / all * 100) : ""]; }),
+          [], ["İşarələr: + gəlib, G gecikib, Q qayıb (gəlməyib), Ü üzrlü"]],
+      }]);
+    }
+
+    async function start() {
+      if (!configured) return;
+      const me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.role !== "admin") { location.href = "portal.html"; return; }
+      await loadStudents();
+      shell(); load();
+      addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
+    }
+    start().catch((e) => { app.innerHTML = `<div class="card empty">${esc(translateError(e))}</div>`; });
+  </script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Valideyn — Wordora</title>
+  <meta name="theme-color" content="#3a32b5">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="index.html">Ana səhifə</a></nav>
+    </div>
+  </header>
+  <main class="container" style="max-width:760px" id="app"></main>
+
+  <script type="module">
+    import { sb, configured, esc, formatDate, toast, translateError, classLabel } from "./assets/js/app.js";
+    import { percentChart } from "./assets/js/charts.js";
+    import { fmtNum } from "./assets/js/tests-common.js";
+
+    const app = document.getElementById("app");
+    const ST = { late: "⏰ gecikib", absent: "✕ gəlməyib", excused: "📄 üzrlü" };
+
+    function form(prefill = "") {
+      app.innerHTML = `
+        <div class="auth-wrap" style="min-height:auto;padding-top:24px"><div class="card auth-card">
+          <div class="auth-head"><img src="assets/img/logo-icon.png" alt=""><h1>Valideyn girişi</h1>
+            <p class="muted small">Övladınızın portalındakı <b>valideyn kodunu</b> yazın. Nəticələri və davamiyyəti görəcəksiniz.</p></div>
+          <form id="f"><div class="field"><label for="code">Valideyn kodu</label>
+            <input id="code" autocomplete="off" autocapitalize="characters" placeholder="ABCDE-12345" value="${esc(prefill)}" style="font:700 1.3rem/1 ui-monospace,Menlo,monospace;letter-spacing:.1em;text-align:center;text-transform:uppercase"></div>
+            <button class="btn btn-primary btn-block">Bax</button></form>
+        </div></div>`;
+      document.getElementById("f").onsubmit = (e) => { e.preventDefault(); show(document.getElementById("code").value); };
+    }
+
+    async function show(code) {
+      const { data, error } = await sb.rpc("parent_view", { p_code: code });
+      if (error) { try { sessionStorage.removeItem("wd_parent"); } catch {} form(code); toast(translateError(error), "err"); return; }
+      try { sessionStorage.setItem("wd_parent", code); } catch {}
+      const tests = (data.tests || []).filter((t) => t.total > 0 && t.score !== null);
+      const pct = (t) => (Number(t.score) / Number(t.total)) * 100;
+      const avg = tests.length ? tests.reduce((s, t) => s + pct(t), 0) / tests.length : null;
+      const a = data.attendance || {};
+      const days = (a.present || 0) + (a.late || 0) + (a.absent || 0) + (a.excused || 0);
+      const cls = (x) => (x >= 75 ? "hi" : x >= 50 ? "mid" : "lo");
+      app.innerHTML = `
+        <section class="welcome"><h1>${esc(data.name)}</h1><p>${esc(classLabel(data.class))} · İngilis dili</p></section>
+        ${data.status === "blocked" ? '<div class="card" style="border-color:var(--bad);margin-bottom:12px"><b style="color:var(--bad)">Hesab müvəqqəti bloklanıb.</b> <span class="muted">Ətraflı məlumat üçün müəllimlə əlaqə saxlayın.</span></div>' : ""}
+        <div class="stats">
+          <div class="stat"><div class="n">${avg === null ? "—" : Math.round(avg) + "%"}</div><div class="l">Sınaq ortalaması</div></div>
+          <div class="stat"><div class="n">${days ? Math.round(((a.present || 0) + (a.late || 0)) / days * 100) + "%" : "—"}</div><div class="l">Davamiyyət (90 gün)</div></div>
+          <div class="stat"><div class="n">${tests.length}</div><div class="l">Sınaq</div></div>
+        </div>
+        <div class="section-title"><h2>Sınaq nəticələri</h2></div>
+        <div class="card">${tests.length ? percentChart(tests.slice().reverse().map((t) => ({ label: formatDate(t.date).slice(0, 5), value: pct(t), title: t.title }))) + `
+          <table class="res-table" style="margin-top:10px"><tr><th>Sınaq</th><th>Tarix</th><th class="r">Bal</th><th class="r">%</th></tr>
+          ${tests.map((t) => `<tr><td>${esc(t.title)}</td><td class="muted">${formatDate(t.date).split(",")[0]}</td><td class="r">${fmtNum(t.score)} / ${fmtNum(t.total)}${t.pending ? ' <span class="pill wait">esse yoxlanılır</span>' : ""}</td><td class="r"><span class="pct ${cls(pct(t))}">${Math.round(pct(t))}%</span></td></tr>`).join("")}</table>`
+          : '<div class="empty small">Hələ açıqlanmış nəticə yoxdur.</div>'}</div>
+        <div class="section-title"><h2>Davamiyyət <span class="muted small">(son 90 gün)</span></h2></div>
+        <div class="card">${days ? `<div class="att-sum" style="display:flex;gap:1rem;flex-wrap:wrap"><span>✓ ${a.present} gəlib</span><span>⏰ ${a.late} gecikib</span><span>✕ ${a.absent} gəlməyib</span><span>📄 ${a.excused} üzrlü</span></div>
+          ${(a.recent || []).length ? `<table class="res-table" style="margin-top:8px">${a.recent.map((r) => `<tr><td>${r.date.split("-").reverse().join(".")}</td><td>${ST[r.status] || r.status}</td></tr>`).join("")}</table>` : ""}`
+          : '<div class="empty small">Davamiyyət hələ yazılmayıb.</div>'}</div>
+        ${data.live ? `<div class="section-title"><h2>🎮 Canlı viktorina</h2></div><div class="card">Dərslərdəki viktorinalarda cəmi <b>${data.live}</b> bal toplayıb.</div>` : ""}
+        <p class="center" style="margin-top:20px"><button class="btn btn-ghost" id="out">Başqa kod yaz</button></p>`;
+      document.getElementById("out").onclick = () => { try { sessionStorage.removeItem("wd_parent"); } catch {} form(); };
+    }
+
+    if (!configured) app.innerHTML = '<div class="card empty">Sayt bazaya qoşulmayıb.</div>';
+    else {
+      let saved = ""; try { saved = sessionStorage.getItem("wd_parent") || ""; } catch {}
+      const urlCode = new URLSearchParams(location.search).get("code") || "";
+      if (saved || urlCode) show(saved || urlCode); else form();
+    }
+  </script>
+</body>
+</html>

@@ -40,12 +40,13 @@
       if (!me) { location.href = "login.html"; return; }
       if (me.role !== "admin") { location.href = "portal.html"; return; }
 
-      const [{ data: p }, { data: att }, { data: viol }, { data: views }, { data: live }] = await Promise.all([
+      const [{ data: p }, { data: att }, { data: viol }, { data: views }, { data: live }, { data: days }] = await Promise.all([
         sb.from("profiles").select("*").eq("id", id).maybeSingle(),
         sb.from("attempts").select("id, test_id, started_at, submitted_at, score, status, tests(title, questions)").eq("user_id", id).order("started_at"),
         sb.from("violations").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(100),
         sb.from("material_views").select("kind, viewed_at, materials(title)").eq("user_id", id).order("viewed_at", { ascending: false }).limit(200),
         sb.from("live_players").select("score, joined_at, live_sessions(created_at, live_quizzes(title))").eq("user_id", id).order("joined_at", { ascending: false }).limit(50),
+        sb.from("attendance").select("att_date, status").eq("user_id", id).order("att_date", { ascending: false }).limit(200),
       ]);
       if (!p) { app.innerHTML = '<div class="card empty">Şagird tapılmadı.</div>'; return; }
 
@@ -65,7 +66,10 @@
               <div class="muted small">@${esc(p.username)} · ${esc(classLabel(p.class_name))} · <span class="code" style="font-family:ui-monospace,monospace">${esc(p.student_code)}</span> · qeydiyyat: ${formatDate(p.created_at)}</div>
               ${p.status_note ? `<div class="small" style="color:var(--bad);margin-top:.3rem">Qeyd: ${esc(p.status_note)}</div>` : ""}
             </div>
-            <button class="btn btn-ghost btn-sm" id="xlsx">⬇ Excel</button>
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm" id="pcode">👨‍👩‍👧 Valideyn kodu</button>
+              <button class="btn btn-ghost btn-sm" id="xlsx">⬇ Excel</button>
+            </div>
           </div>
         </div>
 
@@ -87,6 +91,14 @@
             <td class="r">${a.status === "in_progress" || !total(a) ? "" : `<span class="pct ${cls(pct(a))}">${Math.round(pct(a))}%</span>`}</td></tr>`).join("")}
         </table>` : '<div class="empty small">Hələ sınaq yazmayıb.</div>'}</div>
 
+        <div class="section-title"><h2>Davamiyyət</h2></div>
+        <div class="card">${(days || []).length ? (() => {
+          const c = (k) => days.filter((d) => d.status === k).length;
+          const L = { present: "✓ gəlib", late: "⏰ gecikib", absent: "✕ gəlməyib", excused: "📄 üzrlü" };
+          return `<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:8px"><b>${Math.round((c("present") + c("late")) / days.length * 100)}%</b><span>✓ ${c("present")}</span><span>⏰ ${c("late")}</span><span>✕ ${c("absent")}</span><span>📄 ${c("excused")}</span></div>
+            ${days.filter((d) => d.status !== "present").slice(0, 15).map((d) => `<span class="pill ${d.status === "absent" ? "blocked" : d.status === "late" ? "wait" : "live"}" style="margin:0 .3rem .3rem 0">${d.att_date.split("-").reverse().join(".")} · ${L[d.status]}</span>`).join("")}`;
+        })() : '<div class="empty small">Davamiyyət yazılmayıb.</div>'}</div>
+
         <div class="section-title"><h2>Canlı viktorinalar</h2></div>
         <div class="card">${(live || []).length ? `<table class="res-table"><tr><th>Viktorina</th><th>Tarix</th><th class="r">Bal</th></tr>
           ${live.map((l) => `<tr><td>🎮 ${esc(l.live_sessions?.live_quizzes?.title || "")}</td><td class="muted">${formatDate(l.joined_at)}</td><td class="r">${l.score}</td></tr>`).join("")}</table>`
@@ -102,6 +114,15 @@
           ${views.map((v) => `<tr><td>${esc(v.materials?.title || "silinib")}</td><td>${v.kind === "download" ? "⬇ yükləyib" : "👁 baxıb"}</td><td class="muted">${formatDate(v.viewed_at)}</td></tr>`).join("")}</table>`
           : '<div class="empty small">Material açmayıb.</div>'}</div>`;
 
+      document.getElementById("pcode").onclick = async () => {
+        let code = p.parent_code;
+        const msg = code ? `Hazırkı valideyn kodu: ${code}\n\nYeni kod yaradılsın? (köhnə kod işləməyəcək)` : "Bu şagird üçün valideyn kodu yaradılsın?";
+        if (!confirm(msg)) return;
+        const { data, error } = await sb.rpc("admin_reset_parent_code", { p_user: id });
+        if (error) return alert(translateError(error));
+        p.parent_code = data;
+        prompt("Yeni valideyn kodu (kopyala və valideynə ver):", data);
+      };
       document.getElementById("xlsx").onclick = () => downloadXlsx(`${safeName(p.full_name)}_profil.xlsx`, [
         { name: "Sınaqlar", widths: [40, 18, 10, 10, 8], rows: [["Sınaq", "Tarix", "Bal", "Maksimum", "%"],
           ...done.map((a) => [a.tests?.title || "", formatDate(a.submitted_at), Number(a.score) || 0, total(a), Math.round(pct(a))])] },

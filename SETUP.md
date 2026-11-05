@@ -67,6 +67,9 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 4. `supabase/05-fix-test-pdf.sql`
 5. `supabase/06-tor-fix.sql`
 6. `supabase/07-password-live.sql`
+7. `supabase/08-audio.sql`
+8. `supabase/09-words-year-rank.sql`
+9. `supabase/10-attendance-messages-parent.sql`
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 
@@ -100,6 +103,13 @@ Yeni qeydiyyat, pozuntu və blok olanda telefonuna mesaj gəlir.
 - **Sınaq nəticələri** → **Sınaqlar** → **Nəticələr**: bal, cavablar, esse balı, sual analizi, **⬇ Excel**; hazır olanda **Nəticələri şagirdlərə aç**
 - **Şagird sınağı yenidən yazsın** → Nəticələr → **Cavablar** → **Cəhdi sil**
 - **Köhnə sınaqdan yenisini düzəlt** → **Kopyala** → adını, PDF-i və açarı dəyiş
+- **Davamiyyət** → **✅ Davamiyyət** → sinif və tarix seç → hər şagirdə ✓ / ⏰ / ✕ / 📄 → **Yadda saxla**; **Ay** tabında cədvəl və Excel
+- **Şagird sualı** → **💬 Mesajlar** (sual gələndə Telegram-a da bildiriş gedir)
+- **Valideyn** → şagird portalda **Valideyn kodu** düyməsi ilə kodu alıb valideyninə verir; valideyn ana səhifədə **Valideyn girişi** ilə baxır. Kodu yeniləmək: şagirdin **📈 Profil** səhifəsi → **Valideyn kodu**
+- **Sözlər** → **🔤 Sözlər** → `söz | tərcümə | nümunə` formatında dəst əlavə et — günün sözü və söz kartları avtomatik işləyir
+- **Aylıq hesabat** → **📊 Aylıq hesabat** → ay seç → hazır mətni **Kopyala** və ya **Çap et / PDF**, **Excel**
+- **Ehtiyat nüsxə** → **💾 Ehtiyat nüsxə** — ayda bir dəfə yüklə
+- **Yeni tədris ili** (avqust–sentyabr) → **Şagirdlər** → **🎓 Yeni tədris ili**
 - **Material** → **Materiallar** → PDF yüklə; "Şagirdlər yükləyə bilsin" açıqdırsa, hər şagird öz adı və kodu yazılmış nüsxəni yükləyir
 - **Pozuntular** → kim, nə vaxt, nə edib; səhv siqnalı **Ləğv et**; xəbərdarlıq limiti və Tor bloku buradan dəyişir
 - **Avtomatik bloklanan şagird** → **Bloklanan / rədd** → **Blokdan çıxar** (xəbərdarlıqlar sıfırlanır)

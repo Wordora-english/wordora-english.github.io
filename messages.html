@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Müəllimə sual — Wordora</title>
+  <meta name="theme-color" content="#3a32b5">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="portal.html">← Portal</a></nav>
+    </div>
+  </header>
+  <main class="container" style="max-width:720px" id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
+    import { startGuard } from "./assets/js/guard.js";
+
+    const app = document.getElementById("app");
+    let me, msgs = [];
+
+    function render() {
+      const chat = document.getElementById("chat");
+      chat.innerHTML = msgs.length ? msgs.map((m) => `<div class="bubble ${m.sender === "student" ? "me" : "them"}">${esc(m.body)}<span class="t">${m.sender === "teacher" ? "Müəllim · " : ""}${formatDate(m.created_at)}</span></div>`).join("")
+        : '<div class="empty small">Hələ mesaj yoxdur. Dərslə, sınaqla və ya tapşırıqla bağlı sualını yaz.</div>';
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    async function load() {
+      const { data, error } = await sb.from("messages").select("*").eq("user_id", me.id).order("created_at");
+      if (error) { app.innerHTML = `<div class="card empty">${esc(translateError(error))}</div>`; return; }
+      const fresh = JSON.stringify(data) !== JSON.stringify(msgs);
+      msgs = data;
+      if (fresh) render();
+      if (msgs.some((m) => m.sender === "teacher" && !m.read_by_student)) sb.rpc("mark_messages_read");
+    }
+
+    async function start() {
+      if (!configured) return;
+      me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.status !== "approved") { location.href = "portal.html"; return; }
+      startGuard({ me, page: "mesajlar" });
+      app.innerHTML = `
+        <h1 style="font-size:1.5rem">💬 Müəllimə sual</h1>
+        <p class="muted small">Mesajını yalnız müəllim görür. Cavab gələndə portalda bildiriş çıxacaq.</p>
+        <div class="card">
+          <div class="chat" id="chat"></div>
+          <form class="chat-form" id="form">
+            <textarea id="body" maxlength="1000" placeholder="Sualını yaz…" required></textarea>
+            <button class="btn btn-primary" type="submit" id="send">Göndər</button>
+          </form>
+        </div>`;
+      document.getElementById("form").onsubmit = async (e) => {
+        e.preventDefault();
+        const ta = document.getElementById("body"), body = ta.value.trim();
+        if (!body) return;
+        const btn = document.getElementById("send"); btn.disabled = true;
+        const { error } = await sb.rpc("send_message", { p_body: body });
+        btn.disabled = false;
+        if (error) return toast(translateError(error), "err");
+        ta.value = "";
+        await load();
+      };
+      await load();
+      setInterval(() => { if (!document.hidden) load(); }, 15000);
+    }
+    start();
+  </script>
+</body>
+</html>

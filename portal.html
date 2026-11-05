@@ -126,6 +126,42 @@
       renderResults(tests, mine || []);
     }
 
+    // ---------- Qısa keçidlər: mesajlar, davamiyyət, valideyn kodu ----------
+    async function loadQuick() {
+      const [{ data: msgs }, { data: att }] = await Promise.all([
+        sb.from("messages").select("sender, read_by_student").eq("user_id", me.id),
+        sb.from("attendance").select("status").eq("user_id", me.id).gte("att_date", new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10)),
+      ]);
+      const unread = (msgs || []).filter((m) => m.sender === "teacher" && !m.read_by_student).length;
+      const b = document.getElementById("msg-badge");
+      b.textContent = unread; b.classList.toggle("zero", !unread);
+      if (unread) document.getElementById("msg-note").textContent = "Müəllim cavab yazıb!";
+      const a = att || [];
+      document.getElementById("att-note").textContent = a.length
+        ? `${Math.round(a.filter((x) => x.status === "present" || x.status === "late").length / a.length * 100)}% · ${a.filter((x) => x.status === "absent").length} qayıb (90 gün)`
+        : "Hələ yazılmayıb";
+      document.getElementById("parent-btn").onclick = async () => {
+        const { data: code, error } = await sb.rpc("get_parent_code");
+        if (error) return toast(translateError(error), "err");
+        const link = new URL(`parent.html?code=${encodeURIComponent(code)}`, location.href).href;
+        const box = document.createElement("div");
+        box.className = "wd-modal";
+        box.innerHTML = `<div class="wd-modal-box" style="border-top-color:var(--indigo)">
+          <div class="wd-modal-ico">👨‍👩‍👧</div><h2>Valideyn kodu</h2>
+          <div style="font:800 1.8rem/1.2 ui-monospace,Menlo,monospace;letter-spacing:.08em;margin:.4rem 0 .8rem;-webkit-user-select:all;user-select:all">${esc(code)}</div>
+          <p>Bu kodu yalnız valideyninə ver. O, <b>Valideyn girişi</b> səhifəsində nəticələrini və davamiyyətini görəcək (heç nəyi dəyişə bilməz).</p>
+          <div style="display:grid;gap:.5rem">
+            <button class="btn btn-primary btn-block" id="pc-share">📤 Linki göndər</button>
+            <button class="btn btn-ghost btn-block" id="pc-close">Bağla</button></div></div>`;
+        document.body.appendChild(box);
+        document.getElementById("pc-close").onclick = () => box.remove();
+        document.getElementById("pc-share").onclick = async () => {
+          const text = `Wordora — ${me.full_name} üçün valideyn səhifəsi: ${link}`;
+          try { if (navigator.share) await navigator.share({ title: "Wordora", text, url: link }); else { await navigator.clipboard.writeText(link); toast("Link kopyalandı ✓", "ok"); } } catch {}
+        };
+      };
+    }
+
     // ---------- Günün sözü ----------
     async function loadWotd() {
       const box = document.getElementById("wotd");
@@ -318,6 +354,13 @@
           </div>
         </form>
 
+        <div class="quick">
+          <a class="card quick-item" href="messages.html"><span class="qi">💬</span><span><b>Müəllimə sual</b><span class="muted small" id="msg-note">Sualını yaz</span></span><span class="badge zero" id="msg-badge">0</span></a>
+          <a class="card quick-item" href="words.html"><span class="qi">🔤</span><span><b>Söz kartları</b><span class="muted small">Öyrən və yoxla</span></span></a>
+          <button class="card quick-item" id="parent-btn" type="button"><span class="qi">👨‍👩‍👧</span><span><b>Valideyn kodu</b><span class="muted small">Valideynin nəticəni görsün</span></span></button>
+          <div class="card quick-item" id="att-card"><span class="qi">✅</span><span><b>Davamiyyət</b><span class="muted small" id="att-note">—</span></span></div>
+        </div>
+
         <div class="section-title" id="tests"><h2>Sınaqlar</h2></div>
         <div id="test-list" class="grid"><div class="spinner"></div></div>
 
@@ -343,6 +386,7 @@
       });
       renderInstall();
       loadWotd();
+      loadQuick();
       loadRank();
       addEventListener("wd-installable", renderInstall);
       loadTests();
