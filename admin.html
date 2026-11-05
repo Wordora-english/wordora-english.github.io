@@ -40,6 +40,7 @@
       <button class="tab active" data-tab="pending">Yeni qeydiyyatlar <span class="badge" id="badge-pending">0</span></button>
       <button class="tab" data-tab="approved">Şagirdlər</button>
       <button class="tab" data-tab="blocked">Bloklanan / rədd</button>
+      <button class="tab" data-tab="viol">Pozuntular <span class="badge zero" id="badge-viol">0</span></button>
       <button class="tab" data-tab="mat">Materiallar</button>
       <button class="tab" data-tab="ann">Elanlar</button>
     </div>
@@ -59,6 +60,35 @@
 
     <section data-panel="blocked" class="hidden">
       <div class="people" id="list-blocked"></div>
+    </section>
+
+    <section data-panel="viol" class="hidden">
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="font-size:1.15rem">Qoruma ayarları</h2>
+        <div class="settings-row">
+          <div class="field">
+            <label for="set-max">Xəbərdarlıq limiti</label>
+            <select id="set-max">
+              <option value="0">0 — ilk pozuntuda blok</option><option value="1">1 xəbərdarlıq</option>
+              <option value="2">2 xəbərdarlıq</option><option value="3">3 xəbərdarlıq</option>
+              <option value="4">4 xəbərdarlıq</option><option value="5">5 xəbərdarlıq</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="set-tor">Tor Browser bloku</label>
+            <select id="set-tor"><option value="on">Açıq — Tor bloklanır</option><option value="off">Söndürülüb</option></select>
+          </div>
+        </div>
+        <p class="muted small" style="margin:.8rem 0 0" id="set-info"></p>
+      </div>
+      <div class="toolbar">
+        <select id="viol-filter">
+          <option value="active">Aktiv pozuntular</option>
+          <option value="all">Hamısı (ləğv edilənlər də)</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" data-viol-refresh>↻ Yenilə</button>
+      </div>
+      <div class="grid" id="viol-list"></div>
     </section>
 
     <section data-panel="mat" class="hidden">
@@ -101,6 +131,7 @@
 
   <script type="module">
     import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, CLASSES, showConfigWarning } from "./assets/js/app.js";
+    import { VIOLATION_LABELS } from "./assets/js/guard.js";
 
     showConfigWarning();
     const app = document.getElementById("app");
@@ -113,7 +144,8 @@
         <span>@${esc(p.username)}</span>
         <span>${esc(classLabel(p.class_name))}</span>
         <span class="code" title="Şəxsi gizli kod">${esc(p.student_code)}</span>
-        <span>${formatDate(p.created_at)}</span>`;
+        <span>${formatDate(p.created_at)}</span>
+        ${p.warnings > 0 ? `<span class="warn-count">⚠️ ${p.warnings} xəbərdarlıq</span>` : ""}`;
       let actions = "";
       if (p.status === "pending") {
         actions = `
@@ -121,6 +153,7 @@
           <button class="btn btn-bad btn-sm" data-act="rejected" data-id="${p.id}">✕ Rədd et</button>`;
       } else if (p.status === "approved") {
         actions = `
+          ${p.warnings > 0 ? `<button class="btn btn-ghost btn-sm" data-vreset="${p.id}">Xəbərdarlığı sıfırla</button>` : ""}
           <button class="btn btn-ghost btn-sm" data-act="class" data-id="${p.id}">Sinfi dəyiş</button>
           <button class="btn btn-bad btn-sm" data-act="blocked" data-id="${p.id}">🔒 Blokla</button>`;
       } else {
@@ -215,6 +248,79 @@
           <div class="meta">${formatDate(a.created_at)} · ${a.target_class ? esc(classLabel(a.target_class)) : "Bütün siniflər"}</div>
           <div class="body">${esc(a.body)}</div>
         </article>`).join("") : '<div class="card empty">Hələ elan yoxdur.</div>';
+    }
+
+    // ================= Pozuntular =================
+    async function loadSettings() {
+      const { data, error } = await sb.rpc("admin_get_settings");
+      const info = document.getElementById("set-info");
+      if (error) { info.textContent = "Ayarlar oxunmadı: " + translateError(error) + " (03-security.sql işə salınıb?)"; return; }
+      document.getElementById("set-max").value = String(data.max_warnings);
+      document.getElementById("set-tor").value = data.tor_block;
+      info.innerHTML =
+        `Tor siyahısında <b>${data.tor_count}</b> IP var (3 saatdan bir yenilənir). ` +
+        (data.telegram ? "Telegram bildirişləri <b>qoşulub</b> ✓" : "Telegram bildirişləri <b>qoşulmayıb</b> — SETUP.md, 8-ci addım.");
+    }
+
+    async function saveSetting(key, value) {
+      const { error } = await sb.rpc("admin_set_setting", { p_key: key, p_value: value });
+      if (error) return toast(translateError(error), "err");
+      toast("Ayar yadda saxlandı ✓", "ok");
+    }
+
+    async function loadViolations() {
+      const box = document.getElementById("viol-list");
+      const onlyActive = document.getElementById("viol-filter").value === "active";
+      let q = sb.from("violations")
+        .select("id, user_id, kind, details, page, ip, counted, cancelled, created_at, profiles(full_name, class_name, student_code, warnings, status)")
+        .order("created_at", { ascending: false })
+        .limit(300);
+      if (onlyActive) q = q.eq("cancelled", false);
+      const { data, error } = await q;
+      if (error) { box.innerHTML = `<div class="card empty">${esc(translateError(error))}</div>`; return; }
+      updateViolBadge(data);
+      if (!data.length) { box.innerHTML = '<div class="card empty">Pozuntu yoxdur 👍</div>'; return; }
+      box.innerHTML = data.map((v) => {
+        const p = v.profiles || {};
+        const tag = v.cancelled ? '<span class="pill off">Ləğv edilib</span>'
+                  : !v.counted ? '<span class="pill off">Sayılmayıb</span>'
+                  : p.status === "blocked" ? '<span class="pill blocked">Bloklanıb</span>' : "";
+        return `
+          <div class="card viol ${v.cancelled ? "cancelled" : ""}">
+            <div style="min-width:0">
+              <div class="what">${esc(VIOLATION_LABELS[v.kind] || v.kind)} ${tag}</div>
+              <div><b>${esc(p.full_name || "—")}</b> <span class="muted small">${esc(classLabel(p.class_name))} · ${esc(p.student_code || "")} · cəmi xəbərdarlıq: ${p.warnings ?? 0}</span></div>
+              <div class="when">${formatDate(v.created_at)}${v.page ? " · " + esc(v.page) : ""}${v.details ? " · " + esc(v.details) : ""}${v.ip ? " · IP " + esc(v.ip) : ""}</div>
+            </div>
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+              ${!v.cancelled && v.counted ? `<button class="btn btn-ghost btn-sm" data-vcancel="${v.id}" title="Səhv siqnal idisə">Ləğv et</button>` : ""}
+            </div>
+          </div>`;
+      }).join("");
+    }
+
+    function updateViolBadge(rows) {
+      const dayAgo = Date.now() - 86400000;
+      const n = rows.filter((v) => !v.cancelled && v.counted && new Date(v.created_at).getTime() > dayAgo).length;
+      const b = document.getElementById("badge-viol");
+      b.textContent = n; b.classList.toggle("zero", n === 0);
+    }
+
+    async function cancelViolation(id) {
+      if (!confirm("Bu pozuntu ləğv edilsin? Şagirdin xəbərdarlıq sayı bir azalacaq.")) return;
+      const { error } = await sb.rpc("admin_cancel_violation", { p_id: Number(id) });
+      if (error) return toast(translateError(error), "err");
+      toast("Ləğv edildi", "ok");
+      loadViolations(); loadPeople();
+    }
+
+    async function resetWarnings(id) {
+      const p = people.find((x) => x.id === id);
+      if (!confirm(`${p?.full_name || "Şagird"} — bütün xəbərdarlıqlar sıfırlansın?`)) return;
+      const { error } = await sb.rpc("admin_reset_warnings", { p_user: id });
+      if (error) return toast(translateError(error), "err");
+      toast("Xəbərdarlıqlar sıfırlandı", "ok");
+      loadPeople();
     }
 
     // ================= Materiallar =================
@@ -391,6 +497,7 @@
         app.querySelectorAll("[data-panel]").forEach((s) => s.classList.toggle("hidden", s.dataset.panel !== t.dataset.tab));
         if (t.dataset.tab === "ann") loadAnnouncements();
         if (t.dataset.tab === "mat") loadMaterials();
+        if (t.dataset.tab === "viol") { loadViolations(); loadSettings(); }
       }));
 
       // Düymələr
@@ -401,6 +508,9 @@
         if (b.dataset.act) return setStatus(b.dataset.id, b.dataset.act);
         if (b.hasAttribute("data-refresh")) return loadPeople();
         if (b.dataset.mat) return materialAction(b.dataset.mat, b.dataset.id, b);
+        if (b.hasAttribute("data-viol-refresh")) return loadViolations();
+        if (b.dataset.vcancel) return cancelViolation(b.dataset.vcancel);
+        if (b.dataset.vreset) return resetWarnings(b.dataset.vreset);
         if (b.dataset.del) {
           if (!confirm("Elan silinsin?")) return;
           sb.from("announcements").delete().eq("id", b.dataset.del).then(({ error }) => {
@@ -409,6 +519,9 @@
         }
       });
 
+      document.getElementById("set-max").addEventListener("change", (e) => saveSetting("max_warnings", e.target.value));
+      document.getElementById("set-tor").addEventListener("change", (e) => saveSetting("tor_block", e.target.value));
+      document.getElementById("viol-filter").addEventListener("change", loadViolations);
       document.getElementById("search").addEventListener("input", render);
       document.getElementById("class-filter").addEventListener("change", render);
 
@@ -426,6 +539,7 @@
       });
 
       await loadPeople();
+      loadViolations();   // nişan sayı üçün
       // Yeni qeydiyyatları hər 30 saniyədən bir yoxla
       setInterval(() => { if (!document.hidden) loadPeople(); }, 30000);
     }

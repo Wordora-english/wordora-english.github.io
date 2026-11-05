@@ -29,6 +29,7 @@
 
   <script type="module">
     import { downloadMaterial } from "./assets/js/materials.js";
+    import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
     import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, STAR_SVG, showConfigWarning } from "./assets/js/app.js";
 
     showConfigWarning();
@@ -116,7 +117,10 @@
       if (!configured) { app.innerHTML = '<div class="card empty">Sayt hələ bazaya qoşulmayıb.</div>'; return; }
       let me;
       try { me = await getMyProfile(); }
-      catch (err) { app.innerHTML = `<div class="card empty">${esc(translateError(err))}</div>`; return; }
+      catch (err) {
+        if (isTorError(err)) return torScreen(app);
+        app.innerHTML = `<div class="card empty">${esc(translateError(err))}</div>`; return;
+      }
       if (!me) { location.href = "login.html"; return; }
 
       if (me.role === "admin") document.getElementById("admin-link").classList.remove("hidden");
@@ -139,7 +143,7 @@
         <section class="welcome">
           <span class="star">${STAR_SVG}</span>
           <h1>Salam, ${esc(firstName)}!</h1>
-          <p>${esc(classLabel(me.class_name))} · @${esc(me.username)}</p>
+          <p>${esc(classLabel(me.class_name))} · @${esc(me.username)}${me.warnings > 0 ? ` · ⚠️ ${me.warnings} xəbərdarlıq` : ""}</p>
         </section>
 
         <div class="section-title" id="materials"><h2>Materiallar</h2></div>
@@ -155,6 +159,7 @@
       `;
       loadMaterials();
       loadAnnouncements();
+      startGuard({ me, onBlocked: () => location.reload() });
     }
 
     // Sessiya bitərsə girişə qaytar

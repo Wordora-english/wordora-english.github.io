@@ -56,6 +56,7 @@
     import { sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
     import { drawWatermark } from "./assets/js/watermark.js";
     import { openMaterial, fetchMaterialBytes, downloadMaterial } from "./assets/js/materials.js";
+    import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
     import * as pdfjsLib from "./assets/vendor/pdfjs/pdf.min.mjs";
 
     const VENDOR = new URL("./assets/vendor/pdfjs/", location.href).href;
@@ -84,9 +85,12 @@
     async function start() {
       if (!configured) return fail("Sayt bazaya qoşulmayıb.");
       if (!id) return fail("Material tapılmadı.");
-      const me = await getMyProfile().catch(() => null);
+      let me = null;
+      try { me = await getMyProfile(); }
+      catch (err) { if (isTorError(err)) return torScreen(pagesEl); }
       if (!me) { location.href = "login.html"; return; }
       if (me.status !== "approved") { location.href = "portal.html"; return; }
+      startGuard({ me, onBlocked: () => (location.href = "portal.html") });
 
       // Serverdən icazə + su nişanı məlumatı (baxış da qeyd olunur)
       let info, bytes;

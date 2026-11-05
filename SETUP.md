@@ -57,6 +57,33 @@ Bu addımları bir dəfə edirsən. Hər şey pulsuzdur, heç bir yerdə kart is
 
 > Əgər repoda 60 gün heç bir dəyişiklik olmasa, GitHub bu işi dayandırıb e-poçt göndərə bilər. Belə olsa, **Actions** tabında **Enable workflow** düyməsini bas.
 
+## 7. Materiallar və qoruma (2-ci və 3-cü mərhələ)
+
+Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ardıcıl**, hər birini ayrıca işə sal:
+
+1. `supabase/02-materials.sql`
+2. `supabase/03-security.sql`
+
+Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
+
+## 8. Telegram bildirişləri
+
+Yeni qeydiyyat, pozuntu və blok olanda telefonuna mesaj gəlir.
+
+1. Telegram-da **@BotFather**-i aç → **/newbot** yaz.
+2. Bota ad ver (məs. `Wordora Bildiriş`), sonra istifadəçi adı (sonu `bot` ilə bitməlidir, məs. `wordora_gulnar_bot`).
+3. BotFather sənə **token** verəcək (`1234567890:AAH...` kimi). **Onu heç kimə göndərmə.**
+4. Yeni yaratdığın botu aç və **Start** bas (yoxsa bot sənə yaza bilməz).
+5. Telegram-da **@userinfobot**-u aç → **Start** → sənə **Id** göstərəcək (rəqəmlər).
+6. Supabase → **SQL Editor** → **New query** → bunu yaz (TOKEN və ID yerinə özününkünü) → **Run**:
+
+   ```sql
+   select public.set_telegram('TOKEN', 'ID');
+   ```
+7. Telefonuna "✅ Wordora bildirişləri qoşuldu" mesajı gəlməlidir.
+
+> Token Supabase-in gizli anbarında (Vault) saxlanır, saytın kodunda və GitHub-da görünmür.
+
 ---
 
 ## Gündəlik istifadə
@@ -65,4 +92,8 @@ Bu addımları bir dəfə edirsən. Hər şey pulsuzdur, heç bir yerdə kart is
 - **Şagirdi bloklamaq** → **Şagirdlər** → **Blokla** (səbəb yaza bilərsən, şagird görəcək)
 - **Blokdan çıxarmaq** → **Bloklanan / rədd** → **Blokdan çıxar** (xəbərdarlıqlar sıfırlanır)
 - **Elan** → **Elanlar** → bütün siniflərə və ya bir sinfə
+- **Material** → **Materiallar** → PDF yüklə; "Şagirdlər yükləyə bilsin" açıqdırsa, hər şagird öz adı və kodu yazılmış nüsxəni yükləyir
+- **Pozuntular** → kim, nə vaxt, nə edib; səhv siqnalı **Ləğv et**; xəbərdarlıq limiti və Tor bloku buradan dəyişir
+- **Avtomatik bloklanan şagird** → **Bloklanan / rədd** → **Blokdan çıxar** (xəbərdarlıqlar sıfırlanır)
+- **Yayılmış PDF tapdın** → faylın hər səhifəsində `WD-XXXXXX` kodu var → Admin panel → **Şagirdlər** → axtarışa kodu yaz
 - **Şagird şifrəsini unutdu** → hələlik: Supabase → **Authentication** → **Users** → həmin istifadəçini sil, şagird yenidən qeydiyyatdan keçsin. Növbəti mərhələlərdə admin paneldə "şifrəni sıfırla" düyməsi olacaq.

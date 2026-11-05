@@ -62,6 +62,7 @@
 
   <script type="module">
     import { sb, configured, CLASSES, classLabel, USERNAME_RE, usernameToEmail, translateError, showConfigWarning } from "./assets/js/app.js";
+    import { claimSession } from "./assets/js/guard.js";
 
     showConfigWarning();
     const sel = document.getElementById("class_name");
@@ -111,6 +112,7 @@
           setTimeout(() => (location.href = "login.html"), 2200);
           return;
         }
+        await claimSession(data.user.id);
         location.href = "portal.html";
       } catch (err) {
         show(translateError(err));

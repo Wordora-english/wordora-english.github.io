@@ -299,3 +299,20 @@ textarea { min-height: 110px; resize: vertical; }
 @media (max-width: 560px) {
   .viewer-bar .zoom span { display: none; }
 }
+
+/* ---------- Xəbərdarlıq pəncərəsi ---------- */
+.wd-modal { position: fixed; inset: 0; z-index: 200; background: rgba(14, 31, 61, .55); display: grid; place-items: center; padding: 16px; animation: up .2s ease; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.wd-modal-box { background: #fff; border-radius: 18px; max-width: 400px; width: 100%; padding: 26px 22px 20px; text-align: center; box-shadow: 0 20px 60px rgba(0, 0, 0, .3); border-top: 6px solid var(--gold); }
+.wd-modal-box.danger { border-top-color: var(--bad); }
+.wd-modal-ico { font-size: 2.6rem; line-height: 1; margin-bottom: .6rem; }
+.wd-modal-box h2 { font-size: 1.35rem; }
+.wd-modal-box p { color: var(--navy-2); font-size: .95rem; }
+
+/* ---------- Pozuntular ---------- */
+.viol { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
+.viol.cancelled { opacity: .5; }
+.viol .what { font-weight: 600; }
+.viol .when { font-size: .8rem; color: var(--muted); }
+.settings-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+.settings-row .field { margin: 0; flex: 1 1 180px; }
+.warn-count { font-size: .75rem; font-weight: 800; background: var(--warn-bg); color: var(--warn); border-radius: 99px; padding: .1rem .45rem; }

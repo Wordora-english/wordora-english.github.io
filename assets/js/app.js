@@ -66,6 +66,7 @@ export function toast(message, type = "") {
 // ---------- Xəta mesajlarını Azərbaycan dilinə çevir ----------
 export function translateError(err) {
   const msg = (err?.message || String(err || "")).toLowerCase();
+  if (msg.includes("tor_blocked")) return "Tor ilə bu sayta giriş qadağandır. Adi brauzerdən daxil ol.";
   if (msg.includes("invalid login credentials")) return "İstifadəçi adı və ya şifrə yanlışdır.";
   if (msg.includes("user already registered") || msg.includes("already been registered"))
     return "Bu istifadəçi adı artıq tutulub. Başqa ad seç.";
