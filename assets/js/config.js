@@ -5,8 +5,8 @@
 //   bütün qoruma bazadakı qaydalarla təmin olunur.)
 // =========================================================
 
-export const SUPABASE_URL = "BURAYA_SUPABASE_URL";       // məs. https://abcd1234.supabase.co
-export const SUPABASE_KEY = "BURAYA_PUBLISHABLE_KEY";    // sb_publishable_... və ya anon key
+export const SUPABASE_URL = "https://pjxrhkzdjytyxcqrvifw.supabase.co";
+export const SUPABASE_KEY = "sb_publishable_l2bVnPADiLvdFB7l8CCuAg_stO_NFzh";
 
 // Şagirdlər istifadəçi adı ilə girir. Arxa planda istifadəçi adı
 // bu domenlə e-poçt formatına çevrilir (heç bir e-poçt göndərilmir).
