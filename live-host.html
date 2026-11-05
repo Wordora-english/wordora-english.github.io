@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Canlı viktorina — Wordora</title>
+  <meta name="theme-color" content="#1d1a5e">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/live.css">
+</head>
+<body class="live">
+  <div class="live-top">
+    <span class="wordmark"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></span>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn btn-ghost btn-sm" id="fs">⛶ Tam ekran</button>
+      <a class="btn btn-ghost btn-sm" href="admin.html#live">Çıxış</a>
+    </div>
+  </div>
+  <main class="live-wrap" id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, toast, translateError } from "./assets/js/app.js";
+    import { OPTION_STYLE } from "./assets/js/live-common.js";
+
+    const app = document.getElementById("app");
+    const sid = new URLSearchParams(location.search).get("s");
+    let st = null, busy = false, lastKey = "", leftAt = 0, autoRevealed = -1;
+    const siteUrl = location.origin + location.pathname.replace(/[^/]*$/, "");
+
+    document.getElementById("fs").onclick = () => {
+      if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.().catch(() => {});
+    };
+
+    async function control(action) {
+      if (busy) return;
+      busy = true;
+      const { error } = await sb.rpc("live_control", { p_session: sid, p_action: action });
+      busy = false;
+      if (error) return toast(translateError(error), "err");
+      poll(true);
+    }
+
+    function optsHtml(q, reveal, dist) {
+      return `<div class="opts">${q.options.map((o, i) => {
+        const s = OPTION_STYLE[i];
+        const cls = reveal ? (i === q.correct ? "right" : "dim") : "";
+        return `<div class="opt ${cls}" style="background:${s.color}"><span class="sym">${s.sym}</span><span>${esc(o)}</span>${reveal && i === q.correct ? '<span class="ok-mark">✓</span>' : ""}${reveal ? `<span class="cnt">${dist[i] || 0}</span>` : ""}</div>`;
+      }).join("")}</div>`;
+    }
+
+    function boardHtml(top, n = 5) {
+      return `<div class="board">${top.slice(0, n).map((p, i) =>
+        `<div class="board-row"><span class="pos">${i + 1}.</span><span class="nm">${esc(p.name)}</span><span class="pt">${p.score}</span></div>`).join("")}</div>`;
+    }
+
+    function render(force) {
+      const key = `${st.status}|${st.q_index}|${st.players.length}|${st.answered}|${st.status === "reveal" || st.status === "finished" ? JSON.stringify(st.top) : ""}`;
+      if (!force && key === lastKey) return;
+      lastKey = key;
+
+      if (st.status === "lobby") {
+        app.innerHTML = `
+          <div class="lobby">
+            <div class="join-hint">Telefonda saytı aç → <b>Portal</b> → <b>Canlı viktorina</b> → kodu yaz</div>
+            <div class="join-hint" style="opacity:.7;font-size:.95rem;margin-top:.3rem">${esc(siteUrl.replace(/^https?:\/\//, ""))}</div>
+            <div class="big-code">${st.code.slice(0, 3)} ${st.code.slice(3)}</div>
+            <h1 style="font-size:clamp(1.3rem,3vw,2rem)">${esc(st.title)}</h1>
+            <div class="join-hint">Qoşulanlar: <b>${st.players.length}</b></div>
+            <div class="players">${st.players.map((p) => `<span class="player-chip">${esc(p.name)}</span>`).join("")}</div>
+            <button class="live-btn gold" id="go" ${st.players.length ? "" : "disabled"}>Başla ▶</button>
+          </div>`;
+        document.getElementById("go").onclick = () => control("next");
+        return;
+      }
+
+      if (st.status === "question" || st.status === "reveal") {
+        const reveal = st.status === "reveal";
+        const q = st.question;
+        app.innerHTML = `
+          <div class="q-head">
+            <span class="q-count">Sual ${st.q_index + 1} / ${st.total}</span>
+            ${reveal ? `<span class="q-count">${st.answered} / ${st.players.length} cavab</span>` : `<div class="countdown" id="cd">–</div>`}
+          </div>
+          <div class="q-text">${esc(q.text)}</div>
+          ${optsHtml(q, reveal, st.dist || {})}
+          ${reveal
+            ? `<h2 style="text-align:center;margin-top:3vh">🏆 İlk 5</h2>${boardHtml(st.top)}
+               <div class="host-actions"><button class="live-btn gold" id="next">${st.q_index + 1 >= st.total ? "Nəticələr 🏆" : "Növbəti sual ▶"}</button></div>`
+            : `<div class="answered-info">Cavab verən: <b>${st.answered}</b> / ${st.players.length}</div>
+               <div class="host-actions"><button class="live-btn" id="reveal">Cavabı göstər</button></div>`}`;
+        document.getElementById("next")?.addEventListener("click", () => control("next"));
+        document.getElementById("reveal")?.addEventListener("click", () => control("reveal"));
+        tickCountdown();
+        return;
+      }
+
+      // finished
+      const t = st.top;
+      const pod = (p, i) => p ? `<div class="pod p${i + 1}"><div class="nm">${esc(p.name)}</div><div class="block">${i + 1}</div><div class="pt">${p.score} bal</div></div>` : "";
+      app.innerHTML = `
+        <div class="lobby">
+          <h1 style="font-size:clamp(1.6rem,4vw,2.6rem)">🏆 ${esc(st.title)} — nəticələr</h1>
+          <div class="podium">${pod(t[1], 1)}${pod(t[0], 0)}${pod(t[2], 2)}</div>
+          ${boardHtml(t, 50)}
+          <div class="host-actions"><a class="live-btn" href="admin.html#live">Admin panelə qayıt</a></div>
+        </div>`;
+    }
+
+    function tickCountdown() {
+      const el = document.getElementById("cd");
+      if (!el || st.status !== "question") return;
+      const left = Math.max(0, Math.ceil((leftAt - Date.now()) / 1000));
+      el.textContent = left;
+      el.classList.toggle("low", left <= 5);
+    }
+    setInterval(tickCountdown, 250);
+
+    async function poll(force = false) {
+      const { data, error } = await sb.rpc("live_host_state", { p_session: sid });
+      if (error) { app.innerHTML = `<div class="lobby"><p>${esc(translateError(error))}</p></div>`; return; }
+      st = data;
+      if (st.status === "question") leftAt = Date.now() + (st.left_ms || 0);
+      render(force);
+      // Vaxt bitəndə və ya hamı cavab verəndə cavabı avtomatik göstər
+      if (st.status === "question" && autoRevealed !== st.q_index &&
+          ((st.left_ms ?? 1) <= 0 || (st.players.length > 0 && st.answered >= st.players.length))) {
+        autoRevealed = st.q_index;
+        control("reveal");
+      }
+    }
+
+    async function start() {
+      if (!configured) return;
+      const me = await getMyProfile().catch(() => null);
+      if (!me || me.role !== "admin") { location.href = "login.html"; return; }
+      if (!sid) { app.innerHTML = '<div class="lobby"><p>Oyun seçilməyib.</p></div>'; return; }
+      await poll(true);
+      setInterval(() => { if (st?.status !== "finished") poll(); }, 1000);
+    }
+    start();
+  </script>
+</body>
+</html>

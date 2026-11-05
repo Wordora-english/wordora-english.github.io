@@ -19,8 +19,9 @@
 2. ✅ Materiallar: su nişanlı baxış və su nişanlı yükləmə, kim baxıb/yükləyib
 3. ✅ Qoruma: pozuntu aşkarlama, 2 xəbərdarlıq → blok, Telegram bildirişi, tək cihaz, Tor bloku
 4. ✅ Sınaqlar (PDF + onlayn cavab kartı): taymer, avtomatik yadda saxlama və təhvil, serverdə yoxlama, esse, nəticələr, sual analizi, Excel
-4b. Tam onlayn sınaq (suallar saytın özündə)
-5. Əlavələr: günün sözü, reytinq, söz kartları
+5. ✅ Şifrə sıfırlama və 🎮 canlı viktorina (proyektor rejimi)
+6. Tam onlayn sınaq (suallar saytın özündə)
+7. Əlavələr: günün sözü, reytinq, söz kartları
 
 ## Texnologiya (hamısı pulsuz)
 

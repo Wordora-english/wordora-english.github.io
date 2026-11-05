@@ -41,6 +41,7 @@
       <button class="tab" data-tab="approved">Şagirdlər</button>
       <button class="tab" data-tab="blocked">Bloklanan / rədd</button>
       <button class="tab" data-tab="tests">Sınaqlar</button>
+      <button class="tab" data-tab="live">🎮 Viktorina</button>
       <button class="tab" data-tab="viol">Pozuntular <span class="badge zero" id="badge-viol">0</span></button>
       <button class="tab" data-tab="mat">Materiallar</button>
       <button class="tab" data-tab="ann">Elanlar</button>
@@ -61,6 +62,36 @@
 
     <section data-panel="blocked" class="hidden">
       <div class="people" id="list-blocked"></div>
+    </section>
+
+    <section data-panel="live" class="hidden">
+      <form class="card" id="live-form" style="margin-bottom:16px">
+        <h2 style="font-size:1.15rem" id="live-form-title">Yeni canlı viktorina</h2>
+        <div class="row2">
+          <div class="field"><label for="live-name">Ad</label><input id="live-name" maxlength="150" placeholder="məs. Present Perfect — isinmə" required></div>
+          <div class="field"><label for="live-time">Hər suala vaxt</label>
+            <select id="live-time"><option value="10">10 saniyə</option><option value="20" selected>20 saniyə</option><option value="30">30 saniyə</option><option value="45">45 saniyə</option><option value="60">60 saniyə</option></select></div>
+        </div>
+        <div class="field">
+          <label for="live-text">Suallar</label>
+          <textarea id="live-text" style="min-height:220px;font-family:ui-monospace,Menlo,Consolas,monospace" placeholder="She ___ to school every day.
+*goes
+go
+going
+
+What is the past of &quot;see&quot;?
+*saw
+seen
+seed"></textarea>
+          <div class="hint">Birinci sətir — sual, altında 2–4 variant. Düzgün variantın əvvəlinə <b>*</b> qoy. Sualları <b>boş sətirlə</b> ayır.</div>
+        </div>
+        <div id="live-msg" class="form-msg hidden"></div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn btn-primary" type="submit">Yadda saxla</button>
+          <button class="btn btn-ghost hidden" type="button" id="live-cancel">Ləğv et</button>
+        </div>
+      </form>
+      <div class="grid" id="live-list"></div>
     </section>
 
     <section data-panel="tests" class="hidden">
@@ -141,6 +172,7 @@
   <script type="module">
     import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, CLASSES, showConfigWarning } from "./assets/js/app.js";
     import { VIOLATION_LABELS } from "./assets/js/guard.js";
+    import { parseLive, toLiveText } from "./assets/js/live-common.js";
 
     showConfigWarning();
     const app = document.getElementById("app");
@@ -163,10 +195,12 @@
       } else if (p.status === "approved") {
         actions = `
           ${p.warnings > 0 ? `<button class="btn btn-ghost btn-sm" data-vreset="${p.id}">Xəbərdarlığı sıfırla</button>` : ""}
+          <button class="btn btn-ghost btn-sm" data-pwd="${p.id}">🔑 Şifrə</button>
           <button class="btn btn-ghost btn-sm" data-act="class" data-id="${p.id}">Sinfi dəyiş</button>
           <button class="btn btn-bad btn-sm" data-act="blocked" data-id="${p.id}">🔒 Blokla</button>`;
       } else {
-        actions = `<button class="btn btn-ok btn-sm" data-act="approved" data-id="${p.id}">${p.status === "blocked" ? "🔓 Blokdan çıxar" : "✓ Təsdiqlə"}</button>`;
+        actions = `${p.status === "blocked" ? `<button class="btn btn-ghost btn-sm" data-pwd="${p.id}">🔑 Şifrə</button>` : ""}
+          <button class="btn btn-ok btn-sm" data-act="approved" data-id="${p.id}">${p.status === "blocked" ? "🔓 Blokdan çıxar" : "✓ Təsdiqlə"}</button>`;
       }
       const pill = p.status === "blocked" ? '<span class="pill blocked">Bloklanıb</span>'
                  : p.status === "rejected" ? '<span class="pill rejected">Rədd edilib</span>' : "";
@@ -257,6 +291,101 @@
           <div class="meta">${formatDate(a.created_at)} · ${a.target_class ? esc(classLabel(a.target_class)) : "Bütün siniflər"}</div>
           <div class="body">${esc(a.body)}</div>
         </article>`).join("") : '<div class="card empty">Hələ elan yoxdur.</div>';
+    }
+
+    // ================= Şifrə sıfırlama =================
+    function genPassword() {
+      const L = "abcdefghjkmnpqrstuvwxyz", D = "23456789";
+      const pick = (s) => s[crypto.getRandomValues(new Uint32Array(1))[0] % s.length];
+      return Array.from({ length: 4 }, () => pick(L)).join("") + Array.from({ length: 4 }, () => pick(D)).join("");
+    }
+
+    async function resetPassword(id) {
+      const p = people.find((x) => x.id === id);
+      const pwd = prompt(`${p.full_name} (@${p.username}) üçün yeni şifrə.\nİstəsən dəyiş (ən azı 8 simvol, hərf və rəqəm):`, genPassword());
+      if (pwd === null) return;
+      if (pwd.length < 8 || !/[a-zA-Z]/.test(pwd) || !/\d/.test(pwd)) return toast("Şifrə ən azı 8 simvol, hərf və rəqəm olmalıdır", "err");
+      const { error } = await sb.rpc("admin_set_password", { p_user: id, p_password: pwd });
+      if (error) return toast(translateError(error) + " (07-password-live.sql işə salınıb?)", "err");
+      const box = document.createElement("div");
+      box.className = "wd-modal";
+      box.innerHTML = `<div class="wd-modal-box" style="border-top-color:var(--ok)">
+        <div class="wd-modal-ico">🔑</div><h2>Yeni şifrə hazırdır</h2>
+        <p>${esc(p.full_name)}<br>İstifadəçi adı: <b>${esc(p.username)}</b></p>
+        <div style="font:800 2rem/1.2 ui-monospace,Menlo,monospace;letter-spacing:.08em;margin:.4rem 0 1rem;-webkit-user-select:all;user-select:all">${esc(pwd)}</div>
+        <p class="small muted">Bunu şagirdə ver. Köhnə cihazlardakı girişləri bağlandı.</p>
+        <button class="btn btn-primary btn-block">Bağla</button></div>`;
+      document.body.appendChild(box);
+      box.querySelector("button").onclick = () => box.remove();
+    }
+
+    // ================= Canlı viktorina =================
+    let liveQuizzes = [], liveEditId = null;
+    async function loadLive() {
+      const box = document.getElementById("live-list");
+      const { data, error } = await sb.from("live_quizzes").select("*").order("created_at", { ascending: false });
+      if (error) { box.innerHTML = `<div class="card empty">${esc(translateError(error))}<br><span class="small">07-password-live.sql işə salınıb?</span></div>`; return; }
+      liveQuizzes = data;
+      box.innerHTML = data.length ? data.map((q) => `
+        <article class="card test-card">
+          <div><h3>🎮 ${esc(q.title)}</h3><div class="test-meta"><span>${q.questions.length} sual</span><span>${q.questions[0]?.time || 20} san/sual</span><span>${formatDate(q.created_at)}</span></div></div>
+          <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" data-live="start" data-id="${q.id}">▶ Başlat</button>
+            <button class="btn btn-ghost btn-sm" data-live="edit" data-id="${q.id}">Redaktə</button>
+            <button class="btn btn-bad btn-sm" data-live="delete" data-id="${q.id}">Sil</button>
+          </div>
+        </article>`).join("") : '<div class="card empty">Hələ viktorina yoxdur. Yuxarıda sualları yaz və yadda saxla.</div>';
+    }
+
+    function resetLiveForm() {
+      liveEditId = null;
+      document.getElementById("live-form").reset();
+      document.getElementById("live-form-title").textContent = "Yeni canlı viktorina";
+      document.getElementById("live-cancel").classList.add("hidden");
+      document.getElementById("live-msg").classList.add("hidden");
+    }
+
+    async function saveLive(e) {
+      e.preventDefault();
+      const title = document.getElementById("live-name").value.trim();
+      const time = Number(document.getElementById("live-time").value);
+      const { questions, errors } = parseLive(document.getElementById("live-text").value, time);
+      const msg = document.getElementById("live-msg");
+      if (!title) return toast("Viktorinanın adını yaz", "err");
+      if (!questions.length) { msg.textContent = "Sual yoxdur. Nümunəyə bax."; msg.className = "form-msg err"; return; }
+      if (errors.length) { msg.textContent = errors.join(" · "); msg.className = "form-msg err"; return; }
+      const q = liveEditId
+        ? sb.from("live_quizzes").update({ title, questions }).eq("id", liveEditId)
+        : sb.from("live_quizzes").insert({ title, questions });
+      const { error } = await q;
+      if (error) return toast(translateError(error), "err");
+      toast(`Yadda saxlandı — ${questions.length} sual ✓`, "ok");
+      resetLiveForm();
+      loadLive();
+    }
+
+    async function liveAction(action, id) {
+      const q = liveQuizzes.find((x) => x.id === id);
+      if (!q) return;
+      if (action === "start") {
+        const { data, error } = await sb.rpc("live_start", { p_quiz: id });
+        if (error) return toast(translateError(error), "err");
+        location.href = `live-host.html?s=${data.session_id}`;
+      } else if (action === "edit") {
+        liveEditId = id;
+        document.getElementById("live-name").value = q.title;
+        document.getElementById("live-time").value = String(q.questions[0]?.time || 20);
+        document.getElementById("live-text").value = toLiveText(q.questions);
+        document.getElementById("live-form-title").textContent = "Viktorinanı redaktə et";
+        document.getElementById("live-cancel").classList.remove("hidden");
+        document.getElementById("live-form").scrollIntoView({ behavior: "smooth" });
+      } else if (action === "delete") {
+        if (!confirm(`"${q.title}" silinsin?`)) return;
+        const { error } = await sb.from("live_quizzes").delete().eq("id", id);
+        if (error) return toast(translateError(error), "err");
+        toast("Silindi", "ok");
+        loadLive();
+      }
     }
 
     // ================= Sınaqlar =================
@@ -591,6 +720,7 @@
         if (t.dataset.tab === "mat") loadMaterials();
         if (t.dataset.tab === "viol") { loadViolations(); loadSettings(); }
         if (t.dataset.tab === "tests") loadTests();
+        if (t.dataset.tab === "live") loadLive();
         history.replaceState(null, "", "#" + t.dataset.tab);
       }));
 
@@ -605,6 +735,8 @@
         if (b.hasAttribute("data-viol-refresh")) return loadViolations();
         if (b.hasAttribute("data-tests-refresh")) return loadTests();
         if (b.dataset.test) return testAction(b.dataset.test, b.dataset.id);
+        if (b.dataset.live) return liveAction(b.dataset.live, b.dataset.id);
+        if (b.dataset.pwd) return resetPassword(b.dataset.pwd);
         if (b.dataset.vcancel) return cancelViolation(b.dataset.vcancel);
         if (b.dataset.vreset) return resetWarnings(b.dataset.vreset);
         if (b.dataset.del) {
@@ -615,6 +747,8 @@
         }
       });
 
+      document.getElementById("live-form").addEventListener("submit", saveLive);
+      document.getElementById("live-cancel").addEventListener("click", resetLiveForm);
       document.getElementById("set-max").addEventListener("change", (e) => saveSetting("max_warnings", e.target.value));
       document.getElementById("set-tor").addEventListener("change", (e) => saveSetting("tor_block", e.target.value));
       document.getElementById("viol-filter").addEventListener("change", loadViolations);

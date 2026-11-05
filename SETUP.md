@@ -57,13 +57,16 @@ Bu addımları bir dəfə edirsən. Hər şey pulsuzdur, heç bir yerdə kart is
 
 > Əgər repoda 60 gün heç bir dəyişiklik olmasa, GitHub bu işi dayandırıb e-poçt göndərə bilər. Belə olsa, **Actions** tabında **Enable workflow** düyməsini bas.
 
-## 7. Materiallar, qoruma və sınaqlar (2–4-cü mərhələ)
+## 7. Materiallar, qoruma, sınaqlar və viktorina
 
 Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ardıcıl**, hər birini ayrıca işə sal:
 
 1. `supabase/02-materials.sql`
 2. `supabase/03-security.sql`
 3. `supabase/04-tests.sql`
+4. `supabase/05-fix-test-pdf.sql`
+5. `supabase/06-tor-fix.sql`
+6. `supabase/07-password-live.sql`
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 
@@ -101,4 +104,5 @@ Yeni qeydiyyat, pozuntu və blok olanda telefonuna mesaj gəlir.
 - **Pozuntular** → kim, nə vaxt, nə edib; səhv siqnalı **Ləğv et**; xəbərdarlıq limiti və Tor bloku buradan dəyişir
 - **Avtomatik bloklanan şagird** → **Bloklanan / rədd** → **Blokdan çıxar** (xəbərdarlıqlar sıfırlanır)
 - **Yayılmış PDF tapdın** → faylın hər səhifəsində `WD-XXXXXX` kodu var → Admin panel → **Şagirdlər** → axtarışa kodu yaz
-- **Şagird şifrəsini unutdu** → hələlik: Supabase → **Authentication** → **Users** → həmin istifadəçini sil, şagird yenidən qeydiyyatdan keçsin. Növbəti mərhələlərdə admin paneldə "şifrəni sıfırla" düyməsi olacaq.
+- **Şagird şifrəsini unutdu** → **Şagirdlər** → **🔑 Şifrə** → yeni şifrə avtomatik yaranır (istəsən dəyiş) → ekrandakı şifrəni şagirdə ver
+- **Canlı viktorina** → **🎮 Viktorina** → sualları yaz (birinci sətir sual, altında variantlar, düzgünün əvvəlinə `*`, suallar arasında boş sətir) → **▶ Başlat** → telefonu proyektora qoş → **⛶ Tam ekran** → şagirdlər portalda kodu yazır → **Başla ▶**

@@ -187,6 +187,14 @@
           <p>${esc(classLabel(me.class_name))} · @${esc(me.username)}${me.warnings > 0 ? ` · ⚠️ ${me.warnings} xəbərdarlıq` : ""}</p>
         </section>
 
+        <form class="card live-join" id="live-join">
+          <div><b>🎮 Canlı viktorina</b><div class="muted small">Proyektordakı 6 rəqəmli kodu yaz</div></div>
+          <div class="live-join-row">
+            <input id="live-code" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="000000" aria-label="Viktorina kodu">
+            <button class="btn btn-primary" type="submit">Qoşul</button>
+          </div>
+        </form>
+
         <div class="section-title" id="tests"><h2>Sınaqlar</h2></div>
         <div id="test-list" class="grid"><div class="spinner"></div></div>
 
@@ -197,6 +205,13 @@
         <div id="ann-list" class="grid"><div class="spinner"></div></div>
 
       `;
+      const codeInp = document.getElementById("live-code");
+      codeInp.addEventListener("input", () => { codeInp.value = codeInp.value.replace(/\D/g, "").slice(0, 6); });
+      document.getElementById("live-join").addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (codeInp.value.length !== 6) return toast("Kod 6 rəqəmdir", "err");
+        location.href = `live.html?code=${codeInp.value}`;
+      });
       loadTests();
       loadMaterials();
       loadAnnouncements();

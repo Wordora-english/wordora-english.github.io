@@ -343,3 +343,9 @@ textarea { min-height: 110px; resize: vertical; }
 .pill.live { background: #e7f0ff; color: var(--blue); }
 .pill.done { background: var(--ok-bg); color: var(--ok); }
 .pill.wait { background: var(--warn-bg); color: var(--warn); }
+
+/* ---------- Portal: canlı viktorina girişi ---------- */
+.live-join { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px;
+  background: linear-gradient(120deg, #fff 0%, #f3efff 100%); border-color: #e3dcfb; }
+.live-join-row { display: flex; gap: 8px; flex: 0 1 300px; }
+.live-join-row input { font: 800 1.3rem/1 var(--display); letter-spacing: .25em; text-align: center; padding: .55rem; }

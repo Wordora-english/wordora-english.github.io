@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Canlı viktorina — Wordora</title>
+  <meta name="theme-color" content="#1d1a5e">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <link rel="stylesheet" href="assets/css/live.css">
+</head>
+<body class="live">
+  <div class="live-top">
+    <a class="wordmark" href="portal.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+    <a class="btn btn-ghost btn-sm" href="portal.html">Portal</a>
+  </div>
+  <main id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, toast, translateError } from "./assets/js/app.js";
+    import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
+    import { OPTION_STYLE } from "./assets/js/live-common.js";
+
+    const app = document.getElementById("app");
+    const params = new URLSearchParams(location.search);
+    let sid = params.get("s") || sessionStorage.getItem("wd_live") || null;
+    let me, st = null, lastKey = "", sending = false, leftAt = 0, timer = null;
+
+    const center = (html) => `<div class="pl-center"><div class="pl-card">${html}</div></div>`;
+
+    function joinScreen(prefill = "") {
+      app.innerHTML = center(`
+        <div style="font-size:2.4rem">🎮</div>
+        <h1 style="font-size:1.4rem">Canlı viktorina</h1>
+        <p class="muted small">Proyektordakı 6 rəqəmli kodu yaz</p>
+        <input class="code-input" id="code" inputmode="numeric" maxlength="7" autocomplete="off" placeholder="000000" value="${esc(prefill)}">
+        <button class="btn btn-primary btn-block" id="join" style="margin-top:12px">Qoşul</button>`);
+      const inp = document.getElementById("code");
+      inp.addEventListener("input", () => { inp.value = inp.value.replace(/\D/g, "").slice(0, 6); });
+      inp.focus();
+      const go = async () => {
+        const code = inp.value;
+        if (code.length !== 6) return toast("Kod 6 rəqəmdir", "err");
+        const { data, error } = await sb.rpc("live_join", { p_code: code });
+        if (error) return toast(translateError(error), "err");
+        sid = data.session_id;
+        sessionStorage.setItem("wd_live", sid);
+        history.replaceState(null, "", `live.html?s=${sid}`);
+        startPolling();
+      };
+      document.getElementById("join").onclick = go;
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    }
+
+    async function answer(i) {
+      if (sending) return;
+      sending = true;
+      st.my_choice = i;            // ekranda dərhal göstər
+      lastKey = ""; render();
+      const { data, error } = await sb.rpc("live_answer", { p_session: sid, p_choice: i });
+      sending = false;
+      if (error) toast(translateError(error), "err");
+      else if (!data.accepted) toast("Vaxt bitdi — cavab qəbul olunmadı", "err");
+    }
+
+    function render() {
+      const key = `${st.status}|${st.q_index}|${st.my_choice}|${st.my_points}|${st.score}`;
+      if (key === lastKey) return;
+      lastKey = key;
+
+      if (st.status === "lobby") {
+        app.innerHTML = center(`<div style="font-size:2.6rem">✅</div><h1 style="font-size:1.4rem">Qoşuldun!</h1>
+          <p><b>${esc(me.full_name)}</b></p><p class="muted">Müəllim başlamağı gözləyir…<br>Gözünü proyektordan çəkmə 👀</p>
+          <p class="small muted">Qoşulanlar: ${st.players}</p>`);
+        return;
+      }
+
+      if (st.status === "question" && (st.my_choice === null || st.my_choice === undefined)) {
+        const q = st.question;
+        app.innerHTML = `
+          <div class="pl-status"><span>Sual ${st.q_index + 1}/${st.total}</span><span id="pl-cd"></span></div>
+          <div class="pl-opts" style="${q.options.length <= 2 ? "grid-template-columns:1fr" : ""}">
+            ${q.options.map((o, i) => `<button class="pl-opt" data-i="${i}" style="background:${OPTION_STYLE[i].color}"><span class="sym">${OPTION_STYLE[i].sym}</span><span>${esc(o)}</span></button>`).join("")}
+          </div>`;
+        app.querySelectorAll(".pl-opt").forEach((b) => b.onclick = () => answer(Number(b.dataset.i)));
+        return;
+      }
+
+      if (st.status === "question") {
+        const s = OPTION_STYLE[st.my_choice];
+        app.innerHTML = center(`<div style="font-size:3rem;color:${s.color}">${s.sym}</div><h1 style="font-size:1.4rem">Cavab göndərildi</h1><p class="muted">Digərlərini gözləyirik…</p>`);
+        return;
+      }
+
+      if (st.status === "reveal") {
+        const none = st.my_choice === null || st.my_choice === undefined;
+        app.innerHTML = center((none
+          ? `<div style="font-size:3rem">⏰</div><div class="result-big result-bad">Cavab vermədin</div>`
+          : st.my_correct
+            ? `<div style="font-size:3rem">🎉</div><div class="result-big result-ok">Düzgün!</div><p style="font-size:1.3rem;font-weight:800">+${st.my_points}</p>`
+            : `<div style="font-size:3rem">😕</div><div class="result-big result-bad">Səhv</div><p class="muted">Düzgün cavab proyektordadır</p>`)
+        + `<hr style="border:0;border-top:1px solid var(--line);margin:1rem 0"><p>Balın: <b>${st.score}</b> · Yerin: <b>${st.rank}</b> / ${st.players}</p>`);
+        return;
+      }
+
+      if (st.status === "finished") {
+        sessionStorage.removeItem("wd_live");
+        clearInterval(timer);
+        const medal = st.rank === 1 ? "🥇" : st.rank === 2 ? "🥈" : st.rank === 3 ? "🥉" : "🏁";
+        app.innerHTML = center(`<div style="font-size:3.4rem">${medal}</div><h1 style="font-size:1.5rem">Viktorina bitdi</h1>
+          <p style="font-size:1.2rem">Yekun bal: <b>${st.score}</b></p><p style="font-size:1.2rem">Yerin: <b>${st.rank}</b> / ${st.players}</p>
+          <a class="btn btn-primary btn-block" href="portal.html" style="margin-top:12px">Portala qayıt</a>`);
+      }
+    }
+
+    function tick() {
+      const el = document.getElementById("pl-cd");
+      if (el && st?.status === "question") el.textContent = `⏱ ${Math.max(0, Math.ceil((leftAt - Date.now()) / 1000))}`;
+    }
+    setInterval(tick, 250);
+
+    async function poll() {
+      const { data, error } = await sb.rpc("live_state", { p_session: sid });
+      if (error) {
+        sessionStorage.removeItem("wd_live");
+        clearInterval(timer);
+        toast(translateError(error), "err");
+        return joinScreen();
+      }
+      if (sending && data.status === "question") data.my_choice = st?.my_choice;   // göndərilən cavabı itirmə
+      st = data;
+      if (st.status === "question") leftAt = Date.now() + (st.left_ms || 0);
+      render();
+    }
+
+    function startPolling() {
+      clearInterval(timer);
+      poll();
+      timer = setInterval(() => { if (!document.hidden) poll(); }, 1000);
+    }
+
+    async function start() {
+      if (!configured) return;
+      try { me = await getMyProfile(); } catch (err) { if (isTorError(err)) return torScreen(app); }
+      if (!me) { location.href = "login.html"; return; }
+      if (me.status !== "approved") { location.href = "portal.html"; return; }
+      startGuard({ me, page: "canlı viktorina" });
+      const code = params.get("code");
+      if (code && /^\d{6}$/.test(code)) { sid = null; joinScreen(code); document.getElementById("join").click(); }
+      else if (sid) startPolling();
+      else joinScreen("");
+    }
+    start();
+  </script>
+</body>
+</html>
