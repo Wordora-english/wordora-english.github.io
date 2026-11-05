@@ -6,12 +6,14 @@
   <title>Sınaq redaktoru — Wordora</title>
   <meta name="theme-color" content="#0e1f3d">
   <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
 </head>
 <body>
   <header class="topbar">
@@ -35,6 +37,18 @@
           <label for="pdf">Sınaq faylı (PDF)</label>
           <input id="pdf" type="file" accept="application/pdf,.pdf">
           <div class="hint" id="pdf-current">PDF şagirdə yalnız sınaq gedən müddətdə, su nişanı ilə görünür. Yükləmək olmur.</div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="audio">🎧 Dinləmə faylı (istəyə görə)</label>
+            <input id="audio" type="file" accept="audio/*,.mp3,.m4a,.wav,.ogg">
+            <div class="hint" id="audio-current">MP3, M4A, WAV. Şagird sınaq zamanı dinləyir, faylı yükləyə bilmir.</div>
+          </div>
+          <div class="field">
+            <label for="audio-max">Neçə dəfə dinləmək olar</label>
+            <select id="audio-max"><option value="1">1 dəfə</option><option value="2" selected>2 dəfə</option><option value="3">3 dəfə</option><option value="0">Limitsiz</option></select>
+            <label class="chk hidden" id="audio-del-wrap" style="margin-top:.5rem;width:max-content"><input type="checkbox" id="audio-del"> Dinləməni sil</label>
+          </div>
         </div>
         <div class="row3">
           <div class="field"><label for="duration">Vaxt (dəqiqə)</label><input id="duration" type="number" min="1" max="600" value="45" required></div>
@@ -168,6 +182,8 @@
       document.querySelector(`input[name=rmode][value=${t.results_mode}]`).checked = true;
       $("published").checked = t.is_published;
       $("pdf-current").innerHTML = t.pdf_path ? "✓ PDF yüklənib. Dəyişmək istəsən, yeni fayl seç." : "PDF hələ yüklənməyib.";
+      $("audio-max").value = String(t.audio_max_plays ?? 2);
+      if (t.audio_path) { $("audio-current").innerHTML = "✓ Dinləmə faylı yüklənib. Dəyişmək istəsən, yeni fayl seç."; $("audio-del-wrap").classList.remove("hidden"); }
       const key = k?.answers || {};
       rows = (t.questions || []).map((q) => ({ ...q, key: key[q.n] || "" }));
       $("total").value = totalPoints(rows) || 100;
@@ -220,7 +236,22 @@
             if (!count) await sb.storage.from("tests").remove([old]);
           }
         }
+        let audio_path = current?.audio_path || null;
+        const afile = $("audio").files[0];
+        if (afile) {
+          if (afile.size > 50 * 1048576) throw new Error("Audio fayl 50 MB-dan böyükdür");
+          const ext = (afile.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
+          const apath = `${crypto.randomUUID()}.${ext}`;
+          const upA = await sb.storage.from("tests").upload(apath, afile, { contentType: afile.type || "audio/mpeg" });
+          if (upA.error) throw upA.error;
+          if (audio_path) await sb.storage.from("tests").remove([audio_path]);
+          audio_path = apath;
+        } else if ($("audio-del").checked && audio_path) {
+          await sb.storage.from("tests").remove([audio_path]);
+          audio_path = null;
+        }
         const row = {
+          audio_path, audio_max_plays: Number($("audio-max").value),
           title, description: $("desc").value.trim() || null, pdf_path, questions, duration_min, starts_at, ends_at,
           target_classes: (() => { const c = [...document.querySelectorAll("#classes input:checked")].map((i) => i.value); return c.length ? c : null; })(),
           results_mode: document.querySelector("input[name=rmode]:checked").value,

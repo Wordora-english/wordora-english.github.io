@@ -6,12 +6,14 @@
   <title>Sınaq — Wordora</title>
   <meta name="theme-color" content="#0e1f3d">
   <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
   <link rel="stylesheet" href="assets/css/exam.css">
 </head>
 <body>
@@ -137,12 +139,14 @@
         <div class="exam" id="exam">
           <section class="exam-pdf" id="pdf-pane"><div class="pages" id="pages"><div class="spinner"></div></div></section>
           <aside class="exam-card" id="card-pane">
+            <div id="audio-box"></div>
             <div class="card-head">Cavab kartı <span class="muted small" id="answered-count2"></span></div>
             <div id="qs"></div>
             <button class="btn btn-primary btn-block" id="submit2" style="margin-top:16px">Təhvil ver</button>
           </aside>
         </div>`;
       renderCard();
+      renderAudio();
       app.querySelector(".exam-switch").addEventListener("click", (e) => {
         const b = e.target.closest("button"); if (!b) return;
         app.querySelectorAll(".exam-switch button").forEach((x) => x.classList.toggle("active", x === b));
@@ -166,6 +170,52 @@
         await renderPdf(pane, bytes, { name: me.full_name, code: me.student_code, date: formatDate(new Date().toISOString()) }, { maxWidth: 1000 });
       } catch (err) {
         pane.innerHTML = `<div class="card empty">${esc(translateError(err))}<br><button class="btn btn-ghost btn-sm" onclick="location.reload()">Yenidən yoxla</button></div>`;
+      }
+    }
+
+    // ================= Dinləmə =================
+    let audioEl = null, audioUrl = null, audioPlaying = false;
+    function renderAudio() {
+      const box = $("audio-box");
+      if (!attempt.has_audio) { box.innerHTML = ""; return; }
+      const max = attempt.audio_max || 0, plays = attempt.audio_plays || 0;
+      const left = max ? Math.max(0, max - plays) : null;
+      box.innerHTML = `
+        <div class="audio-card">
+          <div class="audio-top"><b>🎧 Dinləmə</b><span class="muted small">${max ? `${left} dəfə qalıb` : "limitsiz"}</span></div>
+          <button class="btn btn-primary btn-block" id="audio-play" ${audioPlaying || left === 0 ? "disabled" : ""}>
+            ${audioPlaying ? "Səslənir…" : left === 0 ? "Dinləmə limiti bitdi" : plays ? "▶ Yenidən dinlə" : "▶ Dinlə"}</button>
+          <div class="audio-bar"><div id="audio-prog"></div></div>
+          <div class="muted small">Dinləməni dayandırmaq və geri çəkmək olmur — diqqətlə qulaq as.</div>
+        </div>`;
+      $("audio-play")?.addEventListener("click", playAudio);
+    }
+    async function playAudio() {
+      if (audioPlaying) return;
+      const btn = $("audio-play"); btn.disabled = true; btn.textContent = "Yüklənir…";
+      try {
+        const { data, error } = await sb.rpc("test_audio_play", { p_attempt: attempt.attempt_id });
+        if (error) throw error;
+        attempt.audio_plays = data.plays;
+        if (!data.allowed) { toast("Dinləmə limiti bitib", "err"); return renderAudio(); }
+        if (!audioUrl) {
+          const { data: su, error: e2 } = await sb.storage.from("tests").createSignedUrl(data.path, 60);
+          if (e2) throw e2;
+          const res = await fetch(su.signedUrl, { cache: "no-store" });
+          if (!res.ok) throw new Error("Audio açılmadı");
+          audioUrl = URL.createObjectURL(await res.blob());
+        }
+        audioEl = new Audio(audioUrl);
+        audioEl.addEventListener("timeupdate", () => { const p = $("audio-prog"); if (p && audioEl.duration) p.style.width = `${(audioEl.currentTime / audioEl.duration) * 100}%`; });
+        audioEl.addEventListener("ended", () => { audioPlaying = false; renderAudio(); });
+        audioEl.addEventListener("error", () => { audioPlaying = false; toast("Audio oxuna bilmədi", "err"); renderAudio(); });
+        audioPlaying = true;
+        renderAudio();
+        await audioEl.play();
+      } catch (err) {
+        audioPlaying = false;
+        toast(translateError(err), "err");
+        renderAudio();
       }
     }
 

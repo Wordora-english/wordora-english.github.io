@@ -6,20 +6,22 @@
   <title>Nəticələr — Wordora</title>
   <meta name="theme-color" content="#0e1f3d">
   <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
   <style>
     .res-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
     .res-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
     .stats.five { grid-template-columns: repeat(5, 1fr); }
     @media (max-width: 700px) { .stats.five { grid-template-columns: repeat(2, 1fr); } }
-    .rrow { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+    .rrow { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
     .rrow-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .rank { width: 30px; height: 30px; border-radius: 50%; background: #f1eefb; color: var(--indigo); font-weight: 800; display: grid; place-items: center; font-size: .85rem; flex: 0 0 auto; }
+    .rank { width: 30px; height: 30px; border-radius: 50%; background: var(--soft); color: var(--indigo); font-weight: 800; display: grid; place-items: center; font-size: .85rem; flex: 0 0 auto; }
     .rrow .who { flex: 1; min-width: 180px; }
     .rrow .sc { font: 700 1.35rem/1 var(--display); color: var(--indigo); white-space: nowrap; }
     .rrow .sc span { font-size: .85rem; color: var(--muted); font-weight: 500; }
@@ -28,13 +30,13 @@
     .ans-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 5px; margin-top: 10px; }
     .ans { font-size: .8rem; padding: 5px 7px; border-radius: 8px; font-family: ui-monospace, Menlo, Consolas, monospace; }
     .ans.ok { background: var(--ok-bg); } .ans.part { background: var(--warn-bg); } .ans.bad { background: var(--bad-bg); }
-    .essay-box { margin-top: 10px; background: #f6f4fc; border-radius: 10px; padding: 10px 12px; }
+    .essay-box { margin-top: 10px; background: var(--soft); border-radius: 10px; padding: 10px 12px; }
     .essay-box .txt { white-space: pre-wrap; font-size: .92rem; max-height: 320px; overflow: auto; margin: .4rem 0 .6rem; -webkit-user-select: text; user-select: text; }
     .essay-grade { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
     .essay-grade input { width: 110px; }
     .qa { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
-    .qa-item { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: .84rem; }
-    .qa-bar { height: 7px; border-radius: 99px; background: #eee; margin-top: 5px; overflow: hidden; }
+    .qa-item { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: .84rem; }
+    .qa-bar { height: 7px; border-radius: 99px; background: var(--line); margin-top: 5px; overflow: hidden; }
     .qa-bar div { height: 100%; }
   </style>
 </head>
@@ -51,6 +53,7 @@
   <script type="module">
     import { sb, configured, getMyProfile, esc, formatDate, toast, translateError, classLabel } from "./assets/js/app.js";
     import { fmtNum, wordCount } from "./assets/js/tests-common.js";
+    import { downloadXlsx, safeName } from "./assets/js/xlsx-lite.js";
 
     const app = document.getElementById("app");
     const testId = new URLSearchParams(location.search).get("id");
@@ -240,27 +243,26 @@
     function exportCsv() {
       const qs = test.questions || [];
       const done = attempts.filter((a) => a.status !== "in_progress").sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
-      const num = (x) => (x === null || x === undefined ? "" : String(Math.round(Number(x) * 100) / 100).replace(".", ","));
-      const q = (s) => `"${String(s ?? "").replace(/"/g, '""').replace(/\r?\n/g, " ")}"`;
-      const head = ["№", "Ad Soyad", "Sinif", "Kod", "Test balı", "Esse balı", "Yekun bal", `Maksimum`, "Təhvil", "Dəqiqə", "Pozuntu",
+      const n = (x) => (x === null || x === undefined ? "" : Math.round(Number(x) * 100) / 100);
+      const head = ["№", "Ad Soyad", "Sinif", "Kod", "Test balı", "Esse balı", "Yekun bal", "Maksimum", "%", "Təhvil", "Dəqiqə", "Pozuntu",
                     ...qs.map((x) => (x.type === "essay" ? `S${x.n} (esse, söz)` : `S${x.n}`))];
-      const lines = [head.map(q).join(";")];
-      lines.push(["", "DÜZGÜN CAVAB", "", "", "", "", "", "", "", "", "", ...qs.map((x) => (x.type === "essay" ? "" : key[x.n] || ""))].map(q).join(";"));
-      done.forEach((a, i) => {
+      const keyRow = ["", "DÜZGÜN CAVAB", "", "", "", "", "", "", "", "", "", "", ...qs.map((x) => (x.type === "essay" ? "" : key[x.n] || ""))];
+      const rows = done.map((a, i) => {
         const p = a.profiles || {};
         const used = a.submitted_at ? Math.round((new Date(a.submitted_at) - new Date(a.started_at)) / 60000) : "";
-        lines.push([i + 1, p.full_name, classLabel(p.class_name), p.student_code, num(a.auto_score), num(a.essay_score), num(a.score), num(total()),
-          formatDate(a.submitted_at), used, violCount[a.id] || 0,
-          ...qs.map((x) => (x.type === "essay" ? wordCount(a.answers?.[x.n]) : a.answers?.[x.n] || ""))].map(q).join(";"));
+        return [i + 1, p.full_name, classLabel(p.class_name), p.student_code, n(a.auto_score), n(a.essay_score), n(a.score), n(total()),
+          total() ? Math.round((Number(a.score) || 0) / total() * 100) : "", formatDate(a.submitted_at), used, violCount[a.id] || 0,
+          ...qs.map((x) => (x.type === "essay" ? wordCount(a.answers?.[x.n]) : a.answers?.[x.n] || ""))];
       });
-      const csv = "﻿sep=;\n" + lines.join("\n");
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `${test.title.replace(/[^\p{L}\p{N} _-]/gu, "").trim().replace(/\s+/g, "_") || "netice"}_neticeler.csv`;
-      document.body.appendChild(link); link.click(); link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 20000);
+      const analysisRows = qs.filter((x) => x.type !== "essay").map((x) => {
+        const fr = done.map((a) => Number(a.details?.[x.n]?.frac) || 0);
+        return [x.n, key[x.n] || "", fr.length ? Math.round(fr.reduce((s, v) => s + v, 0) / fr.length * 100) : ""];
+      });
+      downloadXlsx(`${safeName(test.title)}_neticeler.xlsx`, [
+        { name: "Nəticələr", widths: [5, 26, 12, 11, 9, 9, 9, 9, 6, 17, 7, 8], rows: [head, keyRow, ...rows] },
+        { name: "Sual analizi", widths: [8, 18, 14], rows: [["Sual", "Düzgün cavab", "Düzgün %"], ...analysisRows] },
+        { name: "Yazmayanlar", widths: [28, 14, 12], rows: [["Ad Soyad", "Sinif", "Kod"], ...notStarted.map((s) => [s.full_name, classLabel(s.class_name), s.student_code])] },
+      ]);
     }
 
     async function start() {

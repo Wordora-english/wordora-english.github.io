@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aylıq hesabat — Wordora</title>
+  <meta name="theme-color" content="#0e1f3d">
+  <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
+  <style>
+    .rep-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+    .rep-head input { width: auto; }
+    .stats.six { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    .summary { white-space: pre-wrap; line-height: 1.6; font-size: .97rem; -webkit-user-select: text; user-select: text; }
+    .print-only { display: none; }
+    @media print {
+      :root { --bg: #fff; }
+      body { background: #fff !important; color: #000; }
+      .topbar, .no-print, .toast-box { display: none !important; }
+      .container { padding: 0; max-width: none; }
+      .card, .stat { box-shadow: none !important; border-color: #ccc !important; break-inside: avoid; }
+      .print-only { display: block; }
+      a { color: #000; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="admin.html">← Admin panel</a></nav>
+    </div>
+  </header>
+
+  <main class="container" id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, formatDate, toast, translateError, classLabel } from "./assets/js/app.js";
+    import { barList } from "./assets/js/charts.js";
+    import { VIOLATION_LABELS } from "./assets/js/guard.js";
+    import { downloadXlsx } from "./assets/js/xlsx-lite.js";
+
+    const app = document.getElementById("app");
+    const MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avqust", "sentyabr", "oktyabr", "noyabr", "dekabr"];
+    const MONTHS_CAP = MONTHS.map((m) => m[0].toUpperCase() + m.slice(1));
+    let month = new Date().toISOString().slice(0, 7);
+    let data = null;
+
+    async function fetchAll(table, cols, filter) {
+      const out = [];
+      for (let from = 0; ; from += 1000) {
+        let q = sb.from(table).select(cols).range(from, from + 999);
+        if (filter) q = filter(q);
+        const { data, error } = await q;
+        if (error) { if (from === 0) return []; break; }
+        out.push(...data);
+        if (data.length < 1000) break;
+      }
+      return out;
+    }
+
+    async function load() {
+      const [y, m] = month.split("-").map(Number);
+      const from = new Date(y, m - 1, 1).toISOString();
+      const to = new Date(y, m, 1).toISOString();
+      const inMonth = (col) => (q) => q.gte(col, from).lt(col, to);
+      const [profiles, tests, attempts, violations, views, sessions, players] = await Promise.all([
+        fetchAll("profiles", "id, full_name, class_name, student_code, role, status, created_at"),
+        fetchAll("tests", "id, title, questions, target_classes"),
+        fetchAll("attempts", "id, test_id, user_id, score, status, submitted_at", inMonth("submitted_at")),
+        fetchAll("violations", "user_id, kind, counted, cancelled, created_at", inMonth("created_at")),
+        fetchAll("material_views", "user_id, kind, viewed_at, material_id", inMonth("viewed_at")),
+        fetchAll("live_sessions", "id, created_at, status, live_quizzes(title)", inMonth("created_at")),
+        fetchAll("live_players", "session_id, user_id, score, joined_at", inMonth("joined_at")),
+      ]);
+      data = { y, m, profiles, tests, attempts: attempts.filter((a) => a.status !== "in_progress"), violations, views, sessions, players };
+      render();
+    }
+
+    function compute() {
+      const { profiles, tests, attempts, violations, views, sessions, players, y, m } = data;
+      const students = profiles.filter((p) => p.role === "student");
+      const byId = Object.fromEntries(students.map((p) => [p.id, p]));
+      const tById = Object.fromEntries(tests.map((t) => [t.id, t]));
+      const tot = (t) => (t?.questions || []).reduce((s, q) => s + (Number(q.points) || 0), 0);
+      const pct = (a) => { const T = tot(tById[a.test_id]); return T ? (Number(a.score) || 0) / T * 100 : null; };
+      const scored = attempts.filter((a) => pct(a) !== null && byId[a.user_id]);
+      const avg = (arr) => (arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : null);
+
+      const perTest = Object.values(scored.reduce((acc, a) => {
+        const t = tById[a.test_id];
+        (acc[a.test_id] ||= { title: t?.title || "", classes: t?.target_classes, ps: [] }).ps.push(pct(a));
+        return acc;
+      }, {})).map((x) => ({ ...x, n: x.ps.length, avg: avg(x.ps), max: Math.max(...x.ps), min: Math.min(...x.ps) }));
+
+      const perClass = Object.entries(scored.reduce((acc, a) => {
+        const c = byId[a.user_id]?.class_name || "?"; (acc[c] ||= []).push(pct(a)); return acc;
+      }, {})).map(([c, ps]) => ({ c, n: ps.length, avg: avg(ps) })).sort((a, b) => b.avg - a.avg);
+
+      const perStudent = Object.entries(scored.reduce((acc, a) => { (acc[a.user_id] ||= []).push(pct(a)); return acc; }, {}))
+        .map(([id, ps]) => ({ p: byId[id], n: ps.length, avg: avg(ps) }))
+        .filter((x) => x.p).sort((a, b) => b.avg - a.avg);
+
+      const activeViol = violations.filter((v) => v.counted && !v.cancelled);
+      const violByUser = activeViol.reduce((acc, v) => { acc[v.user_id] = (acc[v.user_id] || 0) + 1; return acc; }, {});
+      const attention = students.filter((s) => s.status === "approved").map((s) => {
+        const st = perStudent.find((x) => x.p.id === s.id);
+        return { p: s, avg: st?.avg ?? null, viol: violByUser[s.id] || 0 };
+      }).filter((x) => (x.avg !== null && x.avg < 50) || x.viol >= 2);
+
+      const newReg = students.filter((s) => { const d = new Date(s.created_at); return d.getFullYear() === y && d.getMonth() + 1 === m; });
+      const liveIds = new Set(sessions.map((s) => s.id));
+      const livePlayers = players.filter((p) => liveIds.has(p.session_id));
+
+      return {
+        students, active: students.filter((s) => s.status === "approved").length,
+        blocked: students.filter((s) => s.status === "blocked").length,
+        newReg: newReg.length, testsHeld: perTest.length, attemptsN: scored.length,
+        participants: new Set(scored.map((a) => a.user_id)).size,
+        avg: avg(scored.map(pct)), perTest, perClass, perStudent, attention,
+        views: views.filter((v) => v.kind !== "download").length, downloads: views.filter((v) => v.kind === "download").length,
+        materialUsers: new Set(views.map((v) => v.user_id)).size,
+        violN: activeViol.length, violKinds: activeViol.reduce((acc, v) => { acc[v.kind] = (acc[v.kind] || 0) + 1; return acc; }, {}),
+        liveN: sessions.length, livePlayers: new Set(livePlayers.map((p) => p.user_id)).size,
+      };
+    }
+
+    function summaryText(r) {
+      const { y, m } = data;
+      const mon = MONTHS[m - 1];
+      const R = (x) => Math.round(x);
+      const lines = [];
+      lines.push(`${y}-ci il ${mon} ayı ərzində ingilis dili üzrə "Wordora" onlayn platformasında ${r.active} aktiv şagird qeydiyyatda olmuşdur${r.newReg ? ` (bu ay ${r.newReg} yeni qeydiyyat)` : ""}.`);
+      if (r.testsHeld) {
+        lines.push(`Ay ərzində ${r.testsHeld} sınaq keçirilmiş, sınaqlarda ${r.participants} şagird ümumilikdə ${r.attemptsN} dəfə iştirak etmişdir. Orta nəticə ${R(r.avg)}% olmuşdur.`);
+        const best = r.perTest.slice().sort((a, b) => b.avg - a.avg)[0];
+        if (r.perTest.length > 1) lines.push(`Ən yüksək orta nəticə "${best.title}" sınağında (${R(best.avg)}%) qeydə alınmışdır.`);
+        if (r.perClass.length > 1) lines.push(`Siniflər üzrə orta nəticələr: ${r.perClass.map((c) => `${classLabel(c.c)} — ${R(c.avg)}%`).join(", ")}.`);
+        const top = r.perStudent.slice(0, 3).map((x) => `${x.p.full_name} (${classLabel(x.p.class_name)}, ${R(x.avg)}%)`);
+        if (top.length) lines.push(`Ən yüksək nəticə göstərən şagirdlər: ${top.join(", ")}.`);
+      } else lines.push("Bu ay sınaq keçirilməmişdir.");
+      if (r.liveN) lines.push(`Dərslərdə ${r.liveN} canlı viktorina təşkil olunmuş, ${r.livePlayers} şagird iştirak etmişdir.`);
+      if (r.views || r.downloads) lines.push(`Dərs materiallarına ${r.materialUsers} şagird tərəfindən ${r.views} dəfə baxılmış, ${r.downloads} dəfə yüklənmişdir.`);
+      const weak = r.attention.filter((x) => x.avg !== null && x.avg < 50).length;
+      if (weak) lines.push(`${weak} şagirdin orta nəticəsi 50%-dən aşağı olduğu üçün onlarla əlavə iş aparılması planlaşdırılır.`);
+      lines.push(r.violN ? `Onlayn qaydaların pozulması ilə bağlı ${r.violN} hal qeydə alınmış${r.blocked ? `, ${r.blocked} hesab müvəqqəti bloklanmış` : ""}dır.` : "Onlayn qaydaların pozulması halı qeydə alınmamışdır.");
+      return lines.join(" ");
+    }
+
+    function render() {
+      const r = compute();
+      const { y, m } = data;
+      const R = (x) => (x === null || x === undefined ? "—" : Math.round(x) + "%");
+      const cls = (x) => (x >= 75 ? "hi" : x >= 50 ? "mid" : "lo");
+      const text = summaryText(r);
+      app.innerHTML = `
+        <div class="rep-head">
+          <div><h1 style="font-size:1.6rem;margin-bottom:.1rem">📊 Aylıq hesabat — ${MONTHS_CAP[m - 1]} ${y}</h1>
+            <div class="muted small print-only">Wordora · İngilis dili · hazırlanıb: ${formatDate(new Date().toISOString())}</div></div>
+          <div class="no-print" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">
+            <input type="month" id="month" value="${month}">
+            <button class="btn btn-ghost btn-sm" id="print">🖨 Çap et / PDF</button>
+            <button class="btn btn-primary btn-sm" id="xlsx">⬇ Excel</button>
+          </div>
+        </div>
+
+        <div class="stats six">
+          <div class="stat"><div class="n">${r.active}</div><div class="l">Aktiv şagird</div></div>
+          <div class="stat"><div class="n">${r.testsHeld}</div><div class="l">Keçirilən sınaq</div></div>
+          <div class="stat"><div class="n">${r.participants}</div><div class="l">Sınaqda iştirak edən</div></div>
+          <div class="stat"><div class="n">${R(r.avg)}</div><div class="l">Orta nəticə</div></div>
+          <div class="stat"><div class="n">${r.liveN}</div><div class="l">Canlı viktorina</div></div>
+          <div class="stat"><div class="n">${r.views + r.downloads}</div><div class="l">Material istifadəsi</div></div>
+        </div>
+
+        <div class="section-title"><h2>Hesabat üçün hazır mətn</h2><button class="btn btn-ghost btn-sm no-print" id="copy">📋 Kopyala</button></div>
+        <div class="card summary" id="summary">${esc(text)}</div>
+
+        <div class="section-title"><h2>Sınaqlar</h2></div>
+        <div class="card">${r.perTest.length ? `<table class="res-table"><tr><th>Sınaq</th><th>Siniflər</th><th class="r">İştirak</th><th class="r">Orta</th><th class="r">Ən yüksək</th><th class="r">Ən aşağı</th></tr>
+          ${r.perTest.map((t) => `<tr><td>${esc(t.title)}</td><td class="muted">${t.classes?.length ? esc(t.classes.map(classLabel).join(", ")) : "hamı"}</td><td class="r">${t.n}</td>
+            <td class="r"><span class="pct ${cls(t.avg)}">${R(t.avg)}</span></td><td class="r">${R(t.max)}</td><td class="r">${R(t.min)}</td></tr>`).join("")}</table>`
+          : '<div class="empty small">Bu ay sınaq keçirilməyib.</div>'}</div>
+
+        <div class="section-title"><h2>Siniflər üzrə orta nəticə</h2></div>
+        <div class="card">${barList(r.perClass.map((c) => ({ label: `${classLabel(c.c)} (${c.n})`, value: Math.round(c.avg), max: 100 })), { unit: "%" })}</div>
+
+        <div class="section-title"><h2>Ən yaxşı 10 şagird</h2></div>
+        <div class="card">${r.perStudent.length ? `<table class="res-table"><tr><th>#</th><th>Şagird</th><th>Sinif</th><th class="r">Sınaq</th><th class="r">Orta</th></tr>
+          ${r.perStudent.slice(0, 10).map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.p.full_name)}</td><td class="muted">${esc(classLabel(x.p.class_name))}</td><td class="r">${x.n}</td><td class="r"><span class="pct ${cls(x.avg)}">${R(x.avg)}</span></td></tr>`).join("")}</table>`
+          : '<div class="empty small">Məlumat yoxdur.</div>'}</div>
+
+        <div class="section-title"><h2>Diqqət tələb edənlər</h2><span class="muted small">orta nəticə &lt; 50% və ya 2+ pozuntu</span></div>
+        <div class="card">${r.attention.length ? `<table class="res-table"><tr><th>Şagird</th><th>Sinif</th><th class="r">Orta</th><th class="r">Pozuntu</th></tr>
+          ${r.attention.map((x) => `<tr><td><a href="student.html?id=${x.p.id}">${esc(x.p.full_name)}</a></td><td class="muted">${esc(classLabel(x.p.class_name))}</td><td class="r">${x.avg === null ? "—" : `<span class="pct ${cls(x.avg)}">${R(x.avg)}</span>`}</td><td class="r">${x.viol || ""}</td></tr>`).join("")}</table>`
+          : '<div class="empty small">Belə şagird yoxdur 👍</div>'}</div>
+
+        <div class="section-title"><h2>Digər göstəricilər</h2></div>
+        <div class="card"><table class="res-table">
+          <tr><td>Yeni qeydiyyat</td><td class="r">${r.newReg}</td></tr>
+          <tr><td>Material baxışı / yükləmə</td><td class="r">${r.views} / ${r.downloads}</td></tr>
+          <tr><td>Canlı viktorinada iştirak edən şagird</td><td class="r">${r.livePlayers}</td></tr>
+          <tr><td>Qayda pozuntusu</td><td class="r">${r.violN}${r.violN ? ` (${Object.entries(r.violKinds).map(([k, n]) => `${VIOLATION_LABELS[k] || k}: ${n}`).join("; ")})` : ""}</td></tr>
+          <tr><td>Bloklanmış hesab (hazırda)</td><td class="r">${r.blocked}</td></tr>
+        </table></div>`;
+
+      document.getElementById("month").onchange = (e) => { month = e.target.value || month; app.innerHTML = '<div class="spinner"></div>'; load(); };
+      document.getElementById("print").onclick = () => print();
+      document.getElementById("copy").onclick = async () => {
+        try { await navigator.clipboard.writeText(text); toast("Mətn kopyalandı ✓", "ok"); }
+        catch { const sel = getSelection(), rg = document.createRange(); rg.selectNodeContents(document.getElementById("summary")); sel.removeAllRanges(); sel.addRange(rg); toast("Mətni seçdim — Ctrl+C bas", "ok"); }
+      };
+      document.getElementById("xlsx").onclick = () => downloadXlsx(`hesabat_${y}_${String(m).padStart(2, "0")}.xlsx`, [
+        { name: "Ümumi", widths: [40, 16], rows: [["Göstərici", "Dəyər"], ["Aktiv şagird", r.active], ["Yeni qeydiyyat", r.newReg], ["Keçirilən sınaq", r.testsHeld],
+          ["Sınaqda iştirak edən şagird", r.participants], ["Sınaq iştirakı (cəmi)", r.attemptsN], ["Orta nəticə %", r.avg === null ? "" : Math.round(r.avg)],
+          ["Canlı viktorina", r.liveN], ["Viktorina iştirakçısı", r.livePlayers], ["Material baxışı", r.views], ["Material yükləmə", r.downloads],
+          ["Qayda pozuntusu", r.violN], ["Bloklanmış hesab", r.blocked], [], ["Hesabat mətni", text]] },
+        { name: "Sınaqlar", widths: [36, 20, 9, 9, 11, 10], rows: [["Sınaq", "Siniflər", "İştirak", "Orta %", "Ən yüksək %", "Ən aşağı %"],
+          ...r.perTest.map((t) => [t.title, t.classes?.length ? t.classes.map(classLabel).join(", ") : "hamı", t.n, Math.round(t.avg), Math.round(t.max), Math.round(t.min)])] },
+        { name: "Siniflər", widths: [18, 12, 10], rows: [["Sinif", "İştirak", "Orta %"], ...r.perClass.map((c) => [classLabel(c.c), c.n, Math.round(c.avg)])] },
+        { name: "Şagirdlər", widths: [6, 28, 14, 8, 9], rows: [["#", "Şagird", "Sinif", "Sınaq", "Orta %"], ...r.perStudent.map((x, i) => [i + 1, x.p.full_name, classLabel(x.p.class_name), x.n, Math.round(x.avg)])] },
+        { name: "Diqqət", widths: [28, 14, 9, 9], rows: [["Şagird", "Sinif", "Orta %", "Pozuntu"], ...r.attention.map((x) => [x.p.full_name, classLabel(x.p.class_name), x.avg === null ? "" : Math.round(x.avg), x.viol])] },
+      ]);
+    }
+
+    async function start() {
+      if (!configured) return;
+      const me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.role !== "admin") { location.href = "portal.html"; return; }
+      await load();
+    }
+    start().catch((e) => { app.innerHTML = `<div class="card empty">${esc(translateError(e))}</div>`; });
+  </script>
+</body>
+</html>

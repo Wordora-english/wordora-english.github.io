@@ -6,12 +6,14 @@
   <title>Admin panel — Wordora</title>
   <meta name="theme-color" content="#0e1f3d">
   <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
 </head>
 <body>
   <header class="topbar">
@@ -27,8 +29,13 @@
   <main class="container" id="app"><div class="spinner"></div></main>
 
   <template id="tpl-admin">
-    <h1 style="font-size:1.6rem">Admin panel</h1>
-    <p class="muted" id="hello"></p>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+      <div><h1 style="font-size:1.6rem">Admin panel</h1><p class="muted" id="hello"></p></div>
+      <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <a class="btn btn-ghost btn-sm" href="report.html">📊 Aylıq hesabat</a>
+        <button class="btn btn-ghost btn-sm" id="backup-btn">💾 Ehtiyat nüsxə</button>
+      </div>
+    </div>
 
     <div class="stats">
       <div class="stat"><div class="n" id="st-pending">0</div><div class="l">Təsdiq gözləyir</div></div>
@@ -173,6 +180,7 @@ seed"></textarea>
     import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, CLASSES, showConfigWarning } from "./assets/js/app.js";
     import { VIOLATION_LABELS } from "./assets/js/guard.js";
     import { parseLive, toLiveText } from "./assets/js/live-common.js";
+    import { downloadXlsx } from "./assets/js/xlsx-lite.js";
 
     showConfigWarning();
     const app = document.getElementById("app");
@@ -195,11 +203,12 @@ seed"></textarea>
       } else if (p.status === "approved") {
         actions = `
           ${p.warnings > 0 ? `<button class="btn btn-ghost btn-sm" data-vreset="${p.id}">Xəbərdarlığı sıfırla</button>` : ""}
+          <a class="btn btn-ghost btn-sm" href="student.html?id=${p.id}">📈 Profil</a>
           <button class="btn btn-ghost btn-sm" data-pwd="${p.id}">🔑 Şifrə</button>
           <button class="btn btn-ghost btn-sm" data-act="class" data-id="${p.id}">Sinfi dəyiş</button>
           <button class="btn btn-bad btn-sm" data-act="blocked" data-id="${p.id}">🔒 Blokla</button>`;
       } else {
-        actions = `${p.status === "blocked" ? `<button class="btn btn-ghost btn-sm" data-pwd="${p.id}">🔑 Şifrə</button>` : ""}
+        actions = `${p.status === "blocked" ? `<a class="btn btn-ghost btn-sm" href="student.html?id=${p.id}">📈 Profil</a><button class="btn btn-ghost btn-sm" data-pwd="${p.id}">🔑 Şifrə</button>` : ""}
           <button class="btn btn-ok btn-sm" data-act="approved" data-id="${p.id}">${p.status === "blocked" ? "🔓 Blokdan çıxar" : "✓ Təsdiqlə"}</button>`;
       }
       const pill = p.status === "blocked" ? '<span class="pill blocked">Bloklanıb</span>'
@@ -291,6 +300,70 @@ seed"></textarea>
           <div class="meta">${formatDate(a.created_at)} · ${a.target_class ? esc(classLabel(a.target_class)) : "Bütün siniflər"}</div>
           <div class="body">${esc(a.body)}</div>
         </article>`).join("") : '<div class="card empty">Hələ elan yoxdur.</div>';
+    }
+
+    // ================= Ehtiyat nüsxə =================
+    const BACKUP_TABLES = ["profiles", "announcements", "materials", "material_views", "violations", "tests", "test_keys",
+                           "attempts", "live_quizzes", "live_sessions", "live_players", "live_answers"];
+
+    async function fetchAll(table) {
+      const out = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await sb.from(table).select("*").range(from, from + 999);
+        if (error) { if (from === 0) return null; break; }
+        out.push(...data);
+        if (data.length < 1000) break;
+      }
+      return out;
+    }
+
+    function openBackup() {
+      const box = document.createElement("div");
+      box.className = "wd-modal";
+      box.innerHTML = `<div class="wd-modal-box" style="border-top-color:var(--indigo)">
+        <div class="wd-modal-ico">💾</div><h2>Ehtiyat nüsxə</h2>
+        <p>Supabase-in pulsuz planı avtomatik nüsxə saxlamır. Ayda bir dəfə yükləyib kompüterdə və ya Google Drive-da saxla.</p>
+        <div style="display:grid;gap:.5rem">
+          <button class="btn btn-primary btn-block" data-k="xlsx">📊 Excel — şagirdlər, nəticələr, pozuntular</button>
+          <button class="btn btn-ghost btn-block" data-k="json">🗄 Tam nüsxə (JSON) — bütün baza</button>
+          <button class="btn btn-ghost btn-block" data-k="x">Bağla</button>
+        </div>
+        <p class="small muted" style="margin-top:.8rem">PDF və audio fayllar nüsxəyə daxil deyil — onların orijinalları onsuz da səndə var.</p></div>`;
+      document.body.appendChild(box);
+      box.addEventListener("click", async (e) => {
+        const b = e.target.closest("button[data-k]"); if (!b) return;
+        if (b.dataset.k === "x") return box.remove();
+        const label = b.textContent; b.disabled = true; b.textContent = "Hazırlanır…";
+        try {
+          const all = {};
+          for (const t of BACKUP_TABLES) all[t] = await fetchAll(t);
+          const stamp = new Date().toISOString().slice(0, 10);
+          if (b.dataset.k === "json") {
+            const blob = new Blob([JSON.stringify({ app: "Wordora", exported_at: new Date().toISOString(), tables: all }, null, 1)], { type: "application/json" });
+            const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `wordora_nusxe_${stamp}.json`; a.click();
+          } else {
+            const byId = Object.fromEntries((all.profiles || []).map((p) => [p.id, p]));
+            const tById = Object.fromEntries((all.tests || []).map((t) => [t.id, t]));
+            const mById = Object.fromEntries((all.materials || []).map((m) => [m.id, m]));
+            const tot = (t) => (t?.questions || []).reduce((x, q) => x + (Number(q.points) || 0), 0);
+            downloadXlsx(`wordora_nusxe_${stamp}.xlsx`, [
+              { name: "Şagirdlər", widths: [28, 16, 14, 12, 12, 8, 18], rows: [["Ad Soyad", "İstifadəçi adı", "Sinif", "Kod", "Status", "Xəbərdarlıq", "Qeydiyyat"],
+                ...(all.profiles || []).filter((p) => p.role === "student").map((p) => [p.full_name, p.username, classLabel(p.class_name), p.student_code, p.status, p.warnings, formatDate(p.created_at)])] },
+              { name: "Sınaq nəticələri", widths: [34, 28, 14, 8, 10, 6, 12, 18], rows: [["Sınaq", "Şagird", "Sinif", "Bal", "Maksimum", "%", "Status", "Təhvil"],
+                ...(all.attempts || []).map((a) => { const t = tById[a.test_id], p = byId[a.user_id] || {}, T = tot(t);
+                  return [t?.title || "", p.full_name || "", classLabel(p.class_name), Number(a.score) || 0, T, T ? Math.round((Number(a.score) || 0) / T * 100) : "", a.status, formatDate(a.submitted_at)]; })] },
+              { name: "Pozuntular", widths: [28, 14, 36, 24, 10, 18], rows: [["Şagird", "Sinif", "Nə", "Harada", "Ləğv", "Vaxt"],
+                ...(all.violations || []).map((v) => { const p = byId[v.user_id] || {}; return [p.full_name || "", classLabel(p.class_name), VIOLATION_LABELS[v.kind] || v.kind, v.page || "", v.cancelled ? "bəli" : "", formatDate(v.created_at)]; })] },
+              { name: "Materiallar", widths: [28, 34, 12, 18], rows: [["Şagird", "Material", "Nə", "Vaxt"],
+                ...(all.material_views || []).map((v) => [byId[v.user_id]?.full_name || "", mById[v.material_id]?.title || "", v.kind === "download" ? "yükləyib" : "baxıb", formatDate(v.viewed_at)])] },
+              { name: "Elanlar", widths: [30, 60, 14, 18], rows: [["Başlıq", "Mətn", "Kimə", "Tarix"],
+                ...(all.announcements || []).map((a) => [a.title, a.body, a.target_class ? classLabel(a.target_class) : "Hamı", formatDate(a.created_at)])] },
+            ]);
+          }
+          toast("Ehtiyat nüsxə yükləndi ✓", "ok");
+        } catch (err) { toast(translateError(err), "err"); }
+        b.disabled = false; b.textContent = label;
+      });
     }
 
     // ================= Şifrə sıfırlama =================
@@ -419,7 +492,7 @@ seed"></textarea>
             <div style="min-width:0">
               <h3>${esc(t.title)} ${pill} ${t.results_released ? '<span class="pill on">Nəticələr açıq</span>' : ""}</h3>
               <div class="test-meta">
-                <span>${esc(classes)}</span><span>${t.duration_min} dəq</span>
+                <span>${esc(classes)}</span><span>${t.duration_min} dəq</span>${t.audio_path ? "<span>🎧 dinləmə</span>" : ""}
                 <span>${(t.questions || []).length} sual · ${Math.round(total * 100) / 100} bal</span>
                 ${t.starts_at ? `<span>Başlama: ${formatDate(t.starts_at)}</span>` : ""}
                 ${t.ends_at ? `<span>Son: ${formatDate(t.ends_at)}</span>` : ""}
@@ -747,6 +820,7 @@ seed"></textarea>
         }
       });
 
+      document.getElementById("backup-btn").addEventListener("click", openBackup);
       document.getElementById("live-form").addEventListener("submit", saveLive);
       document.getElementById("live-cancel").addEventListener("click", resetLiveForm);
       document.getElementById("set-max").addEventListener("change", (e) => saveSetting("max_warnings", e.target.value));

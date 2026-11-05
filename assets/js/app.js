@@ -17,6 +17,52 @@ export const sb = configured
 
 export const USERNAME_RE = /^[a-z0-9._]{3,20}$/;
 
+// ---------- Mövzu (açıq / qaranlıq) ----------
+const THEME_KEY = "wd_theme";
+function savedTheme() { try { return localStorage.getItem(THEME_KEY); } catch { return null; } }
+export function currentTheme() {
+  return savedTheme() || (matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+}
+export function applyTheme(t = currentTheme()) {
+  document.documentElement.dataset.theme = t;
+  const btn = document.querySelector(".theme-btn");
+  if (btn) { btn.textContent = t === "dark" ? "☀️" : "🌙"; btn.title = t === "dark" ? "Açıq rejim" : "Qaranlıq rejim"; }
+}
+export function toggleTheme() {
+  const t = currentTheme() === "dark" ? "light" : "dark";
+  try { localStorage.setItem(THEME_KEY, t); } catch {}
+  applyTheme(t);
+}
+applyTheme();
+function addThemeButton() {
+  const nav = document.querySelector(".topbar-actions");
+  if (!nav || nav.querySelector(".theme-btn")) return;
+  const b = document.createElement("button");
+  b.className = "btn btn-ghost btn-sm theme-btn";
+  b.type = "button";
+  b.addEventListener("click", toggleTheme);
+  nav.prepend(b);
+  applyTheme();
+}
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", addThemeButton); else addThemeButton();
+
+// ---------- Tətbiq kimi işləmə (PWA) ----------
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+let installEvent = null;
+addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvent = e; dispatchEvent(new Event("wd-installable")); });
+export const isStandalone = () => matchMedia?.("(display-mode: standalone)").matches || navigator.standalone === true;
+export const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+export function canInstall() { return !!installEvent; }
+export async function promptInstall() {
+  if (!installEvent) return false;
+  installEvent.prompt();
+  const r = await installEvent.userChoice.catch(() => null);
+  installEvent = null;
+  return r?.outcome === "accepted";
+}
+
 // ---------- Tor yoxlaması: hər səhifə açılanda ----------
 // Server Tor IP-lərindən gələn hər sorğunu "TOR_BLOCKED" xətası ilə dayandırır.
 // Belə olanda səhifənin bütün məzmunu bağlanır.

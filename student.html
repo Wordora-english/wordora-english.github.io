@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Şagird profili — Wordora</title>
+  <meta name="theme-color" content="#0e1f3d">
+  <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="admin.html#approved">← Şagirdlər</a></nav>
+    </div>
+  </header>
+
+  <main class="container" id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, formatDate, translateError, classLabel } from "./assets/js/app.js";
+    import { percentChart } from "./assets/js/charts.js";
+    import { VIOLATION_LABELS } from "./assets/js/guard.js";
+    import { fmtNum } from "./assets/js/tests-common.js";
+    import { downloadXlsx, safeName } from "./assets/js/xlsx-lite.js";
+
+    const app = document.getElementById("app");
+    const id = new URLSearchParams(location.search).get("id");
+
+    async function start() {
+      if (!configured) return;
+      const me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.role !== "admin") { location.href = "portal.html"; return; }
+
+      const [{ data: p }, { data: att }, { data: viol }, { data: views }, { data: live }] = await Promise.all([
+        sb.from("profiles").select("*").eq("id", id).maybeSingle(),
+        sb.from("attempts").select("id, test_id, started_at, submitted_at, score, status, tests(title, questions)").eq("user_id", id).order("started_at"),
+        sb.from("violations").select("*").eq("user_id", id).order("created_at", { ascending: false }).limit(100),
+        sb.from("material_views").select("kind, viewed_at, materials(title)").eq("user_id", id).order("viewed_at", { ascending: false }).limit(200),
+        sb.from("live_players").select("score, joined_at, live_sessions(created_at, live_quizzes(title))").eq("user_id", id).order("joined_at", { ascending: false }).limit(50),
+      ]);
+      if (!p) { app.innerHTML = '<div class="card empty">Şagird tapılmadı.</div>'; return; }
+
+      const total = (a) => (a.tests?.questions || []).reduce((s, q) => s + (Number(q.points) || 0), 0);
+      const done = (att || []).filter((a) => a.status !== "in_progress" && total(a) > 0);
+      const pct = (a) => (Number(a.score) || 0) / total(a) * 100;
+      const avg = done.length ? done.reduce((s, a) => s + pct(a), 0) / done.length : null;
+      const activeViol = (viol || []).filter((v) => !v.cancelled);
+      const cls = (x) => (x >= 75 ? "hi" : x >= 50 ? "mid" : "lo");
+      const statusPill = p.status === "approved" ? '<span class="pill on">Aktiv</span>' : p.status === "blocked" ? '<span class="pill blocked">Bloklanıb</span>' : `<span class="pill wait">${esc(p.status)}</span>`;
+
+      app.innerHTML = `
+        <div class="card" style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">
+            <div>
+              <h1 style="font-size:1.5rem;margin-bottom:.2rem">${esc(p.full_name)} ${statusPill}</h1>
+              <div class="muted small">@${esc(p.username)} · ${esc(classLabel(p.class_name))} · <span class="code" style="font-family:ui-monospace,monospace">${esc(p.student_code)}</span> · qeydiyyat: ${formatDate(p.created_at)}</div>
+              ${p.status_note ? `<div class="small" style="color:var(--bad);margin-top:.3rem">Qeyd: ${esc(p.status_note)}</div>` : ""}
+            </div>
+            <button class="btn btn-ghost btn-sm" id="xlsx">⬇ Excel</button>
+          </div>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><div class="n">${done.length}</div><div class="l">Sınaq yazıb</div></div>
+          <div class="stat"><div class="n">${avg === null ? "—" : Math.round(avg) + "%"}</div><div class="l">Orta nəticə</div></div>
+          <div class="stat"><div class="n" style="${p.warnings ? "color:var(--bad)" : ""}">${p.warnings}</div><div class="l">Xəbərdarlıq</div></div>
+        </div>
+
+        <div class="section-title"><h2>İnkişaf qrafiki</h2></div>
+        <div class="card">${percentChart(done.map((a) => ({ label: formatDate(a.submitted_at).slice(0, 5), value: pct(a), title: a.tests?.title })))}</div>
+
+        <div class="section-title"><h2>Sınaqlar</h2></div>
+        <div class="card">${(att || []).length ? `<table class="res-table">
+          <tr><th>Sınaq</th><th>Tarix</th><th class="r">Bal</th><th class="r">%</th></tr>
+          ${(att || []).slice().reverse().map((a) => `<tr><td><a href="test-results.html?id=${a.test_id}">${esc(a.tests?.title || "")}</a></td>
+            <td class="muted">${formatDate(a.submitted_at || a.started_at)}</td>
+            <td class="r">${a.status === "in_progress" ? "yazır…" : `${fmtNum(a.score)} / ${fmtNum(total(a))}`}${a.status === "submitted" ? ' <span class="pill wait">esse</span>' : ""}</td>
+            <td class="r">${a.status === "in_progress" || !total(a) ? "" : `<span class="pct ${cls(pct(a))}">${Math.round(pct(a))}%</span>`}</td></tr>`).join("")}
+        </table>` : '<div class="empty small">Hələ sınaq yazmayıb.</div>'}</div>
+
+        <div class="section-title"><h2>Canlı viktorinalar</h2></div>
+        <div class="card">${(live || []).length ? `<table class="res-table"><tr><th>Viktorina</th><th>Tarix</th><th class="r">Bal</th></tr>
+          ${live.map((l) => `<tr><td>🎮 ${esc(l.live_sessions?.live_quizzes?.title || "")}</td><td class="muted">${formatDate(l.joined_at)}</td><td class="r">${l.score}</td></tr>`).join("")}</table>`
+          : '<div class="empty small">Viktorinada iştirak etməyib.</div>'}</div>
+
+        <div class="section-title"><h2>Pozuntular <span class="muted small">(${activeViol.length} aktiv)</span></h2></div>
+        <div class="card">${(viol || []).length ? `<table class="res-table"><tr><th>Nə</th><th>Harada</th><th>Vaxt</th></tr>
+          ${viol.map((v) => `<tr style="${v.cancelled ? "opacity:.45" : ""}"><td>${esc(VIOLATION_LABELS[v.kind] || v.kind)}${v.cancelled ? " (ləğv)" : ""}</td><td class="muted">${esc(v.page || "")}</td><td class="muted">${formatDate(v.created_at)}</td></tr>`).join("")}</table>`
+          : '<div class="empty small">Pozuntu yoxdur 👍</div>'}</div>
+
+        <div class="section-title"><h2>Materiallar <span class="muted small">(son 200)</span></h2></div>
+        <div class="card">${(views || []).length ? `<table class="res-table"><tr><th>Material</th><th>Nə edib</th><th>Vaxt</th></tr>
+          ${views.map((v) => `<tr><td>${esc(v.materials?.title || "silinib")}</td><td>${v.kind === "download" ? "⬇ yükləyib" : "👁 baxıb"}</td><td class="muted">${formatDate(v.viewed_at)}</td></tr>`).join("")}</table>`
+          : '<div class="empty small">Material açmayıb.</div>'}</div>`;
+
+      document.getElementById("xlsx").onclick = () => downloadXlsx(`${safeName(p.full_name)}_profil.xlsx`, [
+        { name: "Sınaqlar", widths: [40, 18, 10, 10, 8], rows: [["Sınaq", "Tarix", "Bal", "Maksimum", "%"],
+          ...done.map((a) => [a.tests?.title || "", formatDate(a.submitted_at), Number(a.score) || 0, total(a), Math.round(pct(a))])] },
+        { name: "Pozuntular", widths: [40, 30, 18, 10], rows: [["Nə", "Harada", "Vaxt", "Ləğv"],
+          ...(viol || []).map((v) => [VIOLATION_LABELS[v.kind] || v.kind, v.page || "", formatDate(v.created_at), v.cancelled ? "bəli" : ""])] },
+        { name: "Materiallar", widths: [40, 12, 18], rows: [["Material", "Nə", "Vaxt"],
+          ...(views || []).map((v) => [v.materials?.title || "", v.kind === "download" ? "yükləyib" : "baxıb", formatDate(v.viewed_at)])] },
+      ]);
+    }
+    start().catch((e) => { app.innerHTML = `<div class="card empty">${esc(translateError(e))}</div>`; });
+  </script>
+</body>
+</html>

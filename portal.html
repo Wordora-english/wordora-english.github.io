@@ -5,12 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Portalım — Wordora</title>
   <meta name="theme-color" content="#3a32b5">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
 </head>
 <body>
   <header class="topbar">
@@ -31,7 +33,8 @@
     import { downloadMaterial } from "./assets/js/materials.js";
     import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
     import { testState, fmtNum, fmtDuration } from "./assets/js/tests-common.js";
-    import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, STAR_SVG, showConfigWarning } from "./assets/js/app.js";
+    import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, STAR_SVG, showConfigWarning, canInstall, promptInstall, isStandalone, isIOS } from "./assets/js/app.js";
+    import { percentChart } from "./assets/js/charts.js";
 
     showConfigWarning();
     const app = document.getElementById("app");
@@ -117,6 +120,59 @@
             <div>${action}</div>
           </article>`;
       }).join("");
+      renderResults(tests, mine || []);
+    }
+
+    // ---------- Nəticələrim ----------
+    function renderResults(tests, mine) {
+      const box = document.getElementById("my-results");
+      const titles = Object.fromEntries(tests.map((t) => [t.id, t.title]));
+      const rows = mine.filter((a) => a.show_score && a.score !== null && a.total > 0)
+        .sort((a, b) => new Date(a.submitted_at) - new Date(b.submitted_at));
+      const waiting = mine.filter((a) => a.status !== "in_progress" && !(a.show_score && a.score !== null)).length;
+      if (!rows.length) {
+        box.innerHTML = `<div class="card empty">${waiting ? `${waiting} sınağın nəticəsi müəllim açanda burada görünəcək.` : "Sınaq yazandan sonra nəticələrin və inkişaf qrafikin burada görünəcək."}</div>`;
+        return;
+      }
+      const pct = (a) => (Number(a.score) / Number(a.total)) * 100;
+      const avg = rows.reduce((s, a) => s + pct(a), 0) / rows.length;
+      const best = Math.max(...rows.map(pct));
+      const last = pct(rows[rows.length - 1]);
+      const prev = rows.length > 1 ? pct(rows[rows.length - 2]) : null;
+      const trend = prev === null ? "" : last > prev ? `<span style="color:var(--ok)">▲ ${Math.round(last - prev)}%</span>` : last < prev ? `<span style="color:var(--bad)">▼ ${Math.round(prev - last)}%</span>` : "＝";
+      const cls = (p) => (p >= 75 ? "hi" : p >= 50 ? "mid" : "lo");
+      box.innerHTML = `
+        <div class="stats">
+          <div class="stat"><div class="n">${Math.round(avg)}%</div><div class="l">Orta nəticə</div></div>
+          <div class="stat"><div class="n">${Math.round(best)}%</div><div class="l">Ən yaxşı</div></div>
+          <div class="stat"><div class="n">${Math.round(last)}%</div><div class="l">Son sınaq ${trend}</div></div>
+        </div>
+        <div class="card">
+          ${percentChart(rows.map((a) => ({ label: formatDate(a.submitted_at).slice(0, 5), value: pct(a), title: titles[a.test_id] || "" })))}
+          <table class="res-table" style="margin-top:12px">
+            <tr><th>Sınaq</th><th>Tarix</th><th class="r">Bal</th><th class="r">%</th></tr>
+            ${rows.slice().reverse().map((a) => `<tr><td><a href="test.html?id=${a.test_id}">${esc(titles[a.test_id] || "Sınaq")}</a></td>
+              <td class="muted">${formatDate(a.submitted_at).split(",")[0]}</td><td class="r">${fmtNum(a.score)} / ${fmtNum(a.total)}</td>
+              <td class="r"><span class="pct ${cls(pct(a))}">${Math.round(pct(a))}%</span></td></tr>`).join("")}
+          </table>
+          ${waiting ? `<p class="muted small" style="margin:.6rem 0 0">Daha ${waiting} sınağın nəticəsi hələ açılmayıb.</p>` : ""}
+        </div>`;
+    }
+
+    // ---------- Tətbiq kimi yükləmə ----------
+    function renderInstall() {
+      const box = document.getElementById("install-box");
+      let dismissed = false; try { dismissed = localStorage.getItem("wd_install_hide") === "1"; } catch {}
+      if (isStandalone() || dismissed) { box.innerHTML = ""; return; }
+      const close = '<button class="btn btn-ghost btn-sm" id="inst-x" aria-label="Bağla">✕</button>';
+      if (canInstall()) {
+        box.innerHTML = `<div class="card install-card"><div><b>📱 Wordora-nı tətbiq kimi yüklə</b><div class="muted small">Telefonunun ana ekranında loqolu ikon olacaq.</div></div>
+          <div style="display:flex;gap:.4rem"><button class="btn btn-primary btn-sm" id="inst-go">Yüklə</button>${close}</div></div>`;
+        document.getElementById("inst-go").onclick = async () => { await promptInstall(); renderInstall(); };
+      } else if (isIOS()) {
+        box.innerHTML = `<div class="card install-card"><div><b>📱 Ana ekrana əlavə et</b><div class="muted small">Safari-də aşağıdakı <b>Paylaş ⬆️</b> düyməsini bas → <b>"Ana ekrana əlavə et"</b>.</div></div>${close}</div>`;
+      } else { box.innerHTML = ""; return; }
+      document.getElementById("inst-x").onclick = () => { try { localStorage.setItem("wd_install_hide", "1"); } catch {} renderInstall(); };
     }
 
     async function loadMaterials() {
@@ -187,6 +243,8 @@
           <p>${esc(classLabel(me.class_name))} · @${esc(me.username)}${me.warnings > 0 ? ` · ⚠️ ${me.warnings} xəbərdarlıq` : ""}</p>
         </section>
 
+        <div id="install-box" style="margin-bottom:12px"></div>
+
         <form class="card live-join" id="live-join">
           <div><b>🎮 Canlı viktorina</b><div class="muted small">Proyektordakı 6 rəqəmli kodu yaz</div></div>
           <div class="live-join-row">
@@ -197,6 +255,9 @@
 
         <div class="section-title" id="tests"><h2>Sınaqlar</h2></div>
         <div id="test-list" class="grid"><div class="spinner"></div></div>
+
+        <div class="section-title" id="results"><h2>Nəticələrim</h2></div>
+        <div id="my-results"><div class="spinner"></div></div>
 
         <div class="section-title" id="materials"><h2>Materiallar</h2></div>
         <div id="mat-list"><div class="spinner"></div></div>
@@ -212,6 +273,8 @@
         if (codeInp.value.length !== 6) return toast("Kod 6 rəqəmdir", "err");
         location.href = `live.html?code=${codeInp.value}`;
       });
+      renderInstall();
+      addEventListener("wd-installable", renderInstall);
       loadTests();
       loadMaterials();
       loadAnnouncements();
