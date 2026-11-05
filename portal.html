@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Portalım — Wordora</title>
+  <meta name="theme-color" content="#3a32b5">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions">
+        <a class="btn btn-ghost btn-sm hidden" id="admin-link" href="admin.html">Admin panel</a>
+        <button class="btn btn-ghost btn-sm" id="logout">Çıxış</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" id="app">
+    <div class="spinner"></div>
+  </main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, STAR_SVG, showConfigWarning } from "./assets/js/app.js";
+
+    showConfigWarning();
+    const app = document.getElementById("app");
+    document.getElementById("logout").addEventListener("click", logout);
+
+    function stateScreen(kind, icon, title, text, note) {
+      app.innerHTML = `
+        <div class="card narrow state ${kind}" style="margin:24px auto">
+          <div class="big-ico">${icon}</div>
+          <h1 style="font-size:1.5rem">${title}</h1>
+          <p class="muted">${text}</p>
+          ${note ? `<p class="small" style="color:var(--bad)">Qeyd: ${esc(note)}</p>` : ""}
+          <div style="display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap;margin-top:1rem">
+            ${kind === "pending" ? '<button class="btn btn-primary" id="refresh">Yenidən yoxla</button>' : ""}
+            <button class="btn btn-ghost" id="logout2">Çıxış</button>
+          </div>
+        </div>`;
+      document.getElementById("logout2").addEventListener("click", logout);
+      document.getElementById("refresh")?.addEventListener("click", () => location.reload());
+    }
+
+    function comingSoon(title, text, iconPath) {
+      return `
+        <div class="card feature">
+          <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPath}</svg></div>
+          <h3>${title} <span class="soon">TEZLİKLƏ</span></h3>
+          <p>${text}</p>
+        </div>`;
+    }
+
+    async function loadAnnouncements() {
+      const box = document.getElementById("ann-list");
+      const { data, error } = await sb
+        .from("announcements")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (error) { box.innerHTML = `<div class="empty">${esc(translateError(error))}</div>`; return; }
+      if (!data.length) { box.innerHTML = '<div class="card empty">Hələlik elan yoxdur.</div>'; return; }
+      box.innerHTML = data.map((a) => `
+        <article class="card ann">
+          <h3>${esc(a.title)}</h3>
+          <div class="meta">${formatDate(a.created_at)}${a.target_class ? " · " + esc(classLabel(a.target_class)) : ""}</div>
+          <div class="body">${esc(a.body)}</div>
+        </article>`).join("");
+    }
+
+    async function start() {
+      if (!configured) { app.innerHTML = '<div class="card empty">Sayt hələ bazaya qoşulmayıb.</div>'; return; }
+      let me;
+      try { me = await getMyProfile(); }
+      catch (err) { app.innerHTML = `<div class="card empty">${esc(translateError(err))}</div>`; return; }
+      if (!me) { location.href = "login.html"; return; }
+
+      if (me.role === "admin") document.getElementById("admin-link").classList.remove("hidden");
+
+      if (me.status === "pending") {
+        return stateScreen("pending", "⏳", "Təsdiq gözlənilir",
+          `Salam, ${esc(me.full_name)}! Qeydiyyatın qəbul edildi. Müəllim hesabını təsdiqləyəndən sonra portalın açılacaq.`);
+      }
+      if (me.status === "rejected") {
+        return stateScreen("rejected", "✕", "Qeydiyyat qəbul edilmədi",
+          "Müəllim bu qeydiyyatı təsdiqləmədi. Səhv olduğunu düşünürsənsə, müəllimə yaz.", me.status_note);
+      }
+      if (me.status === "blocked") {
+        return stateScreen("blocked", "🔒", "Hesabın bloklanıb",
+          "Hesabın müvəqqəti bağlanıb. Açılması üçün müəllimə müraciət et.", me.status_note);
+      }
+
+      const firstName = me.full_name.split(" ")[0];
+      app.innerHTML = `
+        <section class="welcome">
+          <span class="star">${STAR_SVG}</span>
+          <h1>Salam, ${esc(firstName)}!</h1>
+          <p>${esc(classLabel(me.class_name))} · @${esc(me.username)}</p>
+        </section>
+
+        <div class="grid grid-3">
+          ${comingSoon("Sınaqlar", "Müəllimin açdığı vaxtlı sınaqlar burada görünəcək.", '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/>')}
+          ${comingSoon("Materiallar", "Qaydalar kitabı, söz siyahıları və PDF-lər.", '<path d="M2 5h7a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H2zM22 5h-7a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h8z"/>')}
+          ${comingSoon("Nəticələrim", "Sınaq balların və inkişaf qrafikin.", '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>')}
+        </div>
+
+        <div class="section-title"><h2>Elanlar</h2></div>
+        <div id="ann-list" class="grid"><div class="spinner"></div></div>
+      `;
+      loadAnnouncements();
+    }
+
+    // Sessiya bitərsə girişə qaytar
+    sb?.auth.onAuthStateChange((event) => { if (event === "SIGNED_OUT") location.href = "login.html"; });
+    start();
+  </script>
+</body>
+</html>

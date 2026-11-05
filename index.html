@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wordora — More Words • Bigger Dreams</title>
+  <meta name="description" content="Wordora — ingilis dili dərsləri, sınaqlar və materiallar üçün şəxsi platforma.">
+  <meta property="og:title" content="Wordora">
+  <meta property="og:description" content="More Words • Bigger Dreams">
+  <meta property="og:image" content="assets/img/og-image.png">
+  <meta name="theme-color" content="#3a32b5">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/img/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions" id="nav">
+        <a class="btn btn-ghost btn-sm" href="login.html">Daxil ol</a>
+        <a class="btn btn-primary btn-sm" href="register.html">Qeydiyyat</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <img class="hero-logo" src="assets/img/logo-icon.png" alt="Wordora loqosu">
+      <h1 class="hero-title">WORD<span class="ora">ORA</span></h1>
+      <div class="tagline">More Words<span class="dot">•</span>Bigger Dreams</div>
+      <p class="lead">İngilis dili dərslərimizin onlayn evi. Sınaqlar, dərs materialları və nəticələrin — hamısı bir yerdə, şəxsi portalında.</p>
+      <div class="hero-actions" id="hero-actions">
+        <a class="btn btn-primary" href="register.html">Qeydiyyatdan keç</a>
+        <a class="btn btn-ghost" href="login.html">Hesabım var</a>
+      </div>
+    </section>
+
+    <section class="container">
+      <div class="grid grid-3">
+        <div class="card feature">
+          <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></svg></div>
+          <h3>Vaxtlı sınaqlar</h3>
+          <p>Müəllimin hazırladığı sınaqları taymerlə, telefondan və ya kompüterdən həll et.</p>
+        </div>
+        <div class="card feature">
+          <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 5h7a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H2zM22 5h-7a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h8z"/></svg></div>
+          <h3>Dərs materialları</h3>
+          <p>Qrammatika qaydaları, söz siyahıları və sınaq PDF-ləri — yalnız təsdiqlənmiş şagirdlər üçün.</p>
+        </div>
+        <div class="card feature">
+          <div class="ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/></svg></div>
+          <h3>Nəticələrim</h3>
+          <p>Hər sınaqdan sonra balını və inkişafını izlə.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">© <span id="year"></span> Wordora · İngilis dili</footer>
+
+  <script type="module">
+    import { getMyProfile, configured, esc } from "./assets/js/app.js";
+    document.getElementById("year").textContent = new Date().getFullYear();
+    if (configured) {
+      try {
+        const me = await getMyProfile();
+        if (me) {
+          const link = me.role === "admin" ? "admin.html" : "portal.html";
+          const label = me.role === "admin" ? "Admin panel" : "Portalım";
+          document.getElementById("nav").innerHTML =
+            `<a class="btn btn-primary btn-sm" href="${link}">${label}</a>`;
+          document.getElementById("hero-actions").innerHTML =
+            `<a class="btn btn-primary" href="${link}">Salam, ${esc(me.full_name.split(" ")[0])} — ${label} →</a>`;
+        }
+      } catch (e) { /* giriş yoxdursa ana səhifə olduğu kimi qalır */ }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin panel — Wordora</title>
+  <meta name="theme-color" content="#0e1f3d">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions">
+        <a class="btn btn-ghost btn-sm hide-sm" href="portal.html">Şagird görünüşü</a>
+        <button class="btn btn-ghost btn-sm" id="logout">Çıxış</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" id="app"><div class="spinner"></div></main>
+
+  <template id="tpl-admin">
+    <h1 style="font-size:1.6rem">Admin panel</h1>
+    <p class="muted" id="hello"></p>
+
+    <div class="stats">
+      <div class="stat"><div class="n" id="st-pending">0</div><div class="l">Təsdiq gözləyir</div></div>
+      <div class="stat"><div class="n" id="st-approved">0</div><div class="l">Aktiv şagird</div></div>
+      <div class="stat"><div class="n" id="st-blocked">0</div><div class="l">Bloklanıb</div></div>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="pending">Yeni qeydiyyatlar <span class="badge" id="badge-pending">0</span></button>
+      <button class="tab" data-tab="approved">Şagirdlər</button>
+      <button class="tab" data-tab="blocked">Bloklanan / rədd</button>
+      <button class="tab" data-tab="ann">Elanlar</button>
+    </div>
+
+    <section data-panel="pending">
+      <div class="toolbar"><button class="btn btn-ghost btn-sm" data-refresh>↻ Yenilə</button></div>
+      <div class="people" id="list-pending"></div>
+    </section>
+
+    <section data-panel="approved" class="hidden">
+      <div class="toolbar">
+        <input id="search" placeholder="Ad, istifadəçi adı və ya kod ilə axtar…">
+        <select id="class-filter"><option value="">Bütün siniflər</option></select>
+      </div>
+      <div class="people" id="list-approved"></div>
+    </section>
+
+    <section data-panel="blocked" class="hidden">
+      <div class="people" id="list-blocked"></div>
+    </section>
+
+    <section data-panel="ann" class="hidden">
+      <form class="card" id="ann-form" style="margin-bottom:16px">
+        <h2 style="font-size:1.15rem">Yeni elan</h2>
+        <div class="field"><label for="ann-title">Başlıq</label><input id="ann-title" maxlength="150" required></div>
+        <div class="field"><label for="ann-body">Mətn</label><textarea id="ann-body" maxlength="5000" required></textarea></div>
+        <div class="field"><label for="ann-class">Kimə</label><select id="ann-class"><option value="">Bütün siniflər</option></select></div>
+        <button class="btn btn-primary" type="submit">Elanı paylaş</button>
+      </form>
+      <div class="grid" id="ann-list"></div>
+    </section>
+  </template>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, CLASSES, showConfigWarning } from "./assets/js/app.js";
+
+    showConfigWarning();
+    const app = document.getElementById("app");
+    document.getElementById("logout").addEventListener("click", logout);
+
+    let people = [];
+
+    function personCard(p) {
+      const meta = `
+        <span>@${esc(p.username)}</span>
+        <span>${esc(classLabel(p.class_name))}</span>
+        <span class="code" title="Şəxsi gizli kod">${esc(p.student_code)}</span>
+        <span>${formatDate(p.created_at)}</span>`;
+      let actions = "";
+      if (p.status === "pending") {
+        actions = `
+          <button class="btn btn-ok btn-sm" data-act="approved" data-id="${p.id}">✓ Təsdiqlə</button>
+          <button class="btn btn-bad btn-sm" data-act="rejected" data-id="${p.id}">✕ Rədd et</button>`;
+      } else if (p.status === "approved") {
+        actions = `
+          <button class="btn btn-ghost btn-sm" data-act="class" data-id="${p.id}">Sinfi dəyiş</button>
+          <button class="btn btn-bad btn-sm" data-act="blocked" data-id="${p.id}">🔒 Blokla</button>`;
+      } else {
+        actions = `<button class="btn btn-ok btn-sm" data-act="approved" data-id="${p.id}">${p.status === "blocked" ? "🔓 Blokdan çıxar" : "✓ Təsdiqlə"}</button>`;
+      }
+      const pill = p.status === "blocked" ? '<span class="pill blocked">Bloklanıb</span>'
+                 : p.status === "rejected" ? '<span class="pill rejected">Rədd edilib</span>' : "";
+      return `
+        <div class="person">
+          <div class="who">
+            <div class="name">${esc(p.full_name)} ${pill}</div>
+            <div class="meta">${meta}</div>
+            ${p.status_note ? `<div class="note">Qeyd: ${esc(p.status_note)}</div>` : ""}
+          </div>
+          <div class="actions">${actions}</div>
+        </div>`;
+    }
+
+    function render() {
+      const by = (s) => people.filter((p) => p.role === "student" && s.includes(p.status));
+      const pending = by(["pending"]);
+      const approved = by(["approved"]);
+      const blocked = by(["blocked", "rejected"]);
+
+      document.getElementById("st-pending").textContent = pending.length;
+      document.getElementById("st-approved").textContent = approved.length;
+      document.getElementById("st-blocked").textContent = by(["blocked"]).length;
+      const badge = document.getElementById("badge-pending");
+      badge.textContent = pending.length;
+      badge.classList.toggle("zero", pending.length === 0);
+
+      document.getElementById("list-pending").innerHTML = pending.length
+        ? pending.map(personCard).join("")
+        : '<div class="card empty">Yeni qeydiyyat yoxdur.</div>';
+
+      const q = document.getElementById("search").value.trim().toLowerCase();
+      const cls = document.getElementById("class-filter").value;
+      const filtered = approved.filter((p) =>
+        (!cls || p.class_name === cls) &&
+        (!q || p.full_name.toLowerCase().includes(q) || p.username.includes(q) || p.student_code.toLowerCase().includes(q)));
+      document.getElementById("list-approved").innerHTML = filtered.length
+        ? filtered.map(personCard).join("")
+        : '<div class="card empty">Şagird tapılmadı.</div>';
+
+      document.getElementById("list-blocked").innerHTML = blocked.length
+        ? blocked.map(personCard).join("")
+        : '<div class="card empty">Bloklanan və ya rədd edilən yoxdur.</div>';
+    }
+
+    async function loadPeople() {
+      const { data, error } = await sb.from("profiles").select("*").order("created_at", { ascending: false });
+      if (error) { toast(translateError(error), "err"); return; }
+      people = data;
+      render();
+    }
+
+    async function setStatus(id, status) {
+      const p = people.find((x) => x.id === id);
+      let note = null;
+      if (status === "blocked") {
+        note = prompt(`${p.full_name} bloklanır. Səbəb (şagird görəcək, boş saxlaya bilərsən):`, "");
+        if (note === null) return;
+      } else if (status === "rejected") {
+        if (!confirm(`${p.full_name} — qeydiyyat rədd edilsin?`)) return;
+      }
+      const { error } = await sb.rpc("admin_set_status", { p_user: id, p_status: status, p_note: note || null });
+      if (error) { toast(translateError(error), "err"); return; }
+      toast(status === "approved" ? "Təsdiqləndi ✓" : status === "blocked" ? "Bloklandı" : "Rədd edildi", "ok");
+      loadPeople();
+    }
+
+    async function changeClass(id) {
+      const p = people.find((x) => x.id === id);
+      const val = prompt(`${p.full_name} üçün yeni sinif (${CLASSES.join(", ")}):`, p.class_name);
+      if (val === null || !val.trim() || val.trim() === p.class_name) return;
+      const { error } = await sb.rpc("admin_set_class", { p_user: id, p_class: val.trim() });
+      if (error) { toast(translateError(error), "err"); return; }
+      toast("Sinif dəyişdirildi", "ok");
+      loadPeople();
+    }
+
+    async function loadAnnouncements() {
+      const box = document.getElementById("ann-list");
+      const { data, error } = await sb.from("announcements").select("*").order("created_at", { ascending: false });
+      if (error) { box.innerHTML = `<div class="card empty">${esc(translateError(error))}</div>`; return; }
+      box.innerHTML = data.length ? data.map((a) => `
+        <article class="card ann">
+          <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:start">
+            <h3>${esc(a.title)}</h3>
+            <button class="btn btn-bad btn-sm" data-del="${a.id}">Sil</button>
+          </div>
+          <div class="meta">${formatDate(a.created_at)} · ${a.target_class ? esc(classLabel(a.target_class)) : "Bütün siniflər"}</div>
+          <div class="body">${esc(a.body)}</div>
+        </article>`).join("") : '<div class="card empty">Hələ elan yoxdur.</div>';
+    }
+
+    async function start() {
+      if (!configured) { app.innerHTML = '<div class="card empty">Sayt hələ bazaya qoşulmayıb.</div>'; return; }
+      let me;
+      try { me = await getMyProfile(); } catch (err) { app.innerHTML = `<div class="card empty">${esc(translateError(err))}</div>`; return; }
+      if (!me) { location.href = "login.html"; return; }
+      if (me.role !== "admin" || me.status !== "approved") { location.href = "portal.html"; return; }
+
+      app.innerHTML = document.getElementById("tpl-admin").innerHTML;
+      document.getElementById("hello").textContent = `Xoş gəldin, ${me.full_name}.`;
+
+      for (const sel of [document.getElementById("class-filter"), document.getElementById("ann-class")]) {
+        for (const c of CLASSES) sel.insertAdjacentHTML("beforeend", `<option value="${esc(c)}">${esc(classLabel(c))}</option>`);
+      }
+
+      // Tablar
+      app.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
+        app.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
+        app.querySelectorAll("[data-panel]").forEach((s) => s.classList.toggle("hidden", s.dataset.panel !== t.dataset.tab));
+        if (t.dataset.tab === "ann") loadAnnouncements();
+      }));
+
+      // Düymələr
+      app.addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        if (b.dataset.act === "class") return changeClass(b.dataset.id);
+        if (b.dataset.act) return setStatus(b.dataset.id, b.dataset.act);
+        if (b.hasAttribute("data-refresh")) return loadPeople();
+        if (b.dataset.del) {
+          if (!confirm("Elan silinsin?")) return;
+          sb.from("announcements").delete().eq("id", b.dataset.del).then(({ error }) => {
+            if (error) toast(translateError(error), "err"); else { toast("Silindi", "ok"); loadAnnouncements(); }
+          });
+        }
+      });
+
+      document.getElementById("search").addEventListener("input", render);
+      document.getElementById("class-filter").addEventListener("change", render);
+
+      document.getElementById("ann-form").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const title = document.getElementById("ann-title").value.trim();
+        const body = document.getElementById("ann-body").value.trim();
+        const target_class = document.getElementById("ann-class").value || null;
+        if (!title || !body) return toast("Başlıq və mətni yaz", "err");
+        const { error } = await sb.from("announcements").insert({ title, body, target_class });
+        if (error) return toast(translateError(error), "err");
+        e.target.reset();
+        toast("Elan paylaşıldı ✓", "ok");
+        loadAnnouncements();
+      });
+
+      await loadPeople();
+      // Yeni qeydiyyatları hər 30 saniyədən bir yoxla
+      setInterval(() => { if (!document.hidden) loadPeople(); }, 30000);
+    }
+
+    start();
+  </script>
+</body>
+</html>

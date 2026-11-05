@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Qeydiyyat — Wordora</title>
+  <meta name="theme-color" content="#3a32b5">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="login.html">Daxil ol</a></nav>
+    </div>
+  </header>
+
+  <main class="auth-wrap">
+    <div class="card auth-card">
+      <div class="auth-head">
+        <img src="assets/img/logo-icon.png" alt="">
+        <h1>Qeydiyyat</h1>
+        <p class="muted small">Qeydiyyatdan sonra müəllim hesabını təsdiqləyəcək.</p>
+      </div>
+
+      <div id="msg" class="form-msg hidden"></div>
+
+      <form id="form" novalidate>
+        <div class="field">
+          <label for="full_name">Ad və soyad</label>
+          <input id="full_name" autocomplete="name" placeholder="Məs. Aysel Məmmədova" required>
+        </div>
+        <div class="field">
+          <label for="username">İstifadəçi adı</label>
+          <input id="username" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="məs. aysel.m" required>
+          <div class="hint">3–20 simvol: kiçik latın hərfləri, rəqəm, nöqtə və ya alt xətt.</div>
+        </div>
+        <div class="field">
+          <label for="class_name">Sinif</label>
+          <select id="class_name" required><option value="">Seç…</option></select>
+        </div>
+        <div class="field">
+          <label for="password">Şifrə</label>
+          <input id="password" type="password" autocomplete="new-password" required>
+          <div class="hint">Ən azı 8 simvol, hərf və rəqəm.</div>
+        </div>
+        <div class="field">
+          <label for="password2">Şifrəni təkrarla</label>
+          <input id="password2" type="password" autocomplete="new-password" required>
+        </div>
+        <button class="btn btn-primary btn-block" id="submit" type="submit">Qeydiyyatdan keç</button>
+      </form>
+
+      <div class="auth-foot muted">Hesabın var? <a href="login.html">Daxil ol</a></div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { sb, configured, CLASSES, classLabel, USERNAME_RE, usernameToEmail, translateError, showConfigWarning } from "./assets/js/app.js";
+
+    showConfigWarning();
+    const sel = document.getElementById("class_name");
+    for (const c of CLASSES) {
+      const o = document.createElement("option");
+      o.value = c;
+      o.textContent = classLabel(c);
+      sel.appendChild(o);
+    }
+
+    const msg = document.getElementById("msg");
+    const show = (text, kind = "err") => { msg.textContent = text; msg.className = `form-msg ${kind}`; };
+
+    const userInput = document.getElementById("username");
+    userInput.addEventListener("input", () => { userInput.value = userInput.value.toLowerCase().replace(/\s/g, ""); });
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const full_name = document.getElementById("full_name").value.trim().replace(/\s+/g, " ");
+      const username = userInput.value.trim().toLowerCase();
+      const class_name = sel.value;
+      const password = document.getElementById("password").value;
+      const password2 = document.getElementById("password2").value;
+
+      if (!configured) return show("Sayt hələ bazaya qoşulmayıb.");
+      if (full_name.length < 3 || !full_name.includes(" ")) return show("Ad və soyadını tam yaz.");
+      if (!USERNAME_RE.test(username)) return show("İstifadəçi adı düzgün deyil: 3–20 simvol, kiçik latın hərfləri, rəqəm, nöqtə və ya alt xətt.");
+      if (!class_name) return show("Sinfini seç.");
+      if (password.length < 8 || !/[a-zA-Z]/.test(password) || !/\d/.test(password)) return show("Şifrə ən azı 8 simvol olmalı, hərf və rəqəm daxil etməlidir.");
+      if (password !== password2) return show("Şifrələr eyni deyil.");
+
+      const btn = document.getElementById("submit");
+      btn.disabled = true; btn.textContent = "Göndərilir…";
+      try {
+        const { data, error } = await sb.auth.signUp({
+          email: usernameToEmail(username),
+          password,
+          options: { data: { username, full_name, class_name } },
+        });
+        if (error) throw error;
+        // Supabase artıq mövcud ad üçün boş identities qaytarır
+        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          throw new Error("User already registered");
+        }
+        if (!data.session) {
+          show("Qeydiyyat qəbul edildi. İndi daxil ol — hesabın müəllimin təsdiqini gözləyəcək.", "ok");
+          setTimeout(() => (location.href = "login.html"), 2200);
+          return;
+        }
+        location.href = "portal.html";
+      } catch (err) {
+        show(translateError(err));
+        btn.disabled = false; btn.textContent = "Qeydiyyatdan keç";
+      }
+    });
+  </script>
+</body>
+</html>

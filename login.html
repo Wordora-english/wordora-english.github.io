@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daxil ol — Wordora</title>
+  <meta name="theme-color" content="#3a32b5">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="register.html">Qeydiyyat</a></nav>
+    </div>
+  </header>
+
+  <main class="auth-wrap">
+    <div class="card auth-card">
+      <div class="auth-head">
+        <img src="assets/img/logo-icon.png" alt="">
+        <h1>Xoş gəldin!</h1>
+        <p class="muted small">Hesabına daxil ol.</p>
+      </div>
+
+      <div id="msg" class="form-msg hidden"></div>
+
+      <form id="form" novalidate>
+        <div class="field">
+          <label for="username">İstifadəçi adı</label>
+          <input id="username" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+        </div>
+        <div class="field">
+          <label for="password">Şifrə</label>
+          <input id="password" type="password" autocomplete="current-password" required>
+        </div>
+        <button class="btn btn-primary btn-block" id="submit" type="submit">Daxil ol</button>
+      </form>
+
+      <div class="auth-foot muted">Şifrəni unutmusan? Müəllimə yaz.<br>Hesabın yoxdur? <a href="register.html">Qeydiyyatdan keç</a></div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, usernameToEmail, translateError, showConfigWarning } from "./assets/js/app.js";
+
+    showConfigWarning();
+    const msg = document.getElementById("msg");
+    const show = (text, kind = "err") => { msg.textContent = text; msg.className = `form-msg ${kind}`; };
+
+    const goHome = (me) => { location.href = me && me.role === "admin" ? "admin.html" : "portal.html"; };
+
+    // Artıq daxil olubsa, birbaşa portala
+    if (configured) {
+      try { const me = await getMyProfile(); if (me) goHome(me); } catch {}
+    }
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!configured) return show("Sayt hələ bazaya qoşulmayıb.");
+      const username = document.getElementById("username").value.trim().toLowerCase();
+      const password = document.getElementById("password").value;
+      if (!username || !password) return show("İstifadəçi adını və şifrəni yaz.");
+
+      const btn = document.getElementById("submit");
+      btn.disabled = true; btn.textContent = "Yoxlanılır…";
+      try {
+        const { error } = await sb.auth.signInWithPassword({ email: usernameToEmail(username), password });
+        if (error) throw error;
+        goHome(await getMyProfile());
+      } catch (err) {
+        show(translateError(err));
+        btn.disabled = false; btn.textContent = "Daxil ol";
+      }
+    });
+  </script>
+</body>
+</html>
