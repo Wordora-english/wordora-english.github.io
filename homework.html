@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ev tapşırıqları — Wordora</title>
+  <meta name="theme-color" content="#3a32b5">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="portal.html">← Portal</a></nav>
+    </div>
+  </header>
+  <main class="container" style="max-width:760px" id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
+    import { startGuard } from "./assets/js/guard.js";
+
+    const app = document.getElementById("app");
+    const MAX_FILES = 5;
+    let me, hws = [], subs = {}, openId = null;
+    let keep = [], added = [];   // açıq formda: saxlanılan köhnə fayllar və yeni seçilənlər
+
+    const fmtN = (x) => (Number.isInteger(Number(x)) ? String(Number(x)) : Number(x).toFixed(1));
+
+    // Şəkli kiçilt (≈1600px, JPEG) — telefon şəkilləri 5–10 MB olur
+    async function compress(file) {
+      if (file.type === "application/pdf") {
+        if (file.size > 10 * 1024 * 1024) throw new Error("PDF 10 MB-dan böyükdür");
+        return { blob: file, ext: "pdf", name: file.name };
+      }
+      if (!file.type.startsWith("image/")) throw new Error("Yalnız şəkil və ya PDF");
+      const img = await createImageBitmap(file).catch(() => null);
+      if (!img) throw new Error(`"${file.name}" açılmadı (HEIC isə, telefonda JPEG kimi saxla)`);
+      const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.82));
+      return { blob, ext: "jpg", name: file.name, url: URL.createObjectURL(blob) };
+    }
+
+    function statusPill(h, s) {
+      if (s?.grade !== null && s?.grade !== undefined) return `<span class="pill live">Qiymət: ${fmtN(s.grade)} / ${fmtN(h.max_points)}</span>`;
+      if (s) return `<span class="pill">Göndərilib</span>`;
+      if (h.due_at && Date.now() > new Date(h.due_at)) return `<span class="pill done">Vaxtı keçib</span>`;
+      return `<span class="pill off">Gözləyir</span>`;
+    }
+
+    async function signed(paths) {
+      if (!paths.length) return {};
+      const { data } = await sb.storage.from("homework").createSignedUrls(paths, 3600);
+      return Object.fromEntries((data || []).map((f) => [f.path, f.signedUrl]));
+    }
+
+    function fileTiles(list, removable) {
+      return list.map((f, i) => {
+        const isPdf = /\.pdf$/i.test(f.path || f.name || "") || f.ext === "pdf";
+        const inner = isPdf ? `<span class="hw-pdf">📄<br><span class="small">${esc((f.name || "PDF").slice(0, 18))}</span></span>` : `<img src="${f.url}" alt="" class="hw-thumb">`;
+        const link = f.url && !removable ? `<a href="${f.url}" target="_blank" rel="noopener">${inner}</a>` : inner;
+        return `<div class="hw-tile">${link}${removable ? `<button type="button" class="hw-x" data-rm="${removable}:${i}" aria-label="Sil">✕</button>` : ""}</div>`;
+      }).join("");
+    }
+
+    function render() {
+      app.innerHTML = `
+        <h1 style="font-size:1.5rem">📝 Ev tapşırıqları</h1>
+        <p class="muted small">Cavabını yaz və ya dəftərinin şəklini çək. Müəllim qiymət qoyana qədər cavabı dəyişə bilərsən.</p>
+        <div class="grid" id="list">${hws.length ? "" : '<div class="card empty">Hələ ev tapşırığı yoxdur 🎉</div>'}</div>`;
+      const list = document.getElementById("list");
+      for (const h of hws) {
+        const s = subs[h.id];
+        const graded = s && s.grade !== null;
+        const card = document.createElement("article");
+        card.className = "card";
+        card.innerHTML = `
+          <div class="test-card">
+            <div style="min-width:0"><h3>${esc(h.title)}</h3>
+              <div class="test-meta">${h.due_at ? `<span>Son tarix: ${formatDate(h.due_at)}</span>` : "<span>Son tarix yoxdur</span>"}<span>${fmtN(h.max_points)} bal</span></div></div>
+            <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">${statusPill(h, s)}
+              <button class="btn ${openId === h.id ? "btn-ghost" : "btn-primary"} btn-sm" data-open="${h.id}">${openId === h.id ? "Bağla" : graded ? "Bax" : s ? "Bax / dəyiş" : "Aç"}</button></div>
+          </div>
+          ${openId === h.id ? `<div class="hw-body">
+            ${h.description ? `<div class="hw-desc">${esc(h.description)}</div>` : ""}
+            ${graded ? `<div class="hw-grade"><b>Qiymət: ${fmtN(s.grade)} / ${fmtN(h.max_points)}</b>${s.feedback ? `<div style="margin-top:.3rem;white-space:pre-wrap">💬 ${esc(s.feedback)}</div>` : ""}</div>` : ""}
+            ${graded ? `
+              ${s.body ? `<div class="field"><label>Mənim cavabım</label><div class="hw-desc">${esc(s.body)}</div></div>` : ""}
+              <div class="hw-files" id="files-view"></div>
+              <div class="muted small" style="margin-top:.5rem">Göndərilib: ${formatDate(s.submitted_at)}</div>`
+            : `<form id="hw-form">
+              <div class="field"><label for="hw-text">Cavabım</label><textarea id="hw-text" maxlength="8000" style="min-height:140px" placeholder="Cavabını bura yaz…">${esc(s?.body || "")}</textarea></div>
+              ${h.allow_files ? `<div class="field"><label>Şəkil və ya PDF (ən çoxu ${MAX_FILES})</label>
+                <div class="hw-files" id="files-edit"></div>
+                <label class="btn btn-ghost btn-sm" style="width:max-content;margin-top:.5rem">📷 Fayl əlavə et<input type="file" id="hw-file" accept="image/*,application/pdf" multiple hidden></label>
+                <div class="hint">Şəkillər avtomatik kiçildilir.</div></div>` : ""}
+              ${s ? `<div class="muted small" style="margin-bottom:.6rem">Son göndərmə: ${formatDate(s.submitted_at)}</div>` : ""}
+              <button class="btn btn-primary" type="submit" id="hw-send">${s ? "Yenidən göndər" : "Göndər"}</button>
+            </form>`}
+          </div>` : ""}`;
+        list.appendChild(card);
+      }
+      if (openId) mountOpen();
+    }
+
+    async function mountOpen() {
+      const h = hws.find((x) => x.id === openId), s = subs[openId];
+      const view = document.getElementById("files-view");
+      if (view) {
+        const urls = await signed(s.files || []);
+        view.innerHTML = fileTiles((s.files || []).map((p) => ({ path: p, url: urls[p], name: "PDF" })), false);
+        return;
+      }
+      const form = document.getElementById("hw-form");
+      if (!form) return;
+      const edit = document.getElementById("files-edit");
+      const drawFiles = () => { if (edit) edit.innerHTML = fileTiles(keep, "k") + fileTiles(added, "a"); };
+      if (edit) {
+        const urls = await signed(keep.map((f) => f.path));
+        keep.forEach((f) => { f.url = urls[f.path]; });
+        drawFiles();
+        edit.addEventListener("click", (e) => {
+          const b = e.target.closest("[data-rm]"); if (!b) return;
+          const [kind, i] = b.dataset.rm.split(":");
+          (kind === "k" ? keep : added).splice(Number(i), 1);
+          drawFiles();
+        });
+        document.getElementById("hw-file").addEventListener("change", async (e) => {
+          const files = [...e.target.files]; e.target.value = "";
+          for (const f of files) {
+            if (keep.length + added.length >= MAX_FILES) { toast(`Ən çoxu ${MAX_FILES} fayl`, "err"); break; }
+            try { added.push(await compress(f)); } catch (err) { toast(err.message, "err"); }
+          }
+          drawFiles();
+        });
+      }
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const body = document.getElementById("hw-text").value.trim();
+        if (!body && !keep.length && !added.length) return toast("Cavab yaz və ya fayl əlavə et", "err");
+        const btn = document.getElementById("hw-send"); btn.disabled = true; btn.textContent = "Göndərilir…";
+        try {
+          const paths = [];
+          for (const [i, f] of added.entries()) {
+            const path = `${me.id}/${h.id}/${Date.now()}-${i}.${f.ext}`;
+            const { error } = await sb.storage.from("homework").upload(path, f.blob, { contentType: f.ext === "pdf" ? "application/pdf" : "image/jpeg" });
+            if (error) throw error;
+            paths.push(path);
+          }
+          const all = [...keep.map((f) => f.path), ...paths];
+          const { data, error } = await sb.rpc("submit_homework", { p_hw: h.id, p_body: body, p_files: all });
+          if (error) { if (paths.length) await sb.storage.from("homework").remove(paths); throw error; }
+          const removed = (s?.files || []).filter((p) => !all.includes(p));
+          if (removed.length) sb.storage.from("homework").remove(removed);
+          toast(data?.late ? "Göndərildi (son tarixdən sonra)" : "Göndərildi ✓", "ok");
+          await load();
+        } catch (err) {
+          toast(translateError(err), "err");
+          btn.disabled = false; btn.textContent = s ? "Yenidən göndər" : "Göndər";
+        }
+      });
+    }
+
+    async function load() {
+      const [{ data, error }, { data: mine }] = await Promise.all([
+        sb.from("homework").select("*").order("created_at", { ascending: false }),
+        sb.from("hw_submissions").select("*").eq("user_id", me.id),
+      ]);
+      if (error) { app.innerHTML = `<div class="card empty">${esc(translateError(error))}</div>`; return; }
+      hws = data;
+      subs = Object.fromEntries((mine || []).map((x) => [x.homework_id, x]));
+      if (openId) openForm(openId); else render();
+    }
+
+    function openForm(id) {
+      openId = id;
+      keep = (subs[id]?.files || []).map((p) => ({ path: p, name: "PDF" }));
+      added = [];
+      render();
+    }
+
+    app.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-open]"); if (!b) return;
+      if (openId === b.dataset.open) { openId = null; render(); } else openForm(b.dataset.open);
+    });
+
+    async function start() {
+      if (!configured) return;
+      me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.status !== "approved" || me.role === "admin") { location.href = me.role === "admin" ? "admin.html#hw" : "portal.html"; return; }
+      startGuard({ me, page: "tapşırıqlar" });
+      const want = new URLSearchParams(location.search).get("id");
+      if (want) openId = want;
+      await load();
+    }
+    start();
+  </script>
+</body>
+</html>

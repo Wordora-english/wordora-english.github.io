@@ -427,3 +427,18 @@ textarea { min-height: 110px; resize: vertical; }
 a.quick-item:hover, button.quick-item:hover { border-color: var(--violet-soft); }
 .quick-item .qi { font-size: 1.6rem; }
 .quick-item > span:nth-child(2) { flex: 1; display: flex; flex-direction: column; }
+
+/* ---------- Tapşırıq və sual bankı ---------- */
+.hw-files { display: flex; gap: 8px; flex-wrap: wrap; }
+.hw-thumb { width: 96px; height: 96px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+.bank-item { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.bank-item input { width: auto; margin-top: .3rem; accent-color: var(--violet); }
+.bank-body { white-space: pre-wrap; font: .86rem/1.5 ui-monospace, Menlo, Consolas, monospace; margin: .3rem 0 0; max-height: 220px; overflow: auto; }
+.hw-body { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.hw-desc { white-space: pre-wrap; background: var(--soft); border-radius: 12px; padding: .8rem 1rem; margin-bottom: 12px; -webkit-user-select: text; user-select: text; }
+.hw-grade { background: #e8f8ef; color: #135c34; border-radius: 12px; padding: .8rem 1rem; margin-bottom: 12px; }
+:root[data-theme=dark] .hw-grade { background: #12301f; color: #b9f0cf; }
+.hw-tile { position: relative; }
+.hw-pdf { display: grid; place-items: center; text-align: center; width: 96px; height: 96px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); font-size: 1.6rem; line-height: 1.1; color: var(--text); }
+.hw-pdf .small { font-size: .7rem; word-break: break-all; }
+.hw-x { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; border-radius: 50%; border: 0; background: var(--bad, #d64545); color: #fff; font-size: .75rem; cursor: pointer; }

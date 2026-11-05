@@ -20,8 +20,9 @@
 3. ✅ Qoruma: pozuntu aşkarlama, 2 xəbərdarlıq → blok, Telegram bildirişi, tək cihaz, Tor bloku
 4. ✅ Sınaqlar (PDF + onlayn cavab kartı): taymer, avtomatik yadda saxlama və təhvil, serverdə yoxlama, esse, nəticələr, sual analizi, Excel
 5. ✅ Şifrə sıfırlama və 🎮 canlı viktorina (proyektor rejimi)
-6. Tam onlayn sınaq (suallar saytın özündə)
-7. Əlavələr: günün sözü, reytinq, söz kartları
+6. ✅ Dinləmə (audio), günün sözü, söz kartları (səsləndirmə ilə), reytinq, sertifikat, nəticələrim, yeni tədris ili
+7. ✅ Davamiyyət, müəllimə sual, valideyn baxışı, aylıq hesabat, ehtiyat nüsxə, qaranlıq rejim, telefona quraşdırma (PWA)
+8. ✅ Tam onlayn sınaq (suallar və oxu mətnləri saytda, başlamadan görünmür), sual bankı, ev tapşırığı (şəkil/PDF ilə)
 
 ## Texnologiya (hamısı pulsuz)
 

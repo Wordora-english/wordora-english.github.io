@@ -67,13 +67,37 @@
       </section>
 
       <section class="card" style="margin-bottom:16px">
-        <h2 style="font-size:1.15rem">2. Cavab açarı</h2>
-        <div class="field">
+        <h2 style="font-size:1.15rem">2. Suallar və cavab açarı</h2>
+        <div class="tabs" id="mode-tabs">
+          <button type="button" class="tab active" data-mode="pdf">📄 PDF + cavab kartı</button>
+          <button type="button" class="tab" data-mode="online">🧩 Tam onlayn sınaq</button>
+        </div>
+        <div id="online-box" class="hidden">
+          <div class="field">
+            <label for="onlinetext">Suallar (mətnlər də daxil)</label>
+            <textarea id="onlinetext" style="min-height:280px;font-family:ui-monospace,Menlo,Consolas,monospace" placeholder="## Read the text and answer the questions.
+Tom lives in London with his family. He works at a school.
+
+What does Tom do?
+*He is a teacher.
+He is a doctor.
+He is a student.
+
+She ___ (go) to school every day.
+= goes
+
+Write about your favourite hobby.
+= esse 70"></textarea>
+            <div class="hint"><b>## başlıq</b> + alt sətirlər → oxu mətni · sual + variantlar (düzgününə <b>*</b>) → test · <b>= cavab</b> → açıq sual (variantları / ilə ayır) · <b>= esse 70</b> → esse (min. söz) · bloklar arasında boş sətir. Sual bankından da köçürə bilərsən.</div>
+          </div>
+          <button type="button" class="btn btn-primary btn-sm" id="parse-online">Sualları yarat</button>
+        </div>
+        <div class="field" id="pdf-key-box">
           <label for="keytext">Cavabları bura yaz və ya yapışdır</label>
           <textarea id="keytext" style="min-height:90px;font-family:ui-monospace,Menlo,Consolas,monospace" placeholder="1 A, 2 C, 3 C, 4 BBAA, 5 A, ... 10 went/has gone, 26 esse"></textarea>
           <div class="hint">Tək hərf → test · bir neçə hərf (BBAA) → çoxhissəli · söz/cümlə → açıq cavab (variantları / ilə ayır) · <b>esse</b> → esse</div>
         </div>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap" id="pdf-key-btns">
           <button type="button" class="btn btn-primary btn-sm" id="parse">Cavab kartını yarat</button>
           <button type="button" class="btn btn-ghost btn-sm" id="add-row">+ Sual əlavə et</button>
         </div>
@@ -104,6 +128,7 @@
     let testId = new URLSearchParams(location.search).get("id");
     let rows = [];          // {n, type, options, parts, points, min_words, key}
     let current = null;     // mövcud sınaq
+    let mode = "pdf", passages = [];
 
     const $ = (id) => document.getElementById(id);
 
@@ -164,11 +189,23 @@
       return errs;
     }
 
+    function setMode(m) {
+      mode = m;
+      document.querySelectorAll("#mode-tabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.mode === m));
+      $("online-box").classList.toggle("hidden", m !== "online");
+      $("pdf-key-box").classList.toggle("hidden", m === "online");
+      $("pdf-key-btns").classList.toggle("hidden", m === "online");
+      $("pdf-current").innerHTML = m === "online"
+        ? "Onlayn sınaqda PDF lazım deyil (istəsən əlavə material kimi yükləyə bilərsən)."
+        : (current?.pdf_path ? "✓ PDF yüklənib. Dəyişmək istəsən, yeni fayl seç." : "PDF şagirdə yalnız sınaq gedən müddətdə, su nişanı ilə görünür. Yükləmək olmur.");
+    }
+
     async function load() {
       if (!testId) return;
-      const [{ data: t, error }, { data: k }] = await Promise.all([
+      const [{ data: t, error }, { data: k }, { data: on }] = await Promise.all([
         sb.from("tests").select("*").eq("id", testId).maybeSingle(),
         sb.from("test_keys").select("answers").eq("test_id", testId).maybeSingle(),
+        sb.from("test_online").select("*").eq("test_id", testId).maybeSingle(),
       ]);
       if (error || !t) { toast("Sınaq tapılmadı", "err"); testId = null; return; }
       current = t;
@@ -185,8 +222,11 @@
       $("audio-max").value = String(t.audio_max_plays ?? 2);
       if (t.audio_path) { $("audio-current").innerHTML = "✓ Dinləmə faylı yüklənib. Dəyişmək istəsən, yeni fayl seç."; $("audio-del-wrap").classList.remove("hidden"); }
       const key = k?.answers || {};
-      rows = (t.questions || []).map((q) => ({ ...q, key: key[q.n] || "" }));
+      const texts = Object.fromEntries((on?.questions || []).map((x) => [x.n, x]));
+      rows = (t.questions || []).map((q) => ({ ...q, ...(texts[q.n] || {}), key: key[q.n] || "" }));
       $("total").value = totalPoints(rows) || 100;
+      passages = on?.passages || [];
+      if (t.content?.mode === "online") { $("onlinetext").value = on?.source || ""; setMode("online"); }
       renderRows();
     }
 
@@ -204,7 +244,7 @@
       if (!title) return toast("Sınağın adını yaz", "err");
       if (!(duration_min >= 1 && duration_min <= 600)) return toast("Vaxt 1–600 dəqiqə olmalıdır", "err");
       if (starts_at && ends_at && new Date(ends_at) <= new Date(starts_at)) return toast("Son tarix başlamadan sonra olmalıdır", "err");
-      if (!file && !current?.pdf_path) return toast("Sınaq PDF-ini seç", "err");
+      if (mode === "pdf" && !file && !current?.pdf_path) return toast("Sınaq PDF-ini seç", "err");
       if (file && file.size > 50 * 1048576) return toast("PDF 50 MB-dan böyükdür", "err");
       if (!rows.length) return toast("Cavab kartı boşdur", "err");
       const errs = validate();
@@ -218,6 +258,8 @@
         if (r.type === "essay") q.min_words = Number(r.min_words) || 0;
         return q;
       });
+      // Sual mətnləri ayrıca, qorunan cədvələ gedir — şagird sınağa başlamamış görə bilməsin
+      const texts = rows.map((r) => { const o = { n: r.n }; if (r.text) o.text = r.text; if (r.opts) o.opts = r.opts; if (r.pid) o.pid = r.pid; return o; });
       const key = {};
       rows.forEach((r) => { if (r.type !== "essay") key[r.n] = r.type === "open" ? r.key.trim() : r.key.toUpperCase(); });
 
@@ -256,6 +298,7 @@
           target_classes: (() => { const c = [...document.querySelectorAll("#classes input:checked")].map((i) => i.value); return c.length ? c : null; })(),
           results_mode: document.querySelector("input[name=rmode]:checked").value,
           is_published: published,
+          content: mode === "online" ? { mode: "online" } : {},
         };
         if (testId) {
           const { error } = await sb.from("tests").update(row).eq("id", testId);
@@ -268,6 +311,12 @@
         }
         const { error: kErr } = await sb.from("test_keys").upsert({ test_id: testId, answers: key });
         if (kErr) throw kErr;
+        if (mode === "online") {
+          const { error: oErr } = await sb.from("test_online").upsert({ test_id: testId, questions: texts, passages, source: $("onlinetext").value, updated_at: new Date().toISOString() });
+          if (oErr) throw oErr;
+        } else if (current?.content?.mode === "online") {
+          await sb.from("test_online").delete().eq("test_id", testId);
+        }
         if (current) await sb.rpc("admin_regrade", { p_test: testId });   // açar dəyişibsə, təhvil verilənlər yenidən hesablanır
         toast(published ? "Yadda saxlandı və paylaşıldı ✓" : "Yadda saxlandı ✓ (hələ paylaşılmayıb)", "ok");
         await load();
@@ -286,6 +335,26 @@
       app.innerHTML = $("tpl").innerHTML;
 
       $("classes").innerHTML = CLASSES.map((c) => `<label class="chk"><input type="checkbox" value="${esc(c)}"> ${esc(classLabel(c))}</label>`).join("");
+
+      // Rejim: PDF + cavab kartı / tam onlayn
+      window.setMode = setMode;
+      $("mode-tabs").addEventListener("click", (e) => { const b = e.target.closest("[data-mode]"); if (b) setMode(b.dataset.mode); });
+      $("parse-online").addEventListener("click", async () => {
+        const { parseOnline } = await import("./assets/js/online.js");
+        const r = parseOnline($("onlinetext").value);
+        const msg = $("parse-msg");
+        if (!r.questions.length) { msg.textContent = "Sual tapılmadı. Nümunəyə bax."; msg.classList.remove("hidden"); return; }
+        if (r.errors.length) { msg.textContent = r.errors.slice(0, 6).join(" · "); msg.classList.remove("hidden"); return; }
+        msg.classList.add("hidden");
+        passages = r.passages;
+        const oldPts = Object.fromEntries(rows.map((x) => [x.n, x.points]));
+        rows = r.questions.map((q) => ({ ...q, key: r.key[q.n] || "", points: oldPts[q.n] || q.points }));
+        if (!rows.some((x) => x.points)) distributePoints(rows, Number($("total").value) || 100);
+        renderRows();
+        toast(`${rows.length} sual yaradıldı${passages.length ? `, ${passages.length} mətn` : ""}`, "ok");
+      });
+      // Sual bankından gələn mətn
+      try { const fromBank = sessionStorage.getItem("wd_bank_to_test"); if (fromBank && !testId) { sessionStorage.removeItem("wd_bank_to_test"); setMode("online"); $("onlinetext").value = fromBank; } } catch {}
 
       $("parse").addEventListener("click", () => {
         const { questions, key, errors } = parseKey($("keytext").value);

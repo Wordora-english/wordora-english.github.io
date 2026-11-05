@@ -128,10 +128,17 @@
 
     // ---------- Qısa keçidlər: mesajlar, davamiyyət, valideyn kodu ----------
     async function loadQuick() {
-      const [{ data: msgs }, { data: att }] = await Promise.all([
+      const [{ data: msgs }, { data: att }, { data: hw }, { data: hws }] = await Promise.all([
         sb.from("messages").select("sender, read_by_student").eq("user_id", me.id),
         sb.from("attendance").select("status").eq("user_id", me.id).gte("att_date", new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10)),
+        sb.from("homework").select("id, due_at"),
+        sb.from("hw_submissions").select("homework_id, grade").eq("user_id", me.id),
       ]);
+      const done = new Set((hws || []).map((x) => x.homework_id));
+      const todo = (hw || []).filter((h) => !done.has(h.id) && (!h.due_at || new Date(h.due_at) > Date.now())).length;
+      const hb = document.getElementById("hw-badge");
+      hb.textContent = todo; hb.classList.toggle("zero", !todo);
+      document.getElementById("hw-note").textContent = todo ? `${todo} yeni tapşırıq` : (hw || []).length ? "Hamısı göndərilib ✓" : "Hələ tapşırıq yoxdur";
       const unread = (msgs || []).filter((m) => m.sender === "teacher" && !m.read_by_student).length;
       const b = document.getElementById("msg-badge");
       b.textContent = unread; b.classList.toggle("zero", !unread);
@@ -356,6 +363,7 @@
 
         <div class="quick">
           <a class="card quick-item" href="messages.html"><span class="qi">💬</span><span><b>Müəllimə sual</b><span class="muted small" id="msg-note">Sualını yaz</span></span><span class="badge zero" id="msg-badge">0</span></a>
+          <a class="card quick-item" href="homework.html"><span class="qi">📝</span><span><b>Ev tapşırıqları</b><span class="muted small" id="hw-note">—</span></span><span class="badge zero" id="hw-badge">0</span></a>
           <a class="card quick-item" href="words.html"><span class="qi">🔤</span><span><b>Söz kartları</b><span class="muted small">Öyrən və yoxla</span></span></a>
           <button class="card quick-item" id="parent-btn" type="button"><span class="qi">👨‍👩‍👧</span><span><b>Valideyn kodu</b><span class="muted small">Valideynin nəticəni görsün</span></span></button>
           <div class="card quick-item" id="att-card"><span class="qi">✅</span><span><b>Davamiyyət</b><span class="muted small" id="att-note">—</span></span></div>

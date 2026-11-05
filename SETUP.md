@@ -72,6 +72,8 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 7. `supabase/08-audio.sql`
 8. `supabase/09-words-year-rank.sql`
 9. `supabase/10-attendance-messages-parent.sql`
+10. `supabase/11-telegram-multi.sql`
+11. `supabase/12-homework-bank-online.sql`
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 
@@ -92,6 +94,14 @@ Yeni qeydiyyat, pozuntu və blok olanda telefonuna mesaj gəlir.
 7. Telefonuna "✅ Wordora bildirişləri qoşuldu" mesajı gəlməlidir.
 
 > Token Supabase-in gizli anbarında (Vault) saxlanır, saytın kodunda və GitHub-da görünmür.
+
+**Bildiriş başqa birinə də getsin** (o, əvvəlcə bota **Start** basmalıdır, Id-ni @userinfobot-dan alır):
+
+```sql
+select public.add_telegram_chat('ID');      -- əlavə et
+select public.list_telegram_chats();        -- siyahı
+select public.remove_telegram_chat('ID');   -- sil
+```
 
 ---
 
@@ -118,3 +128,6 @@ Yeni qeydiyyat, pozuntu və blok olanda telefonuna mesaj gəlir.
 - **Yayılmış PDF tapdın** → faylın hər səhifəsində `WD-XXXXXX` kodu var → Admin panel → **Şagirdlər** → axtarışa kodu yaz
 - **Şagird şifrəsini unutdu** → **Şagirdlər** → **🔑 Şifrə** → yeni şifrə avtomatik yaranır (istəsən dəyiş) → ekrandakı şifrəni şagirdə ver
 - **Canlı viktorina** → **🎮 Viktorina** → sualları yaz (birinci sətir sual, altında variantlar, düzgünün əvvəlinə `*`, suallar arasında boş sətir) → **▶ Başlat** → telefonu proyektora qoş → **⛶ Tam ekran** → şagirdlər portalda kodu yazır → **Başla ▶**
+- **Tam onlayn sınaq** → **+ Yeni sınaq** → **🧩 Tam onlayn sınaq** → sualları yaz (`## başlıq` + mətn; sual + variantlar, düzgünün əvvəlinə `*`; `= cavab` açıq sual; `= esse 70` esse) → **Sualları yarat** → bal → **Yadda saxla**. Şagird sualları yalnız sınağa başlayanda görür
+- **Sual bankı** → **🗂 Sual bankı** → mövzu yaz, sualları yapışdır → **Banka əlavə et**; sonra lazım olanları seç → **→ Seçilənlərdən sınaq** və ya **→ Seçilənlərdən viktorina**
+- **Ev tapşırığı** → **📝 Tapşırıqlar** → başlıq, tapşırıq, son tarix, bal, siniflər → **Paylaş**; şagird portalda **📝 Ev tapşırıqları**-ndan cavab yazır və ya dəftərin şəklini göndərir → sən **Cavablar** → bal + şərh → **Qiymət ver**. Qiymət qoyulana qədər şagird cavabını dəyişə bilər

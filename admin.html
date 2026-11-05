@@ -49,6 +49,8 @@
       <button class="tab" data-tab="approved">Şagirdlər</button>
       <button class="tab" data-tab="blocked">Bloklanan / məzun</button>
       <button class="tab" data-tab="tests">Sınaqlar</button>
+      <button class="tab" data-tab="hw">📝 Tapşırıqlar <span class="badge zero" id="badge-hw">0</span></button>
+      <button class="tab" data-tab="bank">🗂 Sual bankı</button>
       <button class="tab" data-tab="live">🎮 Viktorina</button>
       <button class="tab" data-tab="words">🔤 Sözlər</button>
       <button class="tab" data-tab="msgs">💬 Mesajlar <span class="badge zero" id="badge-msgs">0</span></button>
@@ -73,6 +75,52 @@
 
     <section data-panel="blocked" class="hidden">
       <div class="people" id="list-blocked"></div>
+    </section>
+
+    <section data-panel="hw" class="hidden">
+      <form class="card" id="hw-form" style="margin-bottom:16px">
+        <h2 style="font-size:1.15rem">Yeni ev tapşırığı</h2>
+        <div class="field"><label for="hw-title">Başlıq</label><input id="hw-title" maxlength="150" placeholder="məs. Unit 3 — Workbook p.24, ex. 1–4" required></div>
+        <div class="field"><label for="hw-desc">Tapşırıq</label><textarea id="hw-desc" maxlength="5000" placeholder="Nə etməli olduqlarını yaz…"></textarea></div>
+        <div class="row3">
+          <div class="field"><label for="hw-due">Son tarix</label><input id="hw-due" type="datetime-local"></div>
+          <div class="field"><label for="hw-max">Maksimum bal</label><input id="hw-max" type="number" min="1" step="0.5" value="10"></div>
+          <div class="field"><label>&nbsp;</label><label class="chk" style="width:max-content"><input type="checkbox" id="hw-files" checked> Şəkil/PDF əlavə etmək olar</label></div>
+        </div>
+        <div class="field"><label>Kimlər üçün</label><div class="chk-row" id="hw-classes"></div><div class="hint">Heç biri seçilməsə — bütün siniflər.</div></div>
+        <button class="btn btn-primary" type="submit">Paylaş</button>
+      </form>
+      <div class="grid" id="hw-list"></div>
+    </section>
+
+    <section data-panel="bank" class="hidden">
+      <form class="card" id="bank-form" style="margin-bottom:16px">
+        <h2 style="font-size:1.15rem">Banka sual əlavə et</h2>
+        <div class="field"><label for="bank-topic">Mövzu</label><input id="bank-topic" list="bank-topics" maxlength="80" placeholder="məs. Present Perfect" required><datalist id="bank-topics"></datalist></div>
+        <div class="field">
+          <label for="bank-text">Suallar (onlayn sınaq formatında)</label>
+          <textarea id="bank-text" style="min-height:200px;font-family:ui-monospace,Menlo,Consolas,monospace" placeholder="She has ___ finished her homework.
+*already
+yet
+ever
+
+## Read the text.
+Tom lives in London...
+
+Where does Tom live?
+*In London
+In Paris"></textarea>
+          <div class="hint">Hər sual (və ya mətn + onun sualları) ayrıca saxlanılır. Sonra seçib <b>onlayn sınağa</b> və ya <b>canlı viktorinaya</b> köçürə bilərsən.</div>
+        </div>
+        <button class="btn btn-primary" type="submit">Banka əlavə et</button>
+      </form>
+      <div class="toolbar">
+        <select id="bank-filter" style="width:auto;min-width:220px"><option value="">Bütün mövzular</option></select>
+        <button class="btn btn-ghost btn-sm" id="bank-to-test">→ Seçilənlərdən sınaq</button>
+        <button class="btn btn-ghost btn-sm" id="bank-to-live">→ Seçilənlərdən viktorina</button>
+        <span class="muted small" id="bank-sel">0 seçilib</span>
+      </div>
+      <div class="grid" id="bank-list"></div>
     </section>
 
     <section data-panel="msgs" class="hidden">
@@ -334,7 +382,8 @@ seed"></textarea>
 
     // ================= Ehtiyat nüsxə =================
     const BACKUP_TABLES = ["profiles", "announcements", "materials", "material_views", "violations", "tests", "test_keys",
-                           "attempts", "live_quizzes", "live_sessions", "live_players", "live_answers"];
+                           "attempts", "live_quizzes", "live_sessions", "live_players", "live_answers", "words", "attendance",
+                           "messages", "test_online", "question_bank", "homework", "hw_submissions"];
 
     async function fetchAll(table) {
       const out = [];
@@ -467,6 +516,167 @@ seed"></textarea>
         if (error) return toast(translateError(error), "err");
         loadMsgs();
       };
+    }
+
+    // ================= Ev tapşırıqları =================
+    let hws = [], hwSubs = [], hwOpen = null;
+    async function loadHw(badgeOnly = false) {
+      const [{ data, error }, { data: subs }] = await Promise.all([
+        sb.from("homework").select("*").order("created_at", { ascending: false }),
+        sb.from("hw_submissions").select("*, profiles(full_name, class_name)").order("submitted_at"),
+      ]);
+      const box = document.getElementById("hw-list");
+      if (error) { if (!badgeOnly) box.innerHTML = `<div class="card empty">${esc(translateError(error))}<br><span class="small">12-homework-bank-online.sql işə salınıb?</span></div>`; return; }
+      hws = data; hwSubs = subs || [];
+      const ungraded = hwSubs.filter((x) => x.grade === null).length;
+      const bd = document.getElementById("badge-hw"); bd.textContent = ungraded; bd.classList.toggle("zero", !ungraded);
+      if (badgeOnly) return;
+      box.innerHTML = hws.length ? hws.map((h) => {
+        const ss = hwSubs.filter((x) => x.homework_id === h.id);
+        const late = h.due_at && Date.now() > new Date(h.due_at);
+        return `<article class="card">
+          <div class="test-card">
+            <div style="min-width:0"><h3>${esc(h.title)} ${!h.is_published ? '<span class="pill off">Gizli</span>' : late ? '<span class="pill done">Vaxtı bitib</span>' : '<span class="pill live">Açıqdır</span>'}</h3>
+              <div class="test-meta"><span>${h.target_classes?.length ? esc(h.target_classes.map(classLabel).join(", ")) : "Bütün siniflər"}</span>${h.due_at ? `<span>Son: ${formatDate(h.due_at)}</span>` : ""}<span>${fmtN(h.max_points)} bal</span></div>
+              <div class="small" style="margin-top:.3rem"><b>${ss.length}</b> göndərib · <b>${ss.filter((x) => x.grade !== null).length}</b> qiymətləndirilib</div></div>
+            <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" data-hw="open" data-id="${h.id}">${hwOpen === h.id ? "Bağla" : "Cavablar"}</button>
+              <button class="btn btn-warn btn-sm" data-hw="pub" data-id="${h.id}">${h.is_published ? "Gizlət" : "Paylaş"}</button>
+              <button class="btn btn-bad btn-sm" data-hw="del" data-id="${h.id}">Sil</button></div>
+          </div>
+          ${hwOpen === h.id ? `<div class="grid" style="margin-top:12px;gap:10px" id="hw-subs">${ss.length ? ss.map((x) => `
+            <div class="person" style="display:block">
+              <div style="display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap"><b>${esc(x.profiles?.full_name || "")}</b>
+                <span class="muted small">${esc(classLabel(x.profiles?.class_name))} · ${formatDate(x.submitted_at)}${h.due_at && new Date(x.submitted_at) > new Date(h.due_at) ? ' · <span style="color:var(--bad)">gecikib</span>' : ""}</span></div>
+              ${x.body ? `<div style="white-space:pre-wrap;margin:.5rem 0;-webkit-user-select:text;user-select:text">${esc(x.body)}</div>` : ""}
+              <div class="hw-files" data-files="${esc(JSON.stringify(x.files || []))}"></div>
+              <div class="essay-grade" style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-top:.5rem">
+                <input type="number" min="0" max="${h.max_points}" step="0.5" style="width:90px" value="${x.grade ?? ""}" id="g-${x.id}" placeholder="bal">
+                <input style="flex:1 1 200px" maxlength="2000" value="${esc(x.feedback || "")}" id="f-${x.id}" placeholder="Şərh (şagird görəcək)">
+                <button class="btn btn-ok btn-sm" data-grade="${x.id}">${x.grade === null ? "Qiymət ver" : "Yenilə"}</button></div>
+            </div>`).join("") : '<div class="empty small">Hələ heç kim göndərməyib.</div>'}</div>` : ""}
+        </article>`;
+      }).join("") : '<div class="card empty">Hələ tapşırıq yoxdur.</div>';
+      if (hwOpen) loadHwFiles();
+    }
+    const fmtN = (x) => (Number.isInteger(Number(x)) ? String(Number(x)) : Number(x).toFixed(1));
+
+    async function loadHwFiles() {
+      for (const el of document.querySelectorAll(".hw-files")) {
+        const files = JSON.parse(el.dataset.files || "[]");
+        if (!files.length) continue;
+        const { data } = await sb.storage.from("homework").createSignedUrls(files, 3600);
+        el.innerHTML = (data || []).map((f) => /\.pdf$/i.test(f.path)
+          ? `<a class="btn btn-ghost btn-sm" href="${f.signedUrl}" target="_blank" rel="noopener">📄 PDF</a>`
+          : `<a href="${f.signedUrl}" target="_blank" rel="noopener"><img src="${f.signedUrl}" alt="" class="hw-thumb"></a>`).join("");
+      }
+    }
+
+    async function saveHw(e) {
+      e.preventDefault();
+      const title = document.getElementById("hw-title").value.trim();
+      if (!title) return toast("Başlıq yaz", "err");
+      const cls = [...document.querySelectorAll("#hw-classes input:checked")].map((i) => i.value);
+      const due = document.getElementById("hw-due").value;
+      const { error } = await sb.from("homework").insert({
+        title, description: document.getElementById("hw-desc").value.trim() || null,
+        due_at: due ? new Date(due).toISOString() : null, max_points: Number(document.getElementById("hw-max").value) || 10,
+        allow_files: document.getElementById("hw-files").checked, target_classes: cls.length ? cls : null,
+      });
+      if (error) return toast(translateError(error), "err");
+      e.target.reset();
+      toast("Tapşırıq paylaşıldı ✓", "ok");
+      loadHw();
+    }
+
+    async function hwAction(action, id) {
+      const h = hws.find((x) => x.id === id);
+      if (action === "open") { hwOpen = hwOpen === id ? null : id; return loadHw(); }
+      if (action === "pub") {
+        const { error } = await sb.from("homework").update({ is_published: !h.is_published }).eq("id", id);
+        if (error) return toast(translateError(error), "err");
+        return loadHw();
+      }
+      if (action === "del") {
+        if (!confirm(`"${h.title}" və bütün cavablar silinsin?`)) return;
+        const files = hwSubs.filter((x) => x.homework_id === id).flatMap((x) => x.files || []);
+        if (files.length) await sb.storage.from("homework").remove(files);
+        const { error } = await sb.from("homework").delete().eq("id", id);
+        if (error) return toast(translateError(error), "err");
+        toast("Silindi", "ok"); loadHw();
+      }
+    }
+
+    async function gradeHw(subId) {
+      const g = document.getElementById(`g-${subId}`).value;
+      const { error } = await sb.rpc("admin_grade_homework", { p_sub: subId, p_grade: g === "" ? null : Number(g), p_feedback: document.getElementById(`f-${subId}`).value });
+      if (error) return toast(translateError(error), "err");
+      toast("Qiymət yazıldı ✓", "ok");
+      loadHw();
+    }
+
+    // ================= Sual bankı =================
+    let bank = [];
+    async function loadBank() {
+      const { data, error } = await sb.from("question_bank").select("*").order("created_at", { ascending: false });
+      if (error) { document.getElementById("bank-list").innerHTML = `<div class="card empty">${esc(translateError(error))}<br><span class="small">12-homework-bank-online.sql işə salınıb?</span></div>`; return; }
+      bank = data;
+      const topics = [...new Set(bank.map((b) => b.topic))].sort();
+      const f = document.getElementById("bank-filter"), cur = f.value;
+      f.innerHTML = `<option value="">Bütün mövzular (${bank.length})</option>` + topics.map((t) => `<option ${t === cur ? "selected" : ""}>${esc(t)}</option>`).join("");
+      document.getElementById("bank-topics").innerHTML = topics.map((t) => `<option value="${esc(t)}">`).join("");
+      renderBank();
+    }
+    function renderBank() {
+      const t = document.getElementById("bank-filter").value;
+      const list = bank.filter((b) => !t || b.topic === t);
+      document.getElementById("bank-list").innerHTML = list.length ? list.map((b) => `
+        <label class="card bank-item">
+          <input type="checkbox" value="${b.id}">
+          <div style="min-width:0;flex:1"><div class="muted small">${esc(b.topic)}</div><pre class="bank-body">${esc(b.body)}</pre></div>
+          <button type="button" class="btn btn-bad btn-sm" data-bdel="${b.id}" aria-label="Sil">✕</button>
+        </label>`).join("") : '<div class="card empty">Bankda sual yoxdur.</div>';
+      updateBankSel();
+    }
+    function updateBankSel() {
+      document.getElementById("bank-sel").textContent = `${document.querySelectorAll("#bank-list input:checked").length} seçilib`;
+    }
+    async function saveBank(e) {
+      e.preventDefault();
+      const { splitBlocks, parseOnline } = await import("./assets/js/online.js");
+      const topic = document.getElementById("bank-topic").value.trim() || "Ümumi";
+      const text = document.getElementById("bank-text").value;
+      const { errors } = parseOnline(text);
+      if (errors.length) return toast(errors[0], "err");
+      const blocks = splitBlocks(text);
+      if (!blocks.length) return toast("Sual yoxdur", "err");
+      const { error } = await sb.from("question_bank").insert(blocks.map((body) => ({ topic, body })));
+      if (error) return toast(translateError(error), "err");
+      document.getElementById("bank-text").value = "";
+      toast(`${blocks.length} sual banka əlavə edildi ✓`, "ok");
+      loadBank();
+    }
+    async function deleteBank(id) {
+      const { error } = await sb.from("question_bank").delete().eq("id", Number(id));
+      if (error) return toast(translateError(error), "err");
+      loadBank();
+    }
+    function bankExport(kind) {
+      const ids = [...document.querySelectorAll("#bank-list input:checked")].map((i) => Number(i.value));
+      if (!ids.length) return toast("Əvvəl sualları seç", "err");
+      const text = bank.filter((b) => ids.includes(b.id)).map((b) => b.body).join("\n\n");
+      if (kind === "test") {
+        try { sessionStorage.setItem("wd_bank_to_test", text); } catch {}
+        location.href = "test-edit.html";
+      } else {
+        // mətnli (##) suallar və açıq/esse suallar viktorinaya uyğun deyil
+        const liveText = bank.filter((b) => ids.includes(b.id) && !b.body.trim().startsWith("##"))
+          .flatMap((b) => b.body.split(/\n\s*\n/)).filter((bl) => !/^\s*=/m.test(bl)).join("\n\n");
+        if (!liveText.trim()) return toast("Viktorinaya yalnız variantlı suallar keçir", "err");
+        app.querySelector('.tab[data-tab="live"]').click();
+        document.getElementById("live-text").value = liveText;
+        toast("Suallar viktorina formuna köçürüldü — ad yaz və yadda saxla", "ok");
+      }
     }
 
     // ================= Sözlər =================
@@ -669,6 +879,10 @@ seed"></textarea>
           .select("id").single();
         if (error) return toast(translateError(error), "err");
         await sb.from("test_keys").insert({ test_id: n.id, answers: k?.answers || {} });
+        if (t.content?.mode === "online") {
+          const { data: on } = await sb.from("test_online").select("questions, passages, source").eq("test_id", id).maybeSingle();
+          if (on) await sb.from("test_online").insert({ test_id: n.id, ...on });
+        }
         toast("Kopyalandı — indi redaktə et", "ok");
         location.href = `test-edit.html?id=${n.id}`;
         return;
@@ -938,6 +1152,8 @@ seed"></textarea>
         if (t.dataset.tab === "tests") loadTests();
         if (t.dataset.tab === "live") loadLive();
         if (t.dataset.tab === "words") loadWords();
+        if (t.dataset.tab === "hw") loadHw();
+        if (t.dataset.tab === "bank") loadBank();
         if (t.dataset.tab === "msgs") { openThread = null; loadMsgs(); }
         history.replaceState(null, "", "#" + t.dataset.tab);
       }));
@@ -956,6 +1172,9 @@ seed"></textarea>
         if (b.dataset.live) return liveAction(b.dataset.live, b.dataset.id);
         if (b.dataset.pwd) return resetPassword(b.dataset.pwd);
         if (b.dataset.wdel) return deleteWord(b.dataset.wdel);
+        if (b.dataset.hw) return hwAction(b.dataset.hw, b.dataset.id);
+        if (b.dataset.grade) return gradeHw(b.dataset.grade);
+        if (b.dataset.bdel) return deleteBank(b.dataset.bdel);
         if (b.dataset.thread) { openThread = b.dataset.thread; return loadMsgs(); }
         if (b.hasAttribute("data-threads")) { openThread = null; return loadMsgs(); }
         if (b.dataset.deckdel) return deleteDeck(b.dataset.deckdel);
@@ -980,6 +1199,13 @@ seed"></textarea>
         toast("Ayar yadda saxlandı ✓", "ok");
       });
       document.getElementById("year-btn").addEventListener("click", promoteYear);
+      document.getElementById("hw-classes").innerHTML = CLASSES.map((c) => `<label class="chk"><input type="checkbox" value="${esc(c)}"> ${esc(classLabel(c))}</label>`).join("");
+      document.getElementById("hw-form").addEventListener("submit", saveHw);
+      document.getElementById("bank-form").addEventListener("submit", saveBank);
+      document.getElementById("bank-filter").addEventListener("change", renderBank);
+      document.getElementById("bank-list").addEventListener("change", updateBankSel);
+      document.getElementById("bank-to-test").addEventListener("click", () => bankExport("test"));
+      document.getElementById("bank-to-live").addEventListener("click", () => bankExport("live"));
       document.getElementById("words-form").addEventListener("submit", saveWords);
       document.getElementById("viol-filter").addEventListener("change", loadViolations);
       document.getElementById("search").addEventListener("input", render);
@@ -1001,6 +1227,7 @@ seed"></textarea>
       await loadPeople();
       loadViolations();   // nişan sayı üçün
       loadMsgs();         // oxunmamış mesaj sayı üçün
+      loadHw(true);       // yoxlanılmamış tapşırıq sayı üçün
       const startTab = location.hash.slice(1);
       if (startTab) app.querySelector(`.tab[data-tab="${CSS.escape(startTab)}"]`)?.click();
       // Yeni qeydiyyatları hər 30 saniyədən bir yoxla

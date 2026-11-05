@@ -52,7 +52,7 @@
       if (me.status !== "approved") { location.href = "portal.html"; return; }
 
       const [{ data: t, error }, { data: mine }] = await Promise.all([
-        sb.from("tests").select("id, title, description, questions, duration_min, starts_at, ends_at, results_mode, results_released").eq("id", testId).maybeSingle(),
+        sb.from("tests").select("id, title, description, questions, content, duration_min, starts_at, ends_at, results_mode, results_released").eq("id", testId).maybeSingle(),
         sb.rpc("get_my_attempts"),
       ]);
       if (error || !t) return fail("Bu sınaq sənin üçün açıq deyil.");
@@ -140,7 +140,7 @@
           <section class="exam-pdf" id="pdf-pane"><div class="pages" id="pages"><div class="spinner"></div></div></section>
           <aside class="exam-card" id="card-pane">
             <div id="audio-box"></div>
-            <div class="card-head">Cavab kartı <span class="muted small" id="answered-count2"></span></div>
+            <div class="card-head">${attempt.pdf_path ? "Cavab kartı" : "Suallar"} <span class="muted small" id="answered-count2"></span></div>
             <div id="qs"></div>
             <button class="btn btn-primary btn-block" id="submit2" style="margin-top:16px">Təhvil ver</button>
           </aside>
@@ -159,7 +159,7 @@
 
     async function loadPdf() {
       const pane = $("pages");
-      if (!attempt.pdf_path) { $("exam").classList.add("no-pdf"); pane.innerHTML = ""; return; }
+      if (!attempt.pdf_path) { $("exam").classList.add("no-pdf"); pane.innerHTML = ""; app.querySelector(".exam-switch")?.classList.add("hidden"); return; }
       try {
         const { data, error } = await sb.storage.from("tests").createSignedUrl(attempt.pdf_path, 60);
         if (error) throw error;
@@ -225,10 +225,33 @@
     }
 
     function renderCard() {
-      const qs = test.questions.length ? test.questions : attempt.questions;
+      const qs = attempt.questions?.length ? attempt.questions : test.questions;
+      const passages = Object.fromEntries((attempt.passages || []).map((p) => [p.id, p]));
+      const shown = new Set();
       $("qs").innerHTML = qs.map((q) => {
         const v = answers[q.n] ?? "";
         const pts = `<span class="q-pts-lbl">${fmtNum(q.points)} bal</span>`;
+        let pre = "";
+        if (q.pid && passages[q.pid] && !shown.has(q.pid)) {
+          shown.add(q.pid);
+          const pg = passages[q.pid];
+          pre = `<div class="passage"><div class="passage-t">${esc(pg.title)}</div>${pg.text ? `<div class="passage-b">${esc(pg.text)}</div>` : ""}</div>`;
+        }
+        if (q.text) {
+          const head = `<div class="oq-head"><span class="qn">${q.n}</span><div class="oq-text">${esc(q.text)}</div>${pts}</div>`;
+          if (q.type === "choice" && q.opts) {
+            return pre + `<div class="oq" data-q="${q.n}">${head}<div class="bubs opt-list">${q.opts.map((o, i) => {
+              const L = (q.options || "ABCDE")[i];
+              return `<button type="button" class="bub opt-line ${v === L ? "on" : ""}" data-n="${q.n}" data-v="${L}"><b>${L}</b><span>${esc(o)}</span></button>`;
+            }).join("")}</div></div>`;
+          }
+          if (q.type === "open") {
+            return pre + `<div class="oq" data-q="${q.n}">${head}<input class="open" data-n="${q.n}" value="${esc(v)}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Cavabını yaz"></div>`;
+          }
+          if (q.type === "essay") {
+            return pre + `<div class="oq q-essay" data-q="${q.n}">${head}<textarea class="essay" data-n="${q.n}" spellcheck="false" placeholder="Esseni burada yaz…">${esc(v)}</textarea><div class="wc" id="wc-${q.n}"></div></div>`;
+          }
+        }
         if (q.type === "choice") {
           return `<div class="q" data-q="${q.n}"><span class="qn">${q.n}</span>${bubbles(q.n, q.options || "ABCDE", v)}${pts}</div>`;
         }
