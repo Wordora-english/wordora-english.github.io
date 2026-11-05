@@ -57,12 +57,13 @@ Bu addımları bir dəfə edirsən. Hər şey pulsuzdur, heç bir yerdə kart is
 
 > Əgər repoda 60 gün heç bir dəyişiklik olmasa, GitHub bu işi dayandırıb e-poçt göndərə bilər. Belə olsa, **Actions** tabında **Enable workflow** düyməsini bas.
 
-## 7. Materiallar və qoruma (2-ci və 3-cü mərhələ)
+## 7. Materiallar, qoruma və sınaqlar (2–4-cü mərhələ)
 
 Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ardıcıl**, hər birini ayrıca işə sal:
 
 1. `supabase/02-materials.sql`
 2. `supabase/03-security.sql`
+3. `supabase/04-tests.sql`
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 
@@ -92,6 +93,10 @@ Yeni qeydiyyat, pozuntu və blok olanda telefonuna mesaj gəlir.
 - **Şagirdi bloklamaq** → **Şagirdlər** → **Blokla** (səbəb yaza bilərsən, şagird görəcək)
 - **Blokdan çıxarmaq** → **Bloklanan / rədd** → **Blokdan çıxar** (xəbərdarlıqlar sıfırlanır)
 - **Elan** → **Elanlar** → bütün siniflərə və ya bir sinfə
+- **Yeni sınaq** → **Sınaqlar** → **+ Yeni sınaq** → ad, PDF, vaxt, siniflər → cavab açarını yapışdır (`1 A, 2 C, 4 BBAA, 10 went/has gone, 26 esse`) → **Cavab kartını yarat** → esseyə bal yaz → **Balları bərabər payla** → **Şagirdlər görsün** → **Yadda saxla**
+- **Sınaq nəticələri** → **Sınaqlar** → **Nəticələr**: bal, cavablar, esse balı, sual analizi, **⬇ Excel**; hazır olanda **Nəticələri şagirdlərə aç**
+- **Şagird sınağı yenidən yazsın** → Nəticələr → **Cavablar** → **Cəhdi sil**
+- **Köhnə sınaqdan yenisini düzəlt** → **Kopyala** → adını, PDF-i və açarı dəyiş
 - **Material** → **Materiallar** → PDF yüklə; "Şagirdlər yükləyə bilsin" açıqdırsa, hər şagird öz adı və kodu yazılmış nüsxəni yükləyir
 - **Pozuntular** → kim, nə vaxt, nə edib; səhv siqnalı **Ləğv et**; xəbərdarlıq limiti və Tor bloku buradan dəyişir
 - **Avtomatik bloklanan şagird** → **Bloklanan / rədd** → **Blokdan çıxar** (xəbərdarlıqlar sıfırlanır)

@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nəticələr — Wordora</title>
+  <meta name="theme-color" content="#0e1f3d">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <style>
+    .res-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+    .res-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+    .stats.five { grid-template-columns: repeat(5, 1fr); }
+    @media (max-width: 700px) { .stats.five { grid-template-columns: repeat(2, 1fr); } }
+    .rrow { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+    .rrow-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .rank { width: 30px; height: 30px; border-radius: 50%; background: #f1eefb; color: var(--indigo); font-weight: 800; display: grid; place-items: center; font-size: .85rem; flex: 0 0 auto; }
+    .rrow .who { flex: 1; min-width: 180px; }
+    .rrow .sc { font: 700 1.35rem/1 var(--display); color: var(--indigo); white-space: nowrap; }
+    .rrow .sc span { font-size: .85rem; color: var(--muted); font-weight: 500; }
+    .rrow details { margin-top: 10px; }
+    .rrow summary { cursor: pointer; font-size: .86rem; color: var(--indigo); font-weight: 600; }
+    .ans-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 5px; margin-top: 10px; }
+    .ans { font-size: .8rem; padding: 5px 7px; border-radius: 8px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .ans.ok { background: var(--ok-bg); } .ans.part { background: var(--warn-bg); } .ans.bad { background: var(--bad-bg); }
+    .essay-box { margin-top: 10px; background: #f6f4fc; border-radius: 10px; padding: 10px 12px; }
+    .essay-box .txt { white-space: pre-wrap; font-size: .92rem; max-height: 320px; overflow: auto; margin: .4rem 0 .6rem; -webkit-user-select: text; user-select: text; }
+    .essay-grade { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+    .essay-grade input { width: 110px; }
+    .qa { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .qa-item { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: .84rem; }
+    .qa-bar { height: 7px; border-radius: 99px; background: #eee; margin-top: 5px; overflow: hidden; }
+    .qa-bar div { height: 100%; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="admin.html#tests">← Sınaqlar</a></nav>
+    </div>
+  </header>
+
+  <main class="container" id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, formatDate, toast, translateError, classLabel } from "./assets/js/app.js";
+    import { fmtNum, wordCount } from "./assets/js/tests-common.js";
+
+    const app = document.getElementById("app");
+    const testId = new URLSearchParams(location.search).get("id");
+    let test, key, attempts = [], notStarted = [], violCount = {};
+    let openIds = new Set(), rendered = false;
+
+    const total = () => (test.questions || []).reduce((s, q) => s + (Number(q.points) || 0), 0);
+    const essayQs = () => (test.questions || []).filter((q) => q.type === "essay");
+    const essayMax = () => essayQs().reduce((s, q) => s + (Number(q.points) || 0), 0);
+
+    async function load() {
+      await sb.rpc("admin_finalize_expired", { p_test: testId });
+      const [{ data: t, error }, { data: k }, { data: att }, { data: studs }] = await Promise.all([
+        sb.from("tests").select("*").eq("id", testId).maybeSingle(),
+        sb.from("test_keys").select("answers").eq("test_id", testId).maybeSingle(),
+        sb.from("attempts").select("*, profiles(full_name, class_name, student_code, username)").eq("test_id", testId),
+        sb.from("profiles").select("id, full_name, class_name, student_code").eq("role", "student").eq("status", "approved"),
+      ]);
+      if (error || !t) { app.innerHTML = '<div class="card empty">Sınaq tapılmadı.</div>'; return false; }
+      test = t; key = k?.answers || {}; attempts = att || [];
+      const took = new Set(attempts.map((a) => a.user_id));
+      const cls = t.target_classes || [];
+      notStarted = (studs || []).filter((s) => !took.has(s.id) && (!cls.length || cls.includes(s.class_name)));
+
+      // Sınaq zamanı pozuntular
+      violCount = {};
+      if (attempts.length) {
+        const { data: v } = await sb.from("violations").select("user_id, created_at, cancelled")
+          .in("user_id", attempts.map((a) => a.user_id)).eq("cancelled", false);
+        for (const a of attempts) {
+          const from = new Date(a.started_at).getTime(), to = new Date(a.submitted_at || a.deadline).getTime() + 60000;
+          violCount[a.id] = (v || []).filter((x) => x.user_id === a.user_id && new Date(x.created_at) >= from && new Date(x.created_at) <= to).length;
+        }
+      }
+      return true;
+    }
+
+    function render() {
+      if (rendered) openIds = new Set([...app.querySelectorAll("details[data-a][open]")].map((d) => d.dataset.a));
+      const done = attempts.filter((a) => a.status !== "in_progress").sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+      const live = attempts.filter((a) => a.status === "in_progress");
+      const scores = done.map((a) => Number(a.score) || 0);
+      const avg = scores.length ? scores.reduce((s, x) => s + x, 0) / scores.length : null;
+      const pendingEssay = done.filter((a) => a.status === "submitted").length;
+      const T = total();
+
+      app.innerHTML = `
+        <div class="card" style="margin-bottom:16px">
+          <div class="res-head">
+            <div><h1 style="font-size:1.45rem;margin-bottom:.2rem">${esc(test.title)}</h1>
+              <div class="muted small">${test.target_classes?.length ? test.target_classes.map(classLabel).join(", ") : "Bütün siniflər"} · ${test.duration_min} dəq · ${(test.questions || []).length} sual · ${fmtNum(T)} bal
+              ${test.ends_at ? ` · son: ${formatDate(test.ends_at)}` : ""}</div></div>
+            <div class="res-actions">
+              <button class="btn ${test.results_released ? "btn-warn" : "btn-ok"} btn-sm" id="release">${test.results_released ? "Nəticələri bağla" : "Nəticələri şagirdlərə aç"}</button>
+              <button class="btn btn-ghost btn-sm" id="csv">⬇ Excel</button>
+              <button class="btn btn-ghost btn-sm" id="regrade" title="Cavab açarını dəyişmisənsə">Yenidən hesabla</button>
+              <a class="btn btn-ghost btn-sm" href="test-edit.html?id=${test.id}">Redaktə</a>
+              <button class="btn btn-ghost btn-sm" id="refresh">↻</button>
+            </div>
+          </div>
+          <p class="small muted" style="margin:.6rem 0 0">${test.results_released
+            ? "✅ Nəticələr açıqdır — şagirdlər balını, öz cavablarını və düzgün cavabları görür."
+            : test.results_mode === "instant" ? "Şagirdlər təhvil verən kimi balını görür; düzgün cavablar nəticələri açanda görünəcək."
+            : "🔒 Nəticələr bağlıdır — şagirdlər hələ heç nə görmür."}</p>
+        </div>
+
+        <div class="stats five">
+          <div class="stat"><div class="n">${done.length}</div><div class="l">Təhvil verib</div></div>
+          <div class="stat"><div class="n">${live.length}</div><div class="l">İndi yazır</div></div>
+          <div class="stat"><div class="n">${avg === null ? "—" : fmtNum(Math.round(avg * 10) / 10)}</div><div class="l">Orta bal</div></div>
+          <div class="stat"><div class="n">${scores.length ? fmtNum(Math.max(...scores)) : "—"}</div><div class="l">Ən yüksək</div></div>
+          <div class="stat"><div class="n" style="${pendingEssay ? "color:var(--warn)" : ""}">${pendingEssay}</div><div class="l">Esse yoxlanılmalı</div></div>
+        </div>
+
+        <div class="section-title"><h2>Nəticələr</h2></div>
+        <div class="grid" id="results">${done.length ? done.map((a, i) => row(a, i + 1)).join("") : '<div class="card empty">Hələ heç kim təhvil verməyib.</div>'}</div>
+
+        ${live.length ? `<div class="section-title"><h2>İndi yazanlar</h2></div>
+          <div class="grid">${live.map((a) => `<div class="rrow"><div class="rrow-top"><span class="rank">⏳</span><div class="who"><b>${esc(a.profiles?.full_name)}</b> <span class="muted small">${esc(classLabel(a.profiles?.class_name))}</span><div class="muted small">Başladı: ${formatDate(a.started_at)} · vaxt bitir: ${formatDate(a.deadline)}${violCount[a.id] ? ` · ⚠️ ${violCount[a.id]} pozuntu` : ""}</div></div></div></div>`).join("")}</div>` : ""}
+
+        <div class="section-title"><h2>Sual analizi</h2><span class="muted small">neçə faiz düzgün cavablayıb</span></div>
+        <div class="qa">${analysis(done)}</div>
+
+        <div class="section-title"><h2>Yazmayanlar <span class="muted small">(${notStarted.length})</span></h2></div>
+        <div class="card small">${notStarted.length ? notStarted.map((s) => `${esc(s.full_name)} <span class="muted">(${esc(classLabel(s.class_name))})</span>`).join(" · ") : "Hamı yazıb 👍"}</div>
+      `;
+      bind();
+      rendered = true;
+    }
+
+    function row(a, rank) {
+      const p = a.profiles || {};
+      const T = total();
+      const used = a.submitted_at ? Math.round((new Date(a.submitted_at) - new Date(a.started_at)) / 60000) : null;
+      const det = a.details || {};
+      const cells = (test.questions || []).filter((q) => q.type !== "essay").map((q) => {
+        const d = det[q.n] || {};
+        const cls = d.frac >= 1 ? "ok" : d.frac > 0 ? "part" : "bad";
+        return `<div class="ans ${cls}" title="Düzgün: ${esc(key[q.n] || "")}"><b>${q.n}</b> ${esc(a.answers?.[q.n] || "—")}${cls !== "ok" ? ` <span style="opacity:.6">→ ${esc(key[q.n] || "")}</span>` : ""}</div>`;
+      }).join("");
+      const essays = essayQs().map((q) => {
+        const txt = a.answers?.[q.n] || "";
+        const w = wordCount(txt);
+        return `<div class="essay-box">
+          <b>Esse (${q.n})</b> <span class="muted small">${w} söz${q.min_words ? ` · minimum ${q.min_words}` : ""}${q.min_words && w < q.min_words ? ' — <span style="color:var(--bad)">azdır</span>' : ""}</span>
+          <div class="txt">${esc(txt) || "<i>boşdur</i>"}</div>
+        </div>`;
+      }).join("");
+      const essayGrade = essayQs().length ? `
+        <div class="essay-grade">
+          <label class="small">Esse balı (max ${fmtNum(essayMax())}):</label>
+          <input type="number" min="0" max="${essayMax()}" step="0.1" value="${a.essay_score ?? ""}" data-essay="${a.id}">
+          <button class="btn btn-ok btn-sm" data-essay-save="${a.id}">Yadda saxla</button>
+        </div>` : "";
+      const statusPill = a.status === "submitted" ? '<span class="pill wait">Esse yoxlanılmalı</span>' : "";
+      return `
+        <div class="rrow">
+          <div class="rrow-top">
+            <span class="rank">${rank}</span>
+            <div class="who">
+              <b>${esc(p.full_name)}</b> <span class="muted small">${esc(classLabel(p.class_name))} · ${esc(p.student_code || "")}</span> ${statusPill}
+              <div class="muted small">Təhvil: ${formatDate(a.submitted_at)}${used !== null ? ` · ${used} dəq` : ""}${violCount[a.id] ? ` · <span style="color:var(--bad)">⚠️ ${violCount[a.id]} pozuntu</span>` : ""}${essayQs().length ? ` · test: ${fmtNum(a.auto_score)} + esse: ${a.essay_score === null ? "?" : fmtNum(a.essay_score)}` : ""}</div>
+            </div>
+            <div class="sc">${fmtNum(a.score)}<span> / ${fmtNum(T)}</span></div>
+          </div>
+          <details data-a="${a.id}" ${openIds.has(a.id) || (!rendered && a.status === "submitted") ? "open" : ""}>
+            <summary>Cavablar${essayQs().length ? " və esse" : ""}</summary>
+            ${cells ? `<div class="ans-grid">${cells}</div>` : ""}
+            ${essays}
+            <div style="display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-top:10px;align-items:center">
+              ${essayGrade}
+              <button class="btn btn-bad btn-sm" data-reset="${a.id}" title="Şagird sınağı yenidən yaza bilsin">Cəhdi sil (yenidən yazsın)</button>
+            </div>
+          </details>
+        </div>`;
+    }
+
+    function analysis(done) {
+      const qs = (test.questions || []).filter((q) => q.type !== "essay");
+      if (!done.length || !qs.length) return '<div class="card empty small" style="grid-column:1/-1">Təhvil verən olandan sonra görünəcək.</div>';
+      return qs.map((q) => {
+        const fr = done.map((a) => Number(a.details?.[q.n]?.frac) || 0);
+        const pct = Math.round((fr.reduce((s, x) => s + x, 0) / fr.length) * 100);
+        const color = pct >= 70 ? "var(--ok)" : pct >= 40 ? "var(--gold)" : "var(--bad)";
+        return `<div class="qa-item"><b>${q.n}</b> <span class="muted">· düzgün: ${esc(key[q.n] || "")}</span><span style="float:right;font-weight:700">${pct}%</span>
+          <div class="qa-bar"><div style="width:${pct}%;background:${color}"></div></div></div>`;
+      }).join("");
+    }
+
+    function bind() {
+      document.getElementById("refresh").onclick = async () => { if (await load()) render(); };
+      document.getElementById("release").onclick = async () => {
+        const open = !test.results_released;
+        if (open && attempts.some((a) => a.status === "in_progress") && !confirm("Hələ yazan şagirdlər var. Nəticələr (düzgün cavablar da) indi açılsın?")) return;
+        const { error } = await sb.from("tests").update({ results_released: open }).eq("id", testId);
+        if (error) return toast(translateError(error), "err");
+        toast(open ? "Nəticələr açıldı ✓" : "Nəticələr bağlandı", "ok");
+        if (await load()) render();
+      };
+      document.getElementById("regrade").onclick = async () => {
+        const { data, error } = await sb.rpc("admin_regrade", { p_test: testId });
+        if (error) return toast(translateError(error), "err");
+        toast(`${data} nəticə yenidən hesablandı`, "ok");
+        if (await load()) render();
+      };
+      document.getElementById("csv").onclick = exportCsv;
+      app.querySelectorAll("[data-essay-save]").forEach((b) => b.onclick = async () => {
+        const id = b.dataset.essaySave;
+        const inp = app.querySelector(`[data-essay="${id}"]`);
+        const v = inp.value === "" ? null : Number(inp.value);
+        if (v !== null && (v < 0 || v > essayMax())) return toast(`Esse balı 0–${fmtNum(essayMax())} arası olmalıdır`, "err");
+        const { error } = await sb.rpc("admin_grade_essay", { p_attempt: id, p_points: v });
+        if (error) return toast(translateError(error), "err");
+        toast("Esse balı yazıldı ✓", "ok");
+        if (await load()) render();
+      });
+      app.querySelectorAll("[data-reset]").forEach((b) => b.onclick = async () => {
+        const a = attempts.find((x) => x.id === b.dataset.reset);
+        if (!confirm(`${a?.profiles?.full_name} — bu cəhd silinsin? Şagird sınağı yenidən yaza biləcək. Köhnə cavablar itəcək.`)) return;
+        const { error } = await sb.rpc("admin_reset_attempt", { p_attempt: b.dataset.reset });
+        if (error) return toast(translateError(error), "err");
+        toast("Cəhd silindi", "ok");
+        if (await load()) render();
+      });
+    }
+
+    function exportCsv() {
+      const qs = test.questions || [];
+      const done = attempts.filter((a) => a.status !== "in_progress").sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+      const num = (x) => (x === null || x === undefined ? "" : String(Math.round(Number(x) * 100) / 100).replace(".", ","));
+      const q = (s) => `"${String(s ?? "").replace(/"/g, '""').replace(/\r?\n/g, " ")}"`;
+      const head = ["№", "Ad Soyad", "Sinif", "Kod", "Test balı", "Esse balı", "Yekun bal", `Maksimum`, "Təhvil", "Dəqiqə", "Pozuntu",
+                    ...qs.map((x) => (x.type === "essay" ? `S${x.n} (esse, söz)` : `S${x.n}`))];
+      const lines = [head.map(q).join(";")];
+      lines.push(["", "DÜZGÜN CAVAB", "", "", "", "", "", "", "", "", "", ...qs.map((x) => (x.type === "essay" ? "" : key[x.n] || ""))].map(q).join(";"));
+      done.forEach((a, i) => {
+        const p = a.profiles || {};
+        const used = a.submitted_at ? Math.round((new Date(a.submitted_at) - new Date(a.started_at)) / 60000) : "";
+        lines.push([i + 1, p.full_name, classLabel(p.class_name), p.student_code, num(a.auto_score), num(a.essay_score), num(a.score), num(total()),
+          formatDate(a.submitted_at), used, violCount[a.id] || 0,
+          ...qs.map((x) => (x.type === "essay" ? wordCount(a.answers?.[x.n]) : a.answers?.[x.n] || ""))].map(q).join(";"));
+      });
+      const csv = "﻿sep=;\n" + lines.join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${test.title.replace(/[^\p{L}\p{N} _-]/gu, "").trim().replace(/\s+/g, "_") || "netice"}_neticeler.csv`;
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 20000);
+    }
+
+    async function start() {
+      if (!configured) { app.innerHTML = '<div class="card empty">Sayt bazaya qoşulmayıb.</div>'; return; }
+      const me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.role !== "admin") { location.href = "portal.html"; return; }
+      if (!testId) { app.innerHTML = '<div class="card empty">Sınaq seçilməyib.</div>'; return; }
+      if (await load()) render();
+      // Yazanlar varsa, siyahını 30 saniyədən bir yenilə
+      setInterval(async () => {
+        if (document.hidden || document.activeElement?.matches("input") || !attempts.some((a) => a.status === "in_progress")) return;
+        if (await load()) render();
+      }, 30000);
+    }
+    start();
+  </script>
+</body>
+</html>

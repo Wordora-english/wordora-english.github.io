@@ -1,0 +1,100 @@
+/* =========================================================
+   WORDORA — sınaq səhifəsi
+   ========================================================= */
+body { background: #eceaf4; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea { -webkit-user-select: text; user-select: text; }
+@media print { body * { display: none !important; } }
+
+.exam-bar {
+  position: sticky; top: 0; z-index: 40;
+  background: var(--navy); color: #fff;
+  display: flex; align-items: center; gap: .6rem;
+  padding: .55rem 12px;
+  min-height: 56px;
+}
+.exam-bar .btn-ghost { color: #fff; border-color: rgba(255,255,255,.25); }
+.exam-title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.save-state { font-size: .78rem; opacity: .8; white-space: nowrap; }
+.save-state.bad { color: #ffb4bf; opacity: 1; }
+.timer {
+  font: 700 1.15rem/1 var(--display); font-variant-numeric: tabular-nums;
+  background: rgba(255,255,255,.1); padding: .45rem .7rem; border-radius: 10px; min-width: 4.6em; text-align: center;
+}
+.timer.warn { background: var(--gold); color: var(--navy); }
+.timer.crit { background: var(--bad); color: #fff; animation: pulse 1s infinite; }
+@keyframes pulse { 50% { opacity: .65; } }
+
+.intro-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 1rem 0; }
+.intro-facts div { background: #f4f2fb; border-radius: 12px; padding: 12px; text-align: center; }
+.intro-facts b { display: block; font: 700 1.3rem/1.2 var(--display); }
+.intro-facts span { font-size: .8rem; color: var(--muted); }
+.rules { padding-left: 1.1rem; margin: 1rem 0 1.3rem; display: grid; gap: .45rem; font-size: .93rem; }
+.rules li { list-style: none; margin-left: -1.1rem; }
+
+/* ---------- İki sütun ---------- */
+.exam { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 0; height: calc(100vh - 56px); }
+.exam.no-pdf { grid-template-columns: 1fr; }
+.exam.no-pdf .exam-pdf { display: none; }
+.exam.no-pdf .exam-card { max-width: 640px; margin: 0 auto; width: 100%; }
+.exam-pdf { overflow: auto; padding: 14px 8px 60px; }
+.exam-pdf .pages { padding: 0; }
+.exam-pdf .page { margin: 0 auto 14px; background: #fff; box-shadow: 0 2px 10px rgba(14,31,61,.15); position: relative; }
+.exam-pdf .page canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
+.exam-pdf .page .num { position: absolute; right: 8px; bottom: -19px; font-size: .74rem; color: var(--muted); }
+.exam-card { background: #fff; border-left: 1px solid var(--line); overflow: auto; padding: 16px 16px 80px; }
+.card-head { font: 600 1.05rem var(--display); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: baseline; }
+.exam-switch { display: none; }
+
+@media (max-width: 860px) {
+  .exam { display: block; height: auto; }
+  .exam-card { display: none; border-left: 0; padding-bottom: 100px; min-height: calc(100vh - 110px); }
+  .exam.show-card .exam-card { display: block; }
+  .exam.show-card .exam-pdf { display: none; }
+  .exam.no-pdf .exam-card { display: block; }
+  .exam-switch {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+    position: sticky; top: 56px; z-index: 30; background: #eceaf4; padding: 8px;
+  }
+  .exam-switch button { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: .6rem; font: 600 .9rem var(--font); color: var(--navy); }
+  .exam-switch button.active { background: var(--indigo); color: #fff; border-color: var(--indigo); }
+  .exam-title { font-size: .9rem; }
+  .save-state { display: none; }
+}
+
+/* ---------- Cavab kartı ---------- */
+.q { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid #f0eef7; }
+.qn { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px; background: var(--navy); color: #fff; display: grid; place-items: center; font: 700 .85rem var(--font); }
+.bubs { display: flex; gap: 6px; flex-wrap: wrap; }
+.bub {
+  width: 38px; height: 38px; border-radius: 50%;
+  border: 2px solid #cfcae3; background: #fff; color: var(--navy);
+  font: 700 .95rem var(--font); cursor: pointer; padding: 0;
+  transition: background .1s, border-color .1s, transform .05s;
+}
+.bub:active { transform: scale(.94); }
+.bub.on { background: var(--indigo); border-color: var(--indigo); color: #fff; }
+.q-pts-lbl { margin-left: auto; font-size: .72rem; color: var(--muted); white-space: nowrap; }
+.q-multi { align-items: flex-start; }
+.parts { display: grid; gap: 6px; }
+.part { display: flex; align-items: center; gap: 8px; }
+.pn { font-size: .78rem; color: var(--muted); width: 34px; }
+.part .bub { width: 34px; height: 34px; font-size: .85rem; }
+.q input.open { flex: 1; padding: .55rem .7rem; font-size: 1rem; }
+.q-essay { display: block; }
+.essay-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.q-essay textarea { min-height: 220px; font-size: 1rem; line-height: 1.5; }
+.wc { font-size: .82rem; color: var(--muted); margin-top: .35rem; }
+
+/* ---------- Nəticə ---------- */
+.big-score { font: 700 3rem/1 var(--display); text-align: center; margin: 1rem 0 .4rem; color: var(--indigo); }
+.big-score span { font-size: 1.2rem; color: var(--muted); margin-left: .3rem; }
+.review { display: grid; gap: 6px; }
+.rv { display: flex; gap: .4rem 1rem; align-items: center; flex-wrap: wrap; padding: 8px 10px; border-radius: 10px; font-size: .92rem; }
+.rv.ok { background: var(--ok-bg); }
+.rv.part { background: var(--warn-bg); }
+.rv.bad { background: var(--bad-bg); }
+.rv.essay { display: block; background: #f4f2fb; }
+.rv-i { font-weight: 800; width: 1.2em; }
+.rv code { font-family: ui-monospace, Menlo, Consolas, monospace; background: rgba(255,255,255,.7); padding: .05rem .35rem; border-radius: 5px; }
+.rv-p { margin-left: auto; font-weight: 600; }
+.rv-essay { white-space: pre-wrap; margin-top: .4rem; font-size: .9rem; }

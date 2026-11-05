@@ -30,6 +30,7 @@
   <script type="module">
     import { downloadMaterial } from "./assets/js/materials.js";
     import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
+    import { testState, fmtNum, fmtDuration } from "./assets/js/tests-common.js";
     import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, STAR_SVG, showConfigWarning } from "./assets/js/app.js";
 
     showConfigWarning();
@@ -76,6 +77,46 @@
           <div class="meta">${formatDate(a.created_at)}${a.target_class ? " · " + esc(classLabel(a.target_class)) : ""}</div>
           <div class="body">${esc(a.body)}</div>
         </article>`).join("");
+    }
+
+    async function loadTests() {
+      const box = document.getElementById("test-list");
+      const [{ data: tests, error }, { data: mine }] = await Promise.all([
+        sb.from("tests").select("id, title, duration_min, starts_at, ends_at, questions, results_released").order("created_at", { ascending: false }),
+        sb.rpc("get_my_attempts"),
+      ]);
+      if (error) { box.innerHTML = '<div class="card empty">Hələlik sınaq yoxdur.</div>'; return; }
+      const byTest = Object.fromEntries((mine || []).map((a) => [a.test_id, a]));
+      const now = Date.now();
+      // Bağlanmış və yazılmamış köhnə sınaqları gizlət
+      const list = tests.filter((t) => byTest[t.id] || !(t.ends_at && now >= new Date(t.ends_at)));
+      if (!list.length) { box.innerHTML = '<div class="card empty">Hələlik açıq sınaq yoxdur.</div>'; return; }
+      box.innerHTML = list.map((t) => {
+        const a = byTest[t.id];
+        const st = testState(t, a);
+        const total = (t.questions || []).reduce((s, q) => s + (Number(q.points) || 0), 0);
+        let pill = "", action = "";
+        if (st === "open") { pill = '<span class="pill live">Açıqdır</span>'; action = `<a class="btn btn-primary btn-sm" href="test.html?id=${t.id}">Başla</a>`; }
+        else if (st === "in_progress") {
+          pill = '<span class="pill wait">Yarımçıq</span>';
+          action = `<a class="btn btn-primary btn-sm" href="test.html?id=${t.id}">${a.status === "expired" ? "Nəticə" : "Davam et"}</a>`;
+        }
+        else if (st === "upcoming") { pill = '<span class="pill off">Gözləyir</span>'; action = `<span class="muted small">${formatDate(t.starts_at)}</span>`; }
+        else if (st === "done") {
+          pill = '<span class="pill done">Təhvil verilib</span>';
+          action = a.show_score && a.score !== null
+            ? `<a class="btn btn-ghost btn-sm" href="test.html?id=${t.id}"><b>${fmtNum(a.score)}</b>&nbsp;/ ${fmtNum(a.total)}</a>`
+            : `<a class="btn btn-ghost btn-sm" href="test.html?id=${t.id}">Nəticə gözlənilir</a>`;
+        }
+        return `
+          <article class="card test-card">
+            <div style="min-width:0">
+              <h3>${esc(t.title)} ${pill}</h3>
+              <div class="test-meta"><span>⏱ ${fmtDuration(t.duration_min)}</span><span>${(t.questions || []).length} sual · ${fmtNum(total)} bal</span>${t.ends_at ? `<span>Son: ${formatDate(t.ends_at)}</span>` : ""}</div>
+            </div>
+            <div>${action}</div>
+          </article>`;
+      }).join("");
     }
 
     async function loadMaterials() {
@@ -146,17 +187,17 @@
           <p>${esc(classLabel(me.class_name))} · @${esc(me.username)}${me.warnings > 0 ? ` · ⚠️ ${me.warnings} xəbərdarlıq` : ""}</p>
         </section>
 
+        <div class="section-title" id="tests"><h2>Sınaqlar</h2></div>
+        <div id="test-list" class="grid"><div class="spinner"></div></div>
+
         <div class="section-title" id="materials"><h2>Materiallar</h2></div>
         <div id="mat-list"><div class="spinner"></div></div>
 
         <div class="section-title"><h2>Elanlar</h2></div>
         <div id="ann-list" class="grid"><div class="spinner"></div></div>
 
-        <div class="grid grid-3" style="margin-top:26px">
-          ${comingSoon("Sınaqlar", "Müəllimin açdığı vaxtlı sınaqlar burada görünəcək.", '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/>')}
-          ${comingSoon("Nəticələrim", "Sınaq balların və inkişaf qrafikin.", '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>')}
-        </div>
       `;
+      loadTests();
       loadMaterials();
       loadAnnouncements();
       startGuard({ me, onBlocked: () => location.reload() });

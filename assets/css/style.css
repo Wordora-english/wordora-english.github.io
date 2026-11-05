@@ -122,7 +122,7 @@ p { margin: 0 0 1em; }
 /* ---------- Formlar ---------- */
 .field { margin-bottom: 1rem; }
 .field label { display: block; font-weight: 600; font-size: .9rem; margin-bottom: .35rem; }
-.field .hint { font-size: .8rem; color: var(--muted); margin-top: .3rem; }
+.field .hint, .hint { font-size: .8rem; color: var(--muted); margin-top: .3rem; }
 input, select, textarea {
   width: 100%;
   font: 400 1rem/1.4 var(--font);
@@ -316,3 +316,30 @@ textarea { min-height: 110px; resize: vertical; }
 .settings-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
 .settings-row .field { margin: 0; flex: 1 1 180px; }
 .warn-count { font-size: .75rem; font-weight: 800; background: var(--warn-bg); color: var(--warn); border-radius: 99px; padding: .1rem .45rem; }
+
+/* ---------- Sınaq redaktoru ---------- */
+.row3 { display: grid; gap: 0 12px; grid-template-columns: 1fr 1fr 1fr; }
+@media (max-width: 700px) { .row3 { grid-template-columns: 1fr; } }
+.qrows { margin-top: 14px; display: grid; gap: 6px; }
+.qrow { display: grid; grid-template-columns: 64px minmax(150px, 1.3fr) minmax(120px, 1.4fr) 92px 80px 40px; gap: 6px; align-items: center; }
+.qrow input, .qrow select { padding: .5rem .6rem; font-size: .9rem; border-radius: 9px; }
+.qrow.qhead { font-size: .75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.qrow .q-key { font-family: ui-monospace, Menlo, Consolas, monospace; }
+.q-minw { display: flex; align-items: center; gap: .4rem; font-size: .82rem; color: var(--muted); white-space: nowrap; }
+.q-minw input { width: 80px; }
+@media (max-width: 700px) {
+  .qrow { grid-template-columns: 54px 1fr 1fr; }
+  .qrow.qhead { display: none; }
+  .qrow { background: #faf9fd; border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+}
+.totals { display: flex; gap: 12px; align-items: end; flex-wrap: wrap; margin: 16px 0 6px; }
+.totals .field input { width: 130px; }
+.savebar { position: sticky; bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; z-index: 10; }
+
+/* ---------- Sınaq siyahısı ---------- */
+.test-card { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
+.test-card h3 { font-size: 1.05rem; margin-bottom: .2rem; }
+.test-meta { font-size: .84rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: .2rem .8rem; }
+.pill.live { background: #e7f0ff; color: var(--blue); }
+.pill.done { background: var(--ok-bg); color: var(--ok); }
+.pill.wait { background: var(--warn-bg); color: var(--warn); }

@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sınaq redaktoru — Wordora</title>
+  <meta name="theme-color" content="#0e1f3d">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="admin.html#tests">← Sınaqlar</a></nav>
+    </div>
+  </header>
+
+  <main class="container" id="app"><div class="spinner"></div></main>
+
+  <template id="tpl">
+    <h1 style="font-size:1.6rem" id="page-title">Yeni sınaq</h1>
+
+    <form id="form" novalidate>
+      <section class="card" style="margin-bottom:16px">
+        <h2 style="font-size:1.15rem">1. Əsas məlumat</h2>
+        <div class="field"><label for="title">Sınağın adı</label><input id="title" maxlength="150" placeholder="məs. OTK hazırlıq 3 — 11-ci sinif" required></div>
+        <div class="field"><label for="desc">Şagirdlər üçün qeyd (istəyə görə)</label><textarea id="desc" maxlength="2000" style="min-height:70px" placeholder="məs. Dinləmə mətni müəllim tərəfindən oxunacaq."></textarea></div>
+        <div class="field">
+          <label for="pdf">Sınaq faylı (PDF)</label>
+          <input id="pdf" type="file" accept="application/pdf,.pdf">
+          <div class="hint" id="pdf-current">PDF şagirdə yalnız sınaq gedən müddətdə, su nişanı ilə görünür. Yükləmək olmur.</div>
+        </div>
+        <div class="row3">
+          <div class="field"><label for="duration">Vaxt (dəqiqə)</label><input id="duration" type="number" min="1" max="600" value="45" required></div>
+          <div class="field"><label for="starts">Başlama (istəyə görə)</label><input id="starts" type="datetime-local"></div>
+          <div class="field"><label for="ends">Son tarix (istəyə görə)</label><input id="ends" type="datetime-local"></div>
+        </div>
+        <div class="field"><label>Kimlər yaza bilər</label><div class="chk-row" id="classes"></div><div class="hint">Heç biri seçilməsə — bütün siniflər.</div></div>
+        <div class="field">
+          <label>Nəticə nə vaxt görünsün</label>
+          <div class="chk-row">
+            <label class="chk"><input type="radio" name="rmode" value="manual" checked> Mən açanda (tövsiyə)</label>
+            <label class="chk"><input type="radio" name="rmode" value="instant"> Təhvil verən kimi bal</label>
+          </div>
+          <div class="hint">"Mən açanda" — sınaq bitənə qədər heç kim balını görmür, cavablar yayılmır. Düzgün cavablar hər iki halda yalnız sən "Nəticələri aç" deyəndə görünür.</div>
+        </div>
+      </section>
+
+      <section class="card" style="margin-bottom:16px">
+        <h2 style="font-size:1.15rem">2. Cavab açarı</h2>
+        <div class="field">
+          <label for="keytext">Cavabları bura yaz və ya yapışdır</label>
+          <textarea id="keytext" style="min-height:90px;font-family:ui-monospace,Menlo,Consolas,monospace" placeholder="1 A, 2 C, 3 C, 4 BBAA, 5 A, ... 10 went/has gone, 26 esse"></textarea>
+          <div class="hint">Tək hərf → test · bir neçə hərf (BBAA) → çoxhissəli · söz/cümlə → açıq cavab (variantları / ilə ayır) · <b>esse</b> → esse</div>
+        </div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button type="button" class="btn btn-primary btn-sm" id="parse">Cavab kartını yarat</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="add-row">+ Sual əlavə et</button>
+        </div>
+        <div id="parse-msg" class="form-msg err hidden" style="margin-top:12px"></div>
+
+        <div id="rows" class="qrows"></div>
+
+        <div class="totals" id="totals-box">
+          <div class="field" style="margin:0"><label for="total">Ümumi bal</label><input id="total" type="number" min="1" step="0.01" value="100"></div>
+          <button type="button" class="btn btn-ghost btn-sm" id="distribute">Balları bərabər payla</button>
+          <div class="muted small" id="sum"></div>
+        </div>
+        <div class="hint">"Bərabər payla" — esse balları olduğu kimi qalır, qalan bal digər suallara bərabər bölünür. Hər sualın balını sonra əl ilə də dəyişə bilərsən.</div>
+      </section>
+
+      <section class="card savebar">
+        <label class="chk"><input type="checkbox" id="published"> Şagirdlər görsün (paylaş)</label>
+        <button class="btn btn-primary" type="submit" id="save">Yadda saxla</button>
+      </section>
+    </form>
+  </template>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, toast, translateError, CLASSES, classLabel } from "./assets/js/app.js";
+    import { parseKey, distributePoints, totalPoints, TYPE_LABELS, OPTION_SETS, toLocalInput, fromLocalInput, fmtNum } from "./assets/js/tests-common.js";
+
+    const app = document.getElementById("app");
+    let testId = new URLSearchParams(location.search).get("id");
+    let rows = [];          // {n, type, options, parts, points, min_words, key}
+    let current = null;     // mövcud sınaq
+
+    const $ = (id) => document.getElementById(id);
+
+    function renderRows() {
+      const box = $("rows");
+      if (!rows.length) {
+        box.innerHTML = '<div class="empty small">Cavab kartı hələ boşdur. Yuxarıda cavabları yaz və "Cavab kartını yarat" bas.</div>';
+      } else {
+        box.innerHTML = `
+          <div class="qrow qhead"><span>№</span><span>Növ</span><span>Düzgün cavab</span><span>Variant</span><span>Bal</span><span></span></div>
+          ${rows.map((r, i) => `
+            <div class="qrow" data-i="${i}">
+              <input class="q-n" type="number" min="1" value="${r.n}" aria-label="Sual nömrəsi">
+              <select class="q-type" aria-label="Növ">${Object.entries(TYPE_LABELS).map(([k, v]) => `<option value="${k}" ${r.type === k ? "selected" : ""}>${v}</option>`).join("")}</select>
+              ${r.type === "essay"
+                ? `<label class="q-minw">min. söz <input class="q-min" type="number" min="0" value="${r.min_words || 0}"></label>`
+                : `<input class="q-key" value="${esc(r.key || "")}" placeholder="${r.type === "open" ? "went/has gone" : r.type === "multi" ? "BBAA" : "A"}" aria-label="Düzgün cavab">`}
+              ${r.type === "choice" || r.type === "multi"
+                ? `<select class="q-opt" aria-label="Variantlar">${OPTION_SETS.map((s) => `<option ${r.options === s ? "selected" : ""}>${s}</option>`).join("")}</select>`
+                : "<span></span>"}
+              <input class="q-pts" type="number" min="0" step="0.01" value="${r.points ?? 0}" aria-label="Bal">
+              <button type="button" class="btn btn-bad btn-sm q-del" aria-label="Sil">✕</button>
+            </div>`).join("")}`;
+      }
+      updateSum();
+    }
+
+    function updateSum() {
+      const t = totalPoints(rows);
+      const target = Number($("total").value) || 0;
+      const essays = rows.filter((r) => r.type === "essay").length;
+      $("sum").innerHTML = `${rows.length} sual${essays ? ` (${essays} esse)` : ""} · cəmi <b>${fmtNum(t)}</b> bal` +
+        (Math.abs(t - target) > 0.01 && rows.length ? ` <span style="color:var(--warn)">— ümumi baldan fərqlidir</span>` : "");
+    }
+
+    function readRow(el) {
+      const r = rows[Number(el.dataset.i)];
+      r.n = Number(el.querySelector(".q-n").value);
+      r.points = Number(el.querySelector(".q-pts").value) || 0;
+      const k = el.querySelector(".q-key"); if (k) r.key = k.value.trim();
+      const o = el.querySelector(".q-opt"); if (o) r.options = o.value;
+      const m = el.querySelector(".q-min"); if (m) r.min_words = Number(m.value) || 0;
+      if (r.type === "multi") r.parts = (r.key || "").length || r.parts || 4;
+    }
+
+    function validate() {
+      const errs = [];
+      const nums = new Set();
+      for (const r of rows) {
+        if (!r.n || r.n < 1) errs.push("Sual nömrəsi düzgün deyil");
+        if (nums.has(r.n)) errs.push(`${r.n}-ci sual iki dəfədir`);
+        nums.add(r.n);
+        const key = (r.key || "").toUpperCase();
+        if (r.type === "choice" && !(key.length === 1 && r.options.includes(key))) errs.push(`${r.n}: düzgün cavab ${r.options} hərflərindən biri olmalıdır`);
+        if (r.type === "multi" && !(key.length >= 2 && [...key].every((c) => r.options.includes(c)))) errs.push(`${r.n}: çoxhissəli cavab məs. BBAA kimi olmalıdır (${r.options})`);
+        if (r.type === "open" && !(r.key || "").trim()) errs.push(`${r.n}: açıq sualın düzgün cavabını yaz`);
+      }
+      return errs;
+    }
+
+    async function load() {
+      if (!testId) return;
+      const [{ data: t, error }, { data: k }] = await Promise.all([
+        sb.from("tests").select("*").eq("id", testId).maybeSingle(),
+        sb.from("test_keys").select("answers").eq("test_id", testId).maybeSingle(),
+      ]);
+      if (error || !t) { toast("Sınaq tapılmadı", "err"); testId = null; return; }
+      current = t;
+      $("page-title").textContent = "Sınağı redaktə et";
+      $("title").value = t.title;
+      $("desc").value = t.description || "";
+      $("duration").value = t.duration_min;
+      $("starts").value = toLocalInput(t.starts_at);
+      $("ends").value = toLocalInput(t.ends_at);
+      document.querySelectorAll("#classes input").forEach((i) => (i.checked = (t.target_classes || []).includes(i.value)));
+      document.querySelector(`input[name=rmode][value=${t.results_mode}]`).checked = true;
+      $("published").checked = t.is_published;
+      $("pdf-current").innerHTML = t.pdf_path ? "✓ PDF yüklənib. Dəyişmək istəsən, yeni fayl seç." : "PDF hələ yüklənməyib.";
+      const key = k?.answers || {};
+      rows = (t.questions || []).map((q) => ({ ...q, key: key[q.n] || "" }));
+      $("total").value = totalPoints(rows) || 100;
+      renderRows();
+    }
+
+    async function save(e) {
+      e.preventDefault();
+      document.querySelectorAll(".qrow[data-i]").forEach(readRow);
+      rows.sort((a, b) => a.n - b.n);
+      const title = $("title").value.trim();
+      const duration_min = Number($("duration").value);
+      const starts_at = fromLocalInput($("starts").value);
+      const ends_at = fromLocalInput($("ends").value);
+      const file = $("pdf").files[0];
+      const published = $("published").checked;
+
+      if (!title) return toast("Sınağın adını yaz", "err");
+      if (!(duration_min >= 1 && duration_min <= 600)) return toast("Vaxt 1–600 dəqiqə olmalıdır", "err");
+      if (starts_at && ends_at && new Date(ends_at) <= new Date(starts_at)) return toast("Son tarix başlamadan sonra olmalıdır", "err");
+      if (!file && !current?.pdf_path) return toast("Sınaq PDF-ini seç", "err");
+      if (file && file.size > 50 * 1048576) return toast("PDF 50 MB-dan böyükdür", "err");
+      if (!rows.length) return toast("Cavab kartı boşdur", "err");
+      const errs = validate();
+      if (errs.length) { $("parse-msg").textContent = errs.slice(0, 6).join(" · "); $("parse-msg").classList.remove("hidden"); return toast("Cavab kartında səhv var", "err"); }
+      $("parse-msg").classList.add("hidden");
+
+      const questions = rows.map((r) => {
+        const q = { n: r.n, type: r.type, points: Number(r.points) || 0 };
+        if (r.type === "choice") q.options = r.options;
+        if (r.type === "multi") { q.options = r.options; q.parts = (r.key || "").length; }
+        if (r.type === "essay") q.min_words = Number(r.min_words) || 0;
+        return q;
+      });
+      const key = {};
+      rows.forEach((r) => { if (r.type !== "essay") key[r.n] = r.type === "open" ? r.key.trim() : r.key.toUpperCase(); });
+
+      const btn = $("save");
+      btn.disabled = true; btn.textContent = "Yadda saxlanılır…";
+      try {
+        let pdf_path = current?.pdf_path || null;
+        if (file) {
+          const path = `${crypto.randomUUID()}.pdf`;
+          const up = await sb.storage.from("tests").upload(path, file, { contentType: "application/pdf" });
+          if (up.error) throw up.error;
+          const old = pdf_path;
+          pdf_path = path;
+          if (old) {
+            const { count } = await sb.from("tests").select("id", { count: "exact", head: true }).eq("pdf_path", old).neq("id", testId);
+            if (!count) await sb.storage.from("tests").remove([old]);
+          }
+        }
+        const row = {
+          title, description: $("desc").value.trim() || null, pdf_path, questions, duration_min, starts_at, ends_at,
+          target_classes: (() => { const c = [...document.querySelectorAll("#classes input:checked")].map((i) => i.value); return c.length ? c : null; })(),
+          results_mode: document.querySelector("input[name=rmode]:checked").value,
+          is_published: published,
+        };
+        if (testId) {
+          const { error } = await sb.from("tests").update(row).eq("id", testId);
+          if (error) throw error;
+        } else {
+          const { data, error } = await sb.from("tests").insert(row).select("id").single();
+          if (error) throw error;
+          testId = data.id;
+          history.replaceState(null, "", `test-edit.html?id=${testId}`);
+        }
+        const { error: kErr } = await sb.from("test_keys").upsert({ test_id: testId, answers: key });
+        if (kErr) throw kErr;
+        if (current) await sb.rpc("admin_regrade", { p_test: testId });   // açar dəyişibsə, təhvil verilənlər yenidən hesablanır
+        toast(published ? "Yadda saxlandı və paylaşıldı ✓" : "Yadda saxlandı ✓ (hələ paylaşılmayıb)", "ok");
+        await load();
+      } catch (err) {
+        toast(translateError(err), "err");
+      } finally {
+        btn.disabled = false; btn.textContent = "Yadda saxla";
+      }
+    }
+
+    async function start() {
+      if (!configured) { app.innerHTML = '<div class="card empty">Sayt bazaya qoşulmayıb.</div>'; return; }
+      const me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.role !== "admin") { location.href = "portal.html"; return; }
+      app.innerHTML = $("tpl").innerHTML;
+
+      $("classes").innerHTML = CLASSES.map((c) => `<label class="chk"><input type="checkbox" value="${esc(c)}"> ${esc(classLabel(c))}</label>`).join("");
+
+      $("parse").addEventListener("click", () => {
+        const { questions, key, errors } = parseKey($("keytext").value);
+        const msg = $("parse-msg");
+        if (!questions.length) { msg.textContent = "Cavab tapılmadı. Nümunə: 1 A, 2 C, 3 BBAA"; msg.classList.remove("hidden"); return; }
+        if (rows.length && !confirm("Mövcud cavab kartı yenisi ilə əvəz olunsun?")) return;
+        rows = questions.map((q) => ({ ...q, key: key[q.n] || "" }));
+        distributePoints(rows, Number($("total").value) || 100);
+        if (errors.length) { msg.textContent = errors.join(" · "); msg.classList.remove("hidden"); } else msg.classList.add("hidden");
+        renderRows();
+        toast(`${rows.length} sual yaradıldı`, "ok");
+      });
+      $("add-row").addEventListener("click", () => {
+        document.querySelectorAll(".qrow[data-i]").forEach(readRow);
+        const n = rows.length ? Math.max(...rows.map((r) => r.n)) + 1 : 1;
+        rows.push({ n, type: "choice", options: "ABCDE", points: 0, key: "" });
+        renderRows();
+      });
+      $("distribute").addEventListener("click", () => {
+        document.querySelectorAll(".qrow[data-i]").forEach(readRow);
+        const total = Number($("total").value);
+        if (!(total > 0)) return toast("Ümumi balı yaz", "err");
+        const essayPts = rows.filter((r) => r.type === "essay").reduce((s, r) => s + (Number(r.points) || 0), 0);
+        if (rows.some((r) => r.type === "essay") && !essayPts) toast("Əvvəlcə esse sualına bal yaz (məs. 16.6)", "err");
+        distributePoints(rows, total);
+        renderRows();
+      });
+      $("total").addEventListener("input", updateSum);
+      $("rows").addEventListener("change", (e) => {
+        const el = e.target.closest(".qrow[data-i]");
+        if (!el) return;
+        const r = rows[Number(el.dataset.i)];
+        if (e.target.classList.contains("q-type")) {
+          readRow(el);
+          r.type = e.target.value;
+          if (r.type === "choice" || r.type === "multi") r.options ||= "ABCDE";
+          renderRows();
+        } else { readRow(el); updateSum(); }
+      });
+      $("rows").addEventListener("input", (e) => {
+        const el = e.target.closest(".qrow[data-i]");
+        if (el && e.target.classList.contains("q-key") && rows[Number(el.dataset.i)].type !== "open") e.target.value = e.target.value.toUpperCase().replace(/[^A-E]/g, "");
+      });
+      $("rows").addEventListener("click", (e) => {
+        const b = e.target.closest(".q-del");
+        if (!b) return;
+        document.querySelectorAll(".qrow[data-i]").forEach(readRow);
+        rows.splice(Number(b.closest(".qrow").dataset.i), 1);
+        renderRows();
+      });
+      $("form").addEventListener("submit", save);
+
+      renderRows();
+      await load();
+    }
+
+    start();
+  </script>
+</body>
+</html>
