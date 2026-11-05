@@ -35,6 +35,7 @@
         <a class="btn btn-ghost btn-sm" href="attendance.html">✅ Davamiyyət</a>
         <a class="btn btn-ghost btn-sm" href="report.html">📊 Aylıq hesabat</a>
         <button class="btn btn-ghost btn-sm" id="backup-btn">💾 Ehtiyat nüsxə</button>
+        <button class="btn btn-ghost btn-sm" id="storage-btn">🧹 Yaddaş</button>
       </div>
     </div>
 
@@ -383,7 +384,7 @@ seed"></textarea>
     // ================= Ehtiyat nüsxə =================
     const BACKUP_TABLES = ["profiles", "announcements", "materials", "material_views", "violations", "tests", "test_keys",
                            "attempts", "live_quizzes", "live_sessions", "live_players", "live_answers", "words", "attendance",
-                           "messages", "test_online", "question_bank", "homework", "hw_submissions"];
+                           "messages", "test_online", "question_bank", "homework", "hw_submissions", "quick_comments"];
 
     async function fetchAll(table) {
       const out = [];
@@ -394,6 +395,73 @@ seed"></textarea>
         if (data.length < 1000) break;
       }
       return out;
+    }
+
+    // ================= Yaddaş (pulsuz plan: fayllar 1 GB, baza 500 MB) =================
+    const LIMIT_FILES = 1024 ** 3, LIMIT_DB = 500 * 1024 ** 2;
+    const BUCKET_LABELS = { materials: "Materiallar", tests: "Sınaq PDF / audio", homework: "Ev tapşırıqları" };
+    const mb = (b) => (b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(2)} GB` : `${(b / 1024 ** 2).toFixed(b < 10 * 1024 ** 2 ? 1 : 0)} MB`);
+    function usageBar(label, used, limit) {
+      const pct = Math.min(100, Math.round((used / limit) * 100));
+      const color = pct >= 85 ? "var(--bad)" : pct >= 65 ? "var(--gold)" : "var(--ok)";
+      return `<div class="usage"><div class="usage-row"><b>${label}</b><span>${mb(used)} / ${mb(limit)} · <b>${pct}%</b></span></div>
+        <div class="bar"><div style="width:${Math.max(pct, 1)}%;background:${color}"></div></div></div>`;
+    }
+    async function storageWarn() {
+      const { data } = await sb.rpc("admin_storage_usage");
+      if (!data) return;
+      const files = (data.buckets || []).reduce((s2, b) => s2 + Number(b.bytes), 0);
+      if (files / LIMIT_FILES >= 0.8 || data.db_bytes / LIMIT_DB >= 0.8) toast("⚠️ Yaddaş dolmaq üzrədir — 🧹 Yaddaş düyməsinə bax", "err");
+    }
+    async function openStorage() {
+      const box = document.createElement("div");
+      box.className = "wd-modal";
+      box.innerHTML = `<div class="wd-modal-box" style="border-top-color:var(--ok);text-align:left;max-width:480px"><div class="spinner"></div></div>`;
+      document.body.appendChild(box);
+      const inner = box.firstElementChild;
+      const draw = async () => {
+        const { data, error } = await sb.rpc("admin_storage_usage");
+        if (error) { inner.innerHTML = `<p>${esc(translateError(error))}</p><p class="small muted">13-sections-rubric-storage.sql işə salınıb?</p><button class="btn btn-ghost btn-block" data-k="x">Bağla</button>`; return; }
+        const buckets = data.buckets || [];
+        const files = buckets.reduce((s2, b) => s2 + Number(b.bytes), 0);
+        const old = (data.hw_old || []).filter((x) => x.files > 0);
+        inner.innerHTML = `
+          <div class="wd-modal-ico" style="text-align:center">🧹</div><h2 style="text-align:center">Yaddaş</h2>
+          ${usageBar("Fayllar", files, LIMIT_FILES)}
+          <div class="small muted" style="margin:-6px 0 12px">${buckets.length ? buckets.map((b) => `${esc(BUCKET_LABELS[b.bucket] || b.bucket)}: ${mb(Number(b.bytes))} (${b.files})`).join(" · ") : "Hələ fayl yoxdur"}</div>
+          ${usageBar("Baza (şagirdlər, nəticələr, mesajlar…)", Number(data.db_bytes), LIMIT_DB)}
+          <h3 style="font-size:1rem;margin:16px 0 6px">Köhnə ev tapşırığı şəkilləri</h3>
+          <p class="small muted" style="margin:0 0 8px">Ən çox yer tutan şəkillərdir. Silsən, şagirdin yazılı cavabı, balı və sənin şərhin qalır — yalnız şəkil/PDF silinir.</p>
+          ${old.length ? `<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+              <select id="old-m" style="width:auto">${old.map((x) => `<option value="${x.months}">${x.months} aydan köhnə — ${x.files} fayl, ${mb(Number(x.bytes))}</option>`).join("")}</select>
+              <button class="btn btn-warn btn-sm" data-k="clean">Sil</button></div>`
+            : '<p class="small">Bir aydan köhnə şəkil yoxdur 👍</p>'}
+          <p class="small muted" style="margin-top:12px">Məsləhət: böyük PDF-ləri yükləməzdən əvvəl sıxışdır (məs. ilovepdf.com → Compress). Hər tədris ilinin sonunda köhnə tapşırıq şəkillərini sil.</p>
+          <button class="btn btn-ghost btn-block" data-k="x" style="margin-top:8px">Bağla</button>`;
+      };
+      await draw();
+      box.addEventListener("click", async (e) => {
+        if (e.target === box) return box.remove();
+        const b = e.target.closest("button[data-k]"); if (!b) return;
+        if (b.dataset.k === "x") return box.remove();
+        if (b.dataset.k === "clean") {
+          const m = Number(document.getElementById("old-m").value);
+          if (!confirm(`${m} aydan köhnə ev tapşırığı şəkilləri və PDF-ləri silinsin? Bunu geri qaytarmaq olmur.`)) return;
+          b.disabled = true; b.textContent = "Silinir…";
+          const { data: paths, error } = await sb.rpc("admin_old_hw_files", { p_months: m });
+          if (error) { toast(translateError(error), "err"); return draw(); }
+          let removed = [];
+          for (let i = 0; i < paths.length; i += 100) {
+            const chunk = paths.slice(i, i + 100);
+            const { error: e2 } = await sb.storage.from("homework").remove(chunk);
+            if (e2) { toast(translateError(e2), "err"); break; }
+            removed = removed.concat(chunk);
+          }
+          if (removed.length) await sb.rpc("admin_forget_hw_files", { p_paths: removed });
+          toast(`${removed.length} fayl silindi ✓`, "ok");
+          await draw();
+        }
+      });
     }
 
     function openBackup() {
@@ -519,7 +587,7 @@ seed"></textarea>
     }
 
     // ================= Ev tapşırıqları =================
-    let hws = [], hwSubs = [], hwOpen = null;
+    let hws = [], hwSubs = [], hwOpen = null, hwQcs = [];
     async function loadHw(badgeOnly = false) {
       const [{ data, error }, { data: subs }] = await Promise.all([
         sb.from("homework").select("*").order("created_at", { ascending: false }),
@@ -531,6 +599,7 @@ seed"></textarea>
       const ungraded = hwSubs.filter((x) => x.grade === null).length;
       const bd = document.getElementById("badge-hw"); bd.textContent = ungraded; bd.classList.toggle("zero", !ungraded);
       if (badgeOnly) return;
+      if (hwOpen) { const { data: qc } = await sb.from("quick_comments").select("id, body").order("id"); hwQcs = qc || []; }
       box.innerHTML = hws.length ? hws.map((h) => {
         const ss = hwSubs.filter((x) => x.homework_id === h.id);
         const late = h.due_at && Date.now() > new Date(h.due_at);
@@ -554,10 +623,14 @@ seed"></textarea>
                 <input type="number" min="0" max="${h.max_points}" step="0.5" style="width:90px" value="${x.grade ?? ""}" id="g-${x.id}" placeholder="bal">
                 <input style="flex:1 1 200px" maxlength="2000" value="${esc(x.feedback || "")}" id="f-${x.id}" placeholder="Şərh (şagird görəcək)">
                 <button class="btn btn-ok btn-sm" data-grade="${x.id}">${x.grade === null ? "Qiymət ver" : "Yenilə"}</button></div>
+              ${hwQcs.length ? `<div class="qc-chips">${hwQcHtml(x.id)}</div>` : ""}
             </div>`).join("") : '<div class="empty small">Hələ heç kim göndərməyib.</div>'}</div>` : ""}
         </article>`;
       }).join("") : '<div class="card empty">Hələ tapşırıq yoxdur.</div>';
       if (hwOpen) loadHwFiles();
+    }
+    function hwQcHtml(subId) {
+      return hwQcs.map((c) => `<span class="qc"><button type="button" data-hwqc="${subId}">${esc(c.body)}</button></span>`).join("");
     }
     const fmtN = (x) => (Number.isInteger(Number(x)) ? String(Number(x)) : Number(x).toFixed(1));
 
@@ -1174,6 +1247,7 @@ seed"></textarea>
         if (b.dataset.wdel) return deleteWord(b.dataset.wdel);
         if (b.dataset.hw) return hwAction(b.dataset.hw, b.dataset.id);
         if (b.dataset.grade) return gradeHw(b.dataset.grade);
+        if (b.dataset.hwqc) { const f = document.getElementById(`f-${b.dataset.hwqc}`); f.value = (f.value.trim() ? f.value.trim() + " " : "") + b.textContent; return f.focus(); }
         if (b.dataset.bdel) return deleteBank(b.dataset.bdel);
         if (b.dataset.thread) { openThread = b.dataset.thread; return loadMsgs(); }
         if (b.hasAttribute("data-threads")) { openThread = null; return loadMsgs(); }
@@ -1189,6 +1263,7 @@ seed"></textarea>
       });
 
       document.getElementById("backup-btn").addEventListener("click", openBackup);
+      document.getElementById("storage-btn").addEventListener("click", openStorage);
       document.getElementById("live-form").addEventListener("submit", saveLive);
       document.getElementById("live-cancel").addEventListener("click", resetLiveForm);
       document.getElementById("set-max").addEventListener("change", (e) => saveSetting("max_warnings", e.target.value));
@@ -1227,6 +1302,7 @@ seed"></textarea>
       await loadPeople();
       loadViolations();   // nişan sayı üçün
       loadMsgs();         // oxunmamış mesaj sayı üçün
+      storageWarn();      // yaddaş 80%-i keçibsə xəbərdarlıq
       loadHw(true);       // yoxlanılmamış tapşırıq sayı üçün
       const startTab = location.hash.slice(1);
       if (startTab) app.querySelector(`.tab[data-tab="${CSS.escape(startTab)}"]`)?.click();

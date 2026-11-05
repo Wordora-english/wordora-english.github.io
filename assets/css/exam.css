@@ -122,3 +122,8 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .bub.opt-line b { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--bub-line, #cfcae3); flex: 0 0 auto; font-size: .8rem; }
 .bub.opt-line.on b { border-color: #fff; }
 .oq input.open { width: 100%; }
+.rv.rv-online .rv-q { flex: 1 1 calc(100% - 4rem); }
+.rv-q { font-weight: 500; }
+.rv.essay .rv-q { margin-top: .3rem; color: var(--muted); }
+.rv-crit { display: flex; gap: .4rem 1rem; flex-wrap: wrap; margin-top: .5rem; font-size: .85rem; }
+.rv-comment { margin-top: .5rem; padding: .5rem .7rem; border-radius: 8px; background: var(--card); white-space: pre-wrap; }

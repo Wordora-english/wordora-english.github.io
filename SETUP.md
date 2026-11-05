@@ -74,6 +74,7 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 9. `supabase/10-attendance-messages-parent.sql`
 10. `supabase/11-telegram-multi.sql`
 11. `supabase/12-homework-bank-online.sql`
+12. `supabase/13-sections-rubric-storage.sql`
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 
@@ -131,3 +132,7 @@ select public.remove_telegram_chat('ID');   -- sil
 - **Tam onlayn sınaq** → **+ Yeni sınaq** → **🧩 Tam onlayn sınaq** → sualları yaz (`## başlıq` + mətn; sual + variantlar, düzgünün əvvəlinə `*`; `= cavab` açıq sual; `= esse 70` esse) → **Sualları yarat** → bal → **Yadda saxla**. Şagird sualları yalnız sınağa başlayanda görür
 - **Sual bankı** → **🗂 Sual bankı** → mövzu yaz, sualları yapışdır → **Banka əlavə et**; sonra lazım olanları seç → **→ Seçilənlərdən sınaq** və ya **→ Seçilənlərdən viktorina**
 - **Ev tapşırığı** → **📝 Tapşırıqlar** → başlıq, tapşırıq, son tarix, bal, siniflər → **Paylaş**; şagird portalda **📝 Ev tapşırıqları**-ndan cavab yazır və ya dəftərin şəklini göndərir → sən **Cavablar** → bal + şərh → **Qiymət ver**. Qiymət qoyulana qədər şagird cavabını dəyişə bilər
+- **Bölmələr (MSI üçün)** → sınaqda **Bölmələr** sahəsinə yaz: `Reading: 1-10; Listening: 11-15; Grammar: 16-20; Essay: 21` (onlayn sınaqda sualların arasına `# Reading` yazmaq kifayətdir) → **Nəticələr**-də hər şagirdin və sinfin bölmə üzrə faizi, ən zəif bölmə; Excel-də ayrıca "Bölmələr" vərəqi
+- **Qarışdırma** → onlayn sınaqda **🔀 Sualları və variantları qarışdır** (yeni sınaqlarda özü açıqdır) — hər şagird fərqli ardıcıllıq görür
+- **Esse yoxlama** → **Nəticələr** → **Cavablar və esse** → 4 meyara bal yaz (cəm özü hesablanır) → şərh yaz və ya hazır şərhə toxun → **Yadda saxla**. Yeni hazır şərh: mətni yaz → **+ Şərhi hazır siyahıya əlavə et**. Şagird nəticələr açılanda balları və şərhi görür
+- **Yaddaş** → **🧹 Yaddaş** — fayllar və baza nə qədər dolub; köhnə ev tapşırığı şəkillərini buradan sil. 80%-i keçəndə admin paneldə xəbərdarlıq çıxır

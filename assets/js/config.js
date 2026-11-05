@@ -20,3 +20,6 @@ export const TEACHER_NAME = "Gülnar Salayeva";
 
 // Bu faizdən yuxarı nəticə üçün şagird sertifikat yükləyə bilər
 export const CERT_MIN_PERCENT = 85;
+
+// Esse yoxlanarkən meyarlar (esse balı bunlara bərabər bölünür)
+export const RUBRIC = ["Məzmun", "Qrammatika", "Lüğət", "Quruluş"];

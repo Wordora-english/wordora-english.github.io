@@ -112,3 +112,57 @@ export function testState(t, attempt, now = Date.now()) {
   if (t.ends_at && now >= new Date(t.ends_at).getTime()) return "closed";
   return "open";
 }
+
+// ---------- Bölmələr (Reading, Listening, Grammar, Essay ...) ----------
+// "Reading: 1-10; Listening: 11-15; Grammar 16-20; Essay: 21"  →  [{name, from, to}]
+export function parseSections(text) {
+  const out = [], errors = [];
+  for (const part of String(text || "").split(/[;\n]+/).map((s) => s.trim()).filter(Boolean)) {
+    const m = part.match(/^(.+?)\s*:?\s*(\d{1,3})\s*(?:[-–—]\s*(\d{1,3}))?$/);
+    if (!m) { errors.push(`"${part}" — belə yaz: Reading: 1-10`); continue; }
+    const from = Number(m[2]), to = Number(m[3] || m[2]);
+    if (to < from) { errors.push(`"${part}" — aralıq səhvdir`); continue; }
+    out.push({ name: m[1].replace(/[:\s]+$/, "").slice(0, 40), from, to });
+  }
+  return { sections: out, errors };
+}
+export function formatSections(sections) {
+  return (sections || []).map((s) => `${s.name}: ${s.from === s.to ? s.from : `${s.from}-${s.to}`}`).join("; ");
+}
+
+// Bir cəhdin bölmələr üzrə nəticəsi: [{name, got, max, pct}]
+// details[n].points — avtomatik bal; esse balı esselər arasında bal nisbətində bölünür
+export function sectionScores(sections, questions, details, essayScore) {
+  if (!sections?.length) return [];
+  const essays = questions.filter((q) => q.type === "essay");
+  const essayMax = essays.reduce((s, q) => s + (Number(q.points) || 0), 0);
+  return sections.map((sec) => {
+    let got = 0, max = 0, pendingEssay = false;
+    for (const q of questions) {
+      if (q.n < sec.from || q.n > sec.to) continue;
+      const p = Number(q.points) || 0;
+      max += p;
+      if (q.type === "essay") {
+        if (essayScore === null || essayScore === undefined) pendingEssay = true;
+        else got += essayMax ? (Number(essayScore) * p) / essayMax : 0;
+      } else got += Number(details?.[q.n]?.points) || 0;
+    }
+    return { name: sec.name, got, max, pct: max ? Math.round((got / max) * 100) : 0, pending: pendingEssay };
+  });
+}
+
+// ---------- Hər şagird üçün sabit qarışdırma ----------
+export function seededRandom(seed) {
+  let h = 1779033703 ^ String(seed).length;
+  for (const ch of String(seed)) { h = Math.imul(h ^ ch.charCodeAt(0), 3432918353); h = (h << 13) | (h >>> 19); }
+  return () => {
+    h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909);
+    const t = (h ^= h >>> 16) >>> 0;
+    return t / 4294967296;
+  };
+}
+export function shuffleWith(arr, rnd) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}

@@ -30,7 +30,7 @@
   <script type="module">
     import { sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
     import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
-    import { wordCount, fmtNum, fmtDuration, testState } from "./assets/js/tests-common.js";
+    import { wordCount, fmtNum, fmtDuration, testState, seededRandom, shuffleWith, sectionScores } from "./assets/js/tests-common.js";
 
     const app = document.getElementById("app");
     const $ = (id) => document.getElementById(id);
@@ -224,11 +224,40 @@
         `<button type="button" class="bub ${value === o ? "on" : ""}" data-n="${n}" ${part !== null ? `data-part="${part}"` : ""} data-v="${o}">${o}</button>`).join("")}</div>`;
     }
 
+    // Onlayn sınaqda hər şagird üçün sabit (cəhdə bağlı) qarışdırma.
+    // Bölmələr öz yerində qalır, mətnin sualları mətnin altında, esse bölmənin sonunda.
+    let optOrder = {};
+    function displayOrder(qs) {
+      optOrder = {};
+      if (attempt.pdf_path || test.content?.shuffle !== true || !qs.some((q) => q.text)) return qs;
+      const rnd = seededRandom(attempt.attempt_id);
+      const secs = test.content?.sections || [];
+      const secOf = (q) => secs.findIndex((x) => q.n >= x.from && q.n <= x.to);
+      const groups = [];
+      for (const q of qs) {
+        const k = secOf(q), last = groups[groups.length - 1];
+        if (last && last.k === k) last.qs.push(q); else groups.push({ k, qs: [q] });
+      }
+      const out = [];
+      for (const g of groups) {
+        const units = [], essays = [];
+        for (const q of g.qs) {
+          if (q.type === "essay") { essays.push(q); continue; }
+          const last = units[units.length - 1];
+          if (q.pid && last && last.pid === q.pid) last.qs.push(q); else units.push({ pid: q.pid, qs: [q] });
+        }
+        for (const u of shuffleWith(units, rnd)) out.push(...shuffleWith(u.qs, rnd));
+        out.push(...essays);
+      }
+      for (const q of out) if (q.type === "choice" && q.opts) optOrder[q.n] = shuffleWith(q.opts.map((_, i) => i), rnd);
+      return out;
+    }
+
     function renderCard() {
-      const qs = attempt.questions?.length ? attempt.questions : test.questions;
+      const qs = displayOrder(attempt.questions?.length ? attempt.questions : test.questions);
       const passages = Object.fromEntries((attempt.passages || []).map((p) => [p.id, p]));
       const shown = new Set();
-      $("qs").innerHTML = qs.map((q) => {
+      $("qs").innerHTML = qs.map((q, idx) => {
         const v = answers[q.n] ?? "";
         const pts = `<span class="q-pts-lbl">${fmtNum(q.points)} bal</span>`;
         let pre = "";
@@ -238,11 +267,12 @@
           pre = `<div class="passage"><div class="passage-t">${esc(pg.title)}</div>${pg.text ? `<div class="passage-b">${esc(pg.text)}</div>` : ""}</div>`;
         }
         if (q.text) {
-          const head = `<div class="oq-head"><span class="qn">${q.n}</span><div class="oq-text">${esc(q.text)}</div>${pts}</div>`;
+          const head = `<div class="oq-head"><span class="qn">${idx + 1}</span><div class="oq-text">${esc(q.text)}</div>${pts}</div>`;
           if (q.type === "choice" && q.opts) {
-            return pre + `<div class="oq" data-q="${q.n}">${head}<div class="bubs opt-list">${q.opts.map((o, i) => {
-              const L = (q.options || "ABCDE")[i];
-              return `<button type="button" class="bub opt-line ${v === L ? "on" : ""}" data-n="${q.n}" data-v="${L}"><b>${L}</b><span>${esc(o)}</span></button>`;
+            const order = optOrder[q.n] || q.opts.map((_, i) => i);
+            return pre + `<div class="oq" data-q="${q.n}">${head}<div class="bubs opt-list">${order.map((oi, di) => {
+              const L = (q.options || "ABCDE")[oi];     // yadda saxlanılan — həmişə əsl hərf
+              return `<button type="button" class="bub opt-line ${v === L ? "on" : ""}" data-n="${q.n}" data-v="${L}"><b>${"ABCDE"[di]}</b><span>${esc(q.opts[oi])}</span></button>`;
             }).join("")}</div></div>`;
           }
           if (q.type === "open") {
@@ -417,24 +447,44 @@
       const { data, error } = await sb.rpc("get_my_review", { p_test: testId });
       if (error) return toast(translateError(error), "err");
       const key = data.key || {}, det = data.details || {};
+      const optText = (q, L) => {
+        if (!q.opts || !L) return null;
+        const i = (q.options || "ABCDE").indexOf(L);
+        return i >= 0 ? q.opts[i] : null;
+      };
+      const rev = data.essay_review || {};
       const rows = data.questions.map((q) => {
         const mine = data.answers[q.n] ?? "";
         const d = det[q.n] || {};
+        const qText = q.text ? `<div class="rv-q">${esc(q.text)}</div>` : "";
         if (q.type === "essay") {
-          return `<div class="rv essay"><div><b>${q.n}. Esse</b> <span class="muted small">${d.words || 0} söz</span> — <b>${data.essay_score !== null ? fmtNum(data.essay_score) : "yoxlanılır"}</b> / ${fmtNum(q.points)}</div><div class="rv-essay">${esc(mine) || "<i>boş</i>"}</div></div>`;
+          const crit = Object.entries(rev.c || {});
+          return `<div class="rv essay"><div><b>${q.n}. Esse</b> <span class="muted small">${d.words || 0} söz</span> — <b>${data.essay_score !== null ? fmtNum(data.essay_score) : "yoxlanılır"}</b> / ${fmtNum(q.points)}</div>${qText}
+            <div class="rv-essay">${esc(mine) || "<i>boş</i>"}</div>
+            ${crit.length ? `<div class="rv-crit">${crit.map(([k, v]) => `<span>${esc(k)}: <b>${fmtNum(v)}</b></span>`).join("")}</div>` : ""}
+            ${rev.comment ? `<div class="rv-comment">💬 ${esc(rev.comment)}</div>` : ""}</div>`;
         }
         const cls = d.frac >= 1 ? "ok" : d.frac > 0 ? "part" : "bad";
         const icon = d.frac >= 1 ? "✓" : d.frac > 0 ? "◐" : "✕";
-        return `<div class="rv ${cls}"><span class="rv-i">${icon}</span><b>${q.n}</b>
-          <span>Sənin: <code>${esc(mine || "—")}</code></span>
-          <span>Düzgün: <code>${esc(key[q.n] || "")}</code></span>
+        const myT = optText(q, mine), keyT = optText(q, key[q.n]);
+        return `<div class="rv ${cls} ${q.text ? "rv-online" : ""}"><span class="rv-i">${icon}</span><b>${q.n}</b>${qText}
+          <span>Sənin: <code>${esc(myT ?? (mine || "—"))}</code></span>
+          <span>Düzgün: <code>${esc(keyT ?? (key[q.n] || ""))}</code></span>
           <span class="rv-p">${fmtNum(d.points ?? 0)} / ${fmtNum(q.points)}</span></div>`;
       }).join("");
+      const secs = sectionScores(data.sections, data.questions, det, data.essay_score);
       app.innerHTML = `<div class="container" style="max-width:760px">
         <div class="card" style="margin-bottom:12px"><h1 style="font-size:1.35rem">${esc(data.title)}</h1>
-        <div class="big-score" style="text-align:left">${fmtNum(data.score)}<span>/ ${fmtNum(data.total)}</span></div></div>
+        <div class="big-score" style="text-align:left">${fmtNum(data.score)}<span>/ ${fmtNum(data.total)}</span></div>
+        ${secs.length ? `<div class="sec-bars">${secs.map(secBar).join("")}</div>` : ""}</div>
         <div class="card review">${rows}</div>
         <p class="center" style="margin-top:16px"><a class="btn btn-ghost" href="portal.html">Portala qayıt</a></p></div>`;
+    }
+
+    function secBar(x) {
+      const color = x.pct >= 70 ? "var(--ok)" : x.pct >= 40 ? "var(--gold)" : "var(--bad)";
+      return `<div class="sec-bar"><div class="sec-top"><b>${esc(x.name)}</b><span>${x.pending ? "yoxlanılır" : `${fmtNum(Math.round(x.got * 10) / 10)} / ${fmtNum(x.max)} · <b>${x.pct}%</b>`}</span></div>
+        <div class="qa-bar"><div style="width:${x.pending ? 0 : x.pct}%;background:${color}"></div></div></div>`;
     }
 
     $("submit").addEventListener("click", () => submit(false));

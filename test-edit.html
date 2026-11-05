@@ -88,7 +88,7 @@ She ___ (go) to school every day.
 
 Write about your favourite hobby.
 = esse 70"></textarea>
-            <div class="hint"><b>## başlıq</b> + alt sətirlər → oxu mətni · sual + variantlar (düzgününə <b>*</b>) → test · <b>= cavab</b> → açıq sual (variantları / ilə ayır) · <b>= esse 70</b> → esse (min. söz) · bloklar arasında boş sətir. Sual bankından da köçürə bilərsən.</div>
+            <div class="hint"><b>## başlıq</b> + alt sətirlər → oxu mətni · sual + variantlar (düzgününə <b>*</b>) → test · <b>= cavab</b> → açıq sual (variantları / ilə ayır) · <b>= esse 70</b> → esse (min. söz) · <b># Reading</b> → bölmə · bloklar arasında boş sətir. Sual bankından da köçürə bilərsən.</div>
           </div>
           <button type="button" class="btn btn-primary btn-sm" id="parse-online">Sualları yarat</button>
         </div>
@@ -111,6 +111,14 @@ Write about your favourite hobby.
           <div class="muted small" id="sum"></div>
         </div>
         <div class="hint">"Bərabər payla" — esse balları olduğu kimi qalır, qalan bal digər suallara bərabər bölünür. Hər sualın balını sonra əl ilə də dəyişə bilərsən.</div>
+
+        <div class="field" style="margin-top:16px">
+          <label for="sections">Bölmələr <span class="muted small">(istəyə görə)</span></label>
+          <input id="sections" maxlength="400" placeholder="Reading: 1-10; Listening: 11-15; Grammar: 16-20; Essay: 21">
+          <div class="hint">Nəticələrdə hər şagird və bütün sinif üçün bölmə üzrə faiz görünür (məs. "Listening 55%"). Onlayn sınaqda sualların arasına <b># Reading</b> kimi sətir yazsan, avtomatik dolur.</div>
+        </div>
+        <label class="chk hidden" id="shuffle-wrap" style="width:max-content"><input type="checkbox" id="shuffle" checked> 🔀 Sualları və variantları hər şagird üçün qarışdır</label>
+        <div class="hint hidden" id="shuffle-hint">Yan-yana oturanlar eyni ardıcıllığı görmür. Mətnin sualları mətnin altında qalır, esse həmişə bölmənin sonunda olur.</div>
       </section>
 
       <section class="card savebar">
@@ -122,7 +130,7 @@ Write about your favourite hobby.
 
   <script type="module">
     import { sb, configured, getMyProfile, esc, toast, translateError, CLASSES, classLabel } from "./assets/js/app.js";
-    import { parseKey, distributePoints, totalPoints, TYPE_LABELS, OPTION_SETS, toLocalInput, fromLocalInput, fmtNum } from "./assets/js/tests-common.js";
+    import { parseKey, distributePoints, totalPoints, TYPE_LABELS, OPTION_SETS, toLocalInput, fromLocalInput, fmtNum, parseSections, formatSections } from "./assets/js/tests-common.js";
 
     const app = document.getElementById("app");
     let testId = new URLSearchParams(location.search).get("id");
@@ -195,6 +203,8 @@ Write about your favourite hobby.
       $("online-box").classList.toggle("hidden", m !== "online");
       $("pdf-key-box").classList.toggle("hidden", m === "online");
       $("pdf-key-btns").classList.toggle("hidden", m === "online");
+      $("shuffle-wrap").classList.toggle("hidden", m !== "online");
+      $("shuffle-hint").classList.toggle("hidden", m !== "online");
       $("pdf-current").innerHTML = m === "online"
         ? "Onlayn sınaqda PDF lazım deyil (istəsən əlavə material kimi yükləyə bilərsən)."
         : (current?.pdf_path ? "✓ PDF yüklənib. Dəyişmək istəsən, yeni fayl seç." : "PDF şagirdə yalnız sınaq gedən müddətdə, su nişanı ilə görünür. Yükləmək olmur.");
@@ -226,6 +236,8 @@ Write about your favourite hobby.
       rows = (t.questions || []).map((q) => ({ ...q, ...(texts[q.n] || {}), key: key[q.n] || "" }));
       $("total").value = totalPoints(rows) || 100;
       passages = on?.passages || [];
+      $("sections").value = formatSections(t.content?.sections);
+      $("shuffle").checked = t.content?.shuffle !== false;
       if (t.content?.mode === "online") { $("onlinetext").value = on?.source || ""; setMode("online"); }
       renderRows();
     }
@@ -250,6 +262,11 @@ Write about your favourite hobby.
       const errs = validate();
       if (errs.length) { $("parse-msg").textContent = errs.slice(0, 6).join(" · "); $("parse-msg").classList.remove("hidden"); return toast("Cavab kartında səhv var", "err"); }
       $("parse-msg").classList.add("hidden");
+      const sec = parseSections($("sections").value);
+      if (sec.errors.length) return toast(`Bölmələr: ${sec.errors[0]}`, "err");
+      const maxN = Math.max(...rows.map((r) => r.n));
+      const badSec = sec.sections.find((x) => x.from > maxN);
+      if (badSec) return toast(`Bölmə "${badSec.name}": ${badSec.from}-ci sual yoxdur`, "err");
 
       const questions = rows.map((r) => {
         const q = { n: r.n, type: r.type, points: Number(r.points) || 0 };
@@ -298,7 +315,7 @@ Write about your favourite hobby.
           target_classes: (() => { const c = [...document.querySelectorAll("#classes input:checked")].map((i) => i.value); return c.length ? c : null; })(),
           results_mode: document.querySelector("input[name=rmode]:checked").value,
           is_published: published,
-          content: mode === "online" ? { mode: "online" } : {},
+          content: { ...(mode === "online" ? { mode: "online", shuffle: $("shuffle").checked } : {}), ...(sec.sections.length ? { sections: sec.sections } : {}) },
         };
         if (testId) {
           const { error } = await sb.from("tests").update(row).eq("id", testId);
@@ -347,6 +364,7 @@ Write about your favourite hobby.
         if (r.errors.length) { msg.textContent = r.errors.slice(0, 6).join(" · "); msg.classList.remove("hidden"); return; }
         msg.classList.add("hidden");
         passages = r.passages;
+        if (r.sections.length) $("sections").value = formatSections(r.sections);
         const oldPts = Object.fromEntries(rows.map((x) => [x.n, x.points]));
         rows = r.questions.map((q) => ({ ...q, key: r.key[q.n] || "", points: oldPts[q.n] || q.points }));
         if (!rows.some((x) => x.points)) distributePoints(rows, Number($("total").value) || 100);

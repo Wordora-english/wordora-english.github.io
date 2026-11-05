@@ -52,27 +52,33 @@
 
   <script type="module">
     import { sb, configured, getMyProfile, esc, formatDate, toast, translateError, classLabel } from "./assets/js/app.js";
-    import { fmtNum, wordCount } from "./assets/js/tests-common.js";
+    import { fmtNum, wordCount, sectionScores } from "./assets/js/tests-common.js";
     import { downloadXlsx, safeName } from "./assets/js/xlsx-lite.js";
-    import { CERT_MIN_PERCENT } from "./assets/js/config.js";
+    import { CERT_MIN_PERCENT, RUBRIC } from "./assets/js/config.js";
 
     const app = document.getElementById("app");
     const testId = new URLSearchParams(location.search).get("id");
-    let test, key, attempts = [], notStarted = [], violCount = {};
+    let test, key, attempts = [], notStarted = [], violCount = {}, qcs = [];
     let openIds = new Set(), rendered = false;
 
     const total = () => (test.questions || []).reduce((s, q) => s + (Number(q.points) || 0), 0);
     const essayQs = () => (test.questions || []).filter((q) => q.type === "essay");
     const essayMax = () => essayQs().reduce((s, q) => s + (Number(q.points) || 0), 0);
+    const perCrit = () => Math.round((essayMax() / RUBRIC.length) * 100) / 100;
+    const secs = () => test.content?.sections || [];
+    const secOf = (a) => sectionScores(secs(), test.questions || [], a.details, a.essay_score);
+    const pctCls = (p) => (p >= 70 ? "hi" : p >= 40 ? "mid" : "lo");
 
     async function load() {
       await sb.rpc("admin_finalize_expired", { p_test: testId });
-      const [{ data: t, error }, { data: k }, { data: att }, { data: studs }] = await Promise.all([
+      const [{ data: t, error }, { data: k }, { data: att }, { data: studs }, { data: qc }] = await Promise.all([
         sb.from("tests").select("*").eq("id", testId).maybeSingle(),
         sb.from("test_keys").select("answers").eq("test_id", testId).maybeSingle(),
         sb.from("attempts").select("*, profiles(full_name, class_name, student_code, username)").eq("test_id", testId),
         sb.from("profiles").select("id, full_name, class_name, student_code").eq("role", "student").eq("status", "approved"),
+        sb.from("quick_comments").select("id, body").order("id"),
       ]);
+      qcs = qc || [];
       if (error || !t) { app.innerHTML = '<div class="card empty">Sınaq tapılmadı.</div>'; return false; }
       test = t; key = k?.answers || {}; attempts = att || [];
       const took = new Set(attempts.map((a) => a.user_id));
@@ -135,6 +141,9 @@
         ${live.length ? `<div class="section-title"><h2>İndi yazanlar</h2></div>
           <div class="grid">${live.map((a) => `<div class="rrow"><div class="rrow-top"><span class="rank">⏳</span><div class="who"><b>${esc(a.profiles?.full_name)}</b> <span class="muted small">${esc(classLabel(a.profiles?.class_name))}</span><div class="muted small">Başladı: ${formatDate(a.started_at)} · vaxt bitir: ${formatDate(a.deadline)}${violCount[a.id] ? ` · ⚠️ ${violCount[a.id]} pozuntu` : ""}</div></div></div></div>`).join("")}</div>` : ""}
 
+        ${secs().length && done.length ? `<div class="section-title"><h2>Bölmələr üzrə</h2><span class="muted small">sinif ortalaması</span></div>
+          <div class="card" style="margin-bottom:8px">${classSections(done)}</div>` : ""}
+
         <div class="section-title"><h2>Sual analizi</h2><span class="muted small">neçə faiz düzgün cavablayıb</span></div>
         <div class="qa">${analysis(done)}</div>
 
@@ -163,19 +172,33 @@
           <div class="txt">${esc(txt) || "<i>boşdur</i>"}</div>
         </div>`;
       }).join("");
+      const rev = a.essay_review || {};
       const essayGrade = essayQs().length ? `
-        <div class="essay-grade">
-          <label class="small">Esse balı (max ${fmtNum(essayMax())}):</label>
-          <input type="number" min="0" max="${essayMax()}" step="0.1" value="${a.essay_score ?? ""}" data-essay="${a.id}">
-          <button class="btn btn-ok btn-sm" data-essay-save="${a.id}">Yadda saxla</button>
+        <div class="essay-box" style="width:100%">
+          <b>Qiymətləndirmə</b> <span class="muted small">— hər meyar maksimum ${fmtNum(perCrit())} bal</span>
+          <div class="rubric">${RUBRIC.map((c) => `<div><label>${esc(c)}</label><input type="number" min="0" max="${perCrit()}" step="0.5" data-rub="${a.id}" data-c="${esc(c)}" value="${rev.c?.[c] ?? ""}"></div>`).join("")}</div>
+          <div class="essay-grade">
+            <label class="small">Esse balı (max ${fmtNum(essayMax())}):</label>
+            <input type="number" min="0" max="${essayMax()}" step="0.1" value="${a.essay_score ?? ""}" data-essay="${a.id}">
+            <span class="muted small">meyarları yazanda cəmi özü hesablanır</span>
+          </div>
+          <textarea data-comment="${a.id}" maxlength="1500" style="margin-top:8px;min-height:70px" placeholder="Şərh — şagird nəticələr açılanda görəcək">${esc(rev.comment || "")}</textarea>
+          <div class="qc-chips">${qcHtml(a.id)}</div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:8px">
+            <button class="btn btn-ok btn-sm" data-essay-save="${a.id}">Yadda saxla</button>
+            <button class="btn btn-ghost btn-sm" data-qc-new="${a.id}" title="Yazdığın şərhi sonra bir kliklə istifadə etmək üçün">+ Şərhi hazır siyahıya əlavə et</button>
+          </div>
         </div>` : "";
       const statusPill = a.status === "submitted" ? '<span class="pill wait">Esse yoxlanılmalı</span>' : "";
+      const sc = secOf(a);
+      const chips = sc.length ? `<div class="sec-chips">${sc.map((x) => x.pending ? `<span class="sec-chip" style="background:var(--soft)">${esc(x.name)}: ?</span>` : `<span class="sec-chip ${pctCls(x.pct)}">${esc(x.name)} ${x.pct}%</span>`).join("")}</div>` : "";
       return `
         <div class="rrow">
           <div class="rrow-top">
             <span class="rank">${rank}</span>
             <div class="who">
               <b>${esc(p.full_name)}</b> <span class="muted small">${esc(classLabel(p.class_name))} · ${esc(p.student_code || "")}</span> ${statusPill}
+              ${chips}
               <div class="muted small">Təhvil: ${formatDate(a.submitted_at)}${used !== null ? ` · ${used} dəq` : ""}${violCount[a.id] ? ` · <span style="color:var(--bad)">⚠️ ${violCount[a.id]} pozuntu</span>` : ""}${essayQs().length ? ` · test: ${fmtNum(a.auto_score)} + esse: ${a.essay_score === null ? "?" : fmtNum(a.essay_score)}` : ""}</div>
             </div>
             <div class="sc">${fmtNum(a.score)}<span> / ${fmtNum(T)}</span></div>
@@ -192,6 +215,27 @@
             </div>
           </details>
         </div>`;
+    }
+
+    function classSections(done) {
+      const all = done.map(secOf);
+      const avg = secs().map((x, i) => {
+        const vals = all.map((r) => r[i]).filter((r) => r && !r.pending && r.max);
+        const pct = vals.length ? Math.round(vals.reduce((s2, r) => s2 + r.pct, 0) / vals.length) : null;
+        return { name: x.name, pct, n: vals.length, range: x.from === x.to ? `${x.from}` : `${x.from}–${x.to}` };
+      });
+      const known = avg.filter((x) => x.pct !== null);
+      const weakest = known.length > 1 ? known.reduce((m, x) => (x.pct < m.pct ? x : m)) : null;
+      return `<div class="sec-bars" style="margin:0">${avg.map((x) => {
+        const color = x.pct === null ? "var(--line)" : x.pct >= 70 ? "var(--ok)" : x.pct >= 40 ? "var(--gold)" : "var(--bad)";
+        return `<div class="sec-bar"><div class="sec-top"><span><b>${esc(x.name)}</b> <span class="muted small">(${x.range})</span>${weakest === x ? ' <span class="sec-chip lo">ən zəif</span>' : ""}</span>
+          <span>${x.pct === null ? '<span class="muted">esse yoxlanılmayıb</span>' : `<b>${x.pct}%</b>`}</span></div>
+          <div class="qa-bar"><div style="width:${x.pct || 0}%;background:${color}"></div></div></div>`;
+      }).join("")}</div>`;
+    }
+
+    function qcHtml(id) {
+      return qcs.map((c) => `<span class="qc"><button type="button" data-qc-add="${id}" data-qc="${c.id}" title="Şərhə əlavə et">${esc(c.body)}</button><button type="button" class="qc-x" data-qc-del="${c.id}" aria-label="Siyahıdan sil">✕</button></span>`).join("");
     }
 
     function analysis(done) {
@@ -223,12 +267,52 @@
         if (await load()) render();
       };
       document.getElementById("csv").onclick = exportCsv;
+      app.querySelectorAll("[data-rub]").forEach((inp) => inp.oninput = () => {
+        const id = inp.dataset.rub;
+        const vals = [...app.querySelectorAll(`[data-rub="${id}"]`)].filter((x) => x.value !== "").map((x) => Number(x.value) || 0);
+        if (vals.length) app.querySelector(`[data-essay="${id}"]`).value = Math.round(vals.reduce((s2, x) => s2 + x, 0) * 100) / 100;
+      });
+      app.querySelectorAll("[data-qc-add]").forEach((b) => b.onclick = () => {
+        const ta = app.querySelector(`[data-comment="${b.dataset.qcAdd}"]`);
+        ta.value = (ta.value.trim() ? ta.value.trim() + " " : "") + b.textContent;
+        ta.focus();
+      });
+      app.querySelectorAll("[data-qc-del]").forEach((b) => b.onclick = async () => {
+        if (!confirm("Bu hazır şərh siyahıdan silinsin?")) return;
+        const { error } = await sb.from("quick_comments").delete().eq("id", Number(b.dataset.qcDel));
+        if (error) return toast(translateError(error), "err");
+        qcs = qcs.filter((c) => String(c.id) !== b.dataset.qcDel);
+        app.querySelectorAll(".qc-chips").forEach((box) => { const id = box.parentElement.querySelector("[data-comment]")?.dataset.comment; box.innerHTML = qcHtml(id); });
+        bind();
+      });
+      app.querySelectorAll("[data-qc-new]").forEach((b) => b.onclick = async () => {
+        const ta = app.querySelector(`[data-comment="${b.dataset.qcNew}"]`);
+        const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd).trim();
+        const body = (sel || ta.value).trim().slice(0, 300);
+        if (!body) return toast("Əvvəl şərh yaz (və ya bir hissəsini seç)", "err");
+        if (qcs.some((c) => c.body === body)) return toast("Bu şərh artıq siyahıdadır", "err");
+        const { data, error } = await sb.from("quick_comments").insert({ body }).select("id, body").single();
+        if (error) return toast(translateError(error), "err");
+        qcs.push(data);
+        app.querySelectorAll(".qc-chips").forEach((box) => { const id = box.parentElement.querySelector("[data-comment]")?.dataset.comment; box.innerHTML = qcHtml(id); });
+        bind();
+        toast("Hazır şərhlərə əlavə edildi ✓", "ok");
+      });
       app.querySelectorAll("[data-essay-save]").forEach((b) => b.onclick = async () => {
         const id = b.dataset.essaySave;
         const inp = app.querySelector(`[data-essay="${id}"]`);
         const v = inp.value === "" ? null : Number(inp.value);
         if (v !== null && (v < 0 || v > essayMax())) return toast(`Esse balı 0–${fmtNum(essayMax())} arası olmalıdır`, "err");
-        const { error } = await sb.rpc("admin_grade_essay", { p_attempt: id, p_points: v });
+        const c = {};
+        for (const x of app.querySelectorAll(`[data-rub="${id}"]`)) {
+          if (x.value === "") continue;
+          const n = Number(x.value);
+          if (!(n >= 0 && n <= perCrit() + 1e-9)) return toast(`${x.dataset.c}: 0–${fmtNum(perCrit())} arası olmalıdır`, "err");
+          c[x.dataset.c] = n;
+        }
+        const comment = app.querySelector(`[data-comment="${id}"]`).value.trim();
+        const review = { ...(Object.keys(c).length ? { c } : {}), ...(comment ? { comment } : {}) };
+        const { error } = await sb.rpc("admin_save_essay", { p_attempt: id, p_points: v, p_review: review });
         if (error) return toast(translateError(error), "err");
         toast("Esse balı yazıldı ✓", "ok");
         if (await load()) render();
@@ -268,8 +352,14 @@
         const fr = done.map((a) => Number(a.details?.[x.n]?.frac) || 0);
         return [x.n, key[x.n] || "", fr.length ? Math.round(fr.reduce((s, v) => s + v, 0) / fr.length * 100) : ""];
       });
+      const secSheet = secs().length ? [{ name: "Bölmələr", widths: [5, 26, 12, ...secs().flatMap(() => [10, 8])],
+        rows: [["№", "Ad Soyad", "Sinif", ...secs().flatMap((x) => [`${x.name} (bal)`, `${x.name} %`])],
+          ["", "MAKSİMUM", "", ...sectionScores(secs(), qs, {}, 0).flatMap((x) => [n(x.max), 100])],
+          ...done.map((a, i) => [i + 1, a.profiles?.full_name, classLabel(a.profiles?.class_name),
+            ...secOf(a).flatMap((x) => (x.pending ? ["", ""] : [n(x.got), x.pct]))])] }] : [];
       downloadXlsx(`${safeName(test.title)}_neticeler.xlsx`, [
         { name: "Nəticələr", widths: [5, 26, 12, 11, 9, 9, 9, 9, 6, 17, 7, 8], rows: [head, keyRow, ...rows] },
+        ...secSheet,
         { name: "Sual analizi", widths: [8, 18, 14], rows: [["Sual", "Düzgün cavab", "Düzgün %"], ...analysisRows] },
         { name: "Yazmayanlar", widths: [28, 14, 12], rows: [["Ad Soyad", "Sinif", "Kod"], ...notStarted.map((s) => [s.full_name, classLabel(s.class_name), s.student_code])] },
       ]);
@@ -284,7 +374,7 @@
       if (await load()) render();
       // Yazanlar varsa, siyahını 30 saniyədən bir yenilə
       setInterval(async () => {
-        if (document.hidden || document.activeElement?.matches("input") || !attempts.some((a) => a.status === "in_progress")) return;
+        if (document.hidden || document.activeElement?.matches("input, textarea") || !attempts.some((a) => a.status === "in_progress")) return;
         if (await load()) render();
       }, 30000);
     }

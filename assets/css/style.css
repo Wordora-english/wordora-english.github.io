@@ -442,3 +442,31 @@ a.quick-item:hover, button.quick-item:hover { border-color: var(--violet-soft); 
 .hw-pdf { display: grid; place-items: center; text-align: center; width: 96px; height: 96px; border-radius: 10px; border: 1px solid var(--line); background: var(--soft); font-size: 1.6rem; line-height: 1.1; color: var(--text); }
 .hw-pdf .small { font-size: .7rem; word-break: break-all; }
 .hw-x { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; border-radius: 50%; border: 0; background: var(--bad, #d64545); color: #fff; font-size: .75rem; cursor: pointer; }
+
+/* ---------- Bölmələr üzrə nəticə ---------- */
+.sec-bars { display: grid; gap: 10px; margin-top: 12px; }
+.sec-bar .sec-top { display: flex; justify-content: space-between; gap: .5rem; font-size: .9rem; flex-wrap: wrap; }
+.sec-bar .qa-bar, .qa-bar { height: 8px; border-radius: 99px; background: var(--line); margin-top: 5px; overflow: hidden; }
+.qa-bar div { height: 100%; border-radius: 99px; }
+.sec-chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+.sec-chip { font-size: .74rem; padding: .1rem .45rem; border-radius: 99px; font-weight: 600; white-space: nowrap; }
+.sec-chip.hi { background: var(--ok-bg); color: var(--ok); }
+.sec-chip.mid { background: var(--warn-bg); color: #8a5a00; }
+.sec-chip.lo { background: var(--bad-bg); color: var(--bad); }
+:root[data-theme=dark] .sec-chip.mid { color: #f3c969; }
+
+/* ---------- Esse meyarları və hazır şərhlər ---------- */
+.rubric { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin: 8px 0; }
+.rubric label { display: block; font-size: .78rem; color: var(--muted); margin-bottom: 2px; }
+.rubric input { width: 100%; }
+.qc-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.qc { display: inline-flex; align-items: center; border: 1px solid var(--line); background: var(--card); border-radius: 99px; font-size: .78rem; overflow: hidden; }
+.qc button { border: 0; background: none; cursor: pointer; color: var(--text); padding: .25rem .6rem; font: inherit; }
+.qc button.qc-x { padding: .25rem .45rem; color: var(--muted); border-left: 1px solid var(--line); }
+.qc button:hover { background: var(--soft); }
+
+/* ---------- Yaddaş ---------- */
+.usage { margin: 10px 0 14px; }
+.usage .bar { height: 12px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.usage .bar div { height: 100%; border-radius: 99px; }
+.usage-row { display: flex; justify-content: space-between; gap: .5rem; font-size: .9rem; flex-wrap: wrap; }

@@ -23,6 +23,7 @@
 6. ✅ Dinləmə (audio), günün sözü, söz kartları (səsləndirmə ilə), reytinq, sertifikat, nəticələrim, yeni tədris ili
 7. ✅ Davamiyyət, müəllimə sual, valideyn baxışı, aylıq hesabat, ehtiyat nüsxə, qaranlıq rejim, telefona quraşdırma (PWA)
 8. ✅ Tam onlayn sınaq (suallar və oxu mətnləri saytda, başlamadan görünmür), sual bankı, ev tapşırığı (şəkil/PDF ilə)
+9. ✅ Bölmələr üzrə nəticə (MSI), sual/variant qarışdırma, esse meyarları + hazır şərhlər, yaddaş nəzarəti
 
 ## Texnologiya (hamısı pulsuz)
 
