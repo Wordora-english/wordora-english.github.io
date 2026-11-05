@@ -17,6 +17,32 @@ export const sb = configured
 
 export const USERNAME_RE = /^[a-z0-9._]{3,20}$/;
 
+// ---------- Tor yoxlaması: hər səhifə açılanda ----------
+// Server Tor IP-lərindən gələn hər sorğunu "TOR_BLOCKED" xətası ilə dayandırır.
+// Belə olanda səhifənin bütün məzmunu bağlanır.
+export const torChecked = (async () => {
+  if (!sb) return false;
+  try {
+    const { error } = await sb.rpc("ping");
+    if (error && /tor_blocked/i.test(`${error.message} ${error.hint || ""}`)) {
+      const show = () => {
+        document.body.innerHTML = `
+          <div style="min-height:100vh;display:grid;place-items:center;padding:24px;background:#0e1f3d;color:#fff;font-family:Inter,system-ui,sans-serif;text-align:center">
+            <div style="max-width:420px">
+              <div style="font-size:3rem">🧅</div>
+              <h1 style="font-size:1.6rem;margin:.4rem 0">Tor ilə giriş qadağandır</h1>
+              <p style="opacity:.85;line-height:1.5">Bu sayta Tor Browser və ya Tor şəbəkəsi ilə daxil olmaq olmaz.
+              Adi brauzerdən (Chrome, Safari, Firefox) daxil ol.</p>
+            </div>
+          </div>`;
+      };
+      if (document.body) show(); else document.addEventListener("DOMContentLoaded", show);
+      return true;
+    }
+  } catch { /* internet yoxdursa, səhifə öz işini görür */ }
+  return false;
+})();
+
 export function usernameToEmail(username) {
   return `${username.trim().toLowerCase()}@${EMAIL_DOMAIN}`;
 }

@@ -350,7 +350,7 @@
       document.getElementById("set-max").value = String(data.max_warnings);
       document.getElementById("set-tor").value = data.tor_block;
       info.innerHTML =
-        `Tor siyahısında <b>${data.tor_count}</b> IP var (3 saatdan bir yenilənir). ` +
+        `Tor siyahısında <b>${data.tor_count}</b> IP var (30 dəqiqədən bir yenilənir). ` +
         (data.telegram ? "Telegram bildirişləri <b>qoşulub</b> ✓" : "Telegram bildirişləri <b>qoşulmayıb</b> — SETUP.md, 8-ci addım.");
     }
 

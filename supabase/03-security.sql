@@ -3,7 +3,7 @@
 --  • Pozuntular (F12, PrintScreen, başqa tab, ikinci cihaz)
 --  • 2 xəbərdarlıq → avtomatik blok (limit ayarlarda dəyişir)
 --  • Telegram bildirişləri (yeni qeydiyyat, pozuntu, blok)
---  • Tor Browser bloku (Tor çıxış IP siyahısı 3 saatdan bir yenilənir)
+--  • Tor Browser bloku (Tor çıxış IP siyahısı 30 dəqiqədən bir yenilənir)
 --  • Bir hesab = eyni anda bir cihaz
 --  Supabase → SQL Editor → New query → hamısını yapışdır → Run
 --  (Faylı ikinci dəfə işə salmaq təhlükəsizdir.)
@@ -202,7 +202,7 @@ grant execute on function public.check_request() to anon, authenticated;
 alter role authenticator set pgrst.db_pre_request = 'public.check_request';
 notify pgrst, 'reload config';
 
--- Tor çıxış siyahısını yenilə (pg_cron 3 saatdan bir çağırır).
+-- Tor çıxış siyahısını yenilə (pg_cron 30 dəqiqədən bir çağırır).
 -- Əvvəlki sorğunun cavabını emal edir və yeni sorğu göndərir.
 create or replace function public.tor_refresh()
 returns text
@@ -245,11 +245,11 @@ begin
   if exists (select 1 from cron.job where jobname = 'wordora-tor') then
     perform cron.unschedule('wordora-tor');
   end if;
-  perform cron.schedule('wordora-tor', '17 */3 * * *', 'select public.tor_refresh()');
+  perform cron.schedule('wordora-tor', '*/30 * * * *', 'select public.tor_refresh()');
 end;
 $$;
 
-select public.tor_refresh();   -- ilk sorğu (siyahı ən geci 3 saata dolur)
+select public.tor_refresh();   -- ilk sorğu (siyahı ən geci 30 dəqiqəyə dolur)
 
 -- ---------------------------------------------------------------------
 -- 4. Pozuntular, xəbərdarlıq və avtomatik blok
