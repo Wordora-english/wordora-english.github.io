@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Material — Wordora</title>
+  <meta name="theme-color" content="#0e1f3d">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <style>
+    body { background: #e9e7f2; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+    .viewer-bar {
+      position: sticky; top: 0; z-index: 30;
+      background: var(--navy); color: #fff;
+      display: flex; align-items: center; gap: .6rem;
+      padding: .55rem 12px;
+    }
+    .viewer-bar .title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: .95rem; }
+    .viewer-bar .btn-ghost { color: #fff; border-color: rgba(255,255,255,.25); }
+    .viewer-bar .btn-ghost:hover { background: rgba(255,255,255,.08); }
+    .zoom { display: flex; align-items: center; gap: .3rem; }
+    .zoom span { font-size: .8rem; opacity: .8; min-width: 3.2em; text-align: center; }
+    .pages { padding: 16px 8px 80px; overflow-x: auto; }
+    .page {
+      margin: 0 auto 14px;
+      background: #fff;
+      box-shadow: 0 2px 10px rgba(14,31,61,.15);
+      position: relative;
+    }
+    .page canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
+    .page .num { position: absolute; right: 8px; bottom: -20px; font-size: .75rem; color: var(--muted); }
+    .notice { max-width: 760px; margin: 0 auto 12px; font-size: .82rem; color: var(--navy-2); background: #fff; border-radius: 10px; padding: .6rem .8rem; border: 1px solid var(--line); }
+    @media print { body * { display: none !important; } body::after { content: "Bu materialı çap etmək olmaz."; display: block; padding: 40px; font: 20px sans-serif; } }
+  </style>
+</head>
+<body>
+  <div class="viewer-bar">
+    <a class="btn btn-ghost btn-sm" href="portal.html#materials" aria-label="Geri">←</a>
+    <div class="title" id="title">Yüklənir…</div>
+    <div class="zoom">
+      <button class="btn btn-ghost btn-sm" id="zoom-out" aria-label="Kiçilt">−</button>
+      <span id="zoom-val">100%</span>
+      <button class="btn btn-ghost btn-sm" id="zoom-in" aria-label="Böyüt">+</button>
+    </div>
+  </div>
+
+  <main class="pages" id="pages"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
+    import { drawWatermark } from "./assets/js/watermark.js";
+    import * as pdfjsLib from "./assets/vendor/pdfjs/pdf.min.mjs";
+
+    const VENDOR = new URL("./assets/vendor/pdfjs/", location.href).href;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = VENDOR + "pdf.worker.min.mjs";
+
+    const pagesEl = document.getElementById("pages");
+    const titleEl = document.getElementById("title");
+    const fail = (text) => { pagesEl.innerHTML = `<div class="card narrow empty" style="margin:24px auto">${esc(text)}<br><br><a class="btn btn-primary" href="portal.html">Portala qayıt</a></div>`; };
+
+    // ---------- Qoruma: kopyalama, sağ klik, sürükləmə, çap, yadda saxlama ----------
+    for (const ev of ["contextmenu", "dragstart", "selectstart", "copy", "cut"]) {
+      document.addEventListener(ev, (e) => e.preventDefault());
+    }
+    document.addEventListener("keydown", (e) => {
+      const k = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && ["p", "s", "c", "u", "a"].includes(k)) {
+        e.preventDefault();
+        toast("Bu materialı çap etmək, yükləmək və ya kopyalamaq olmaz.", "err");
+      }
+    });
+
+    // ---------- Başla ----------
+    const id = new URLSearchParams(location.search).get("id");
+    let pdf = null, wm = null, zoom = 1, observer = null;
+
+    async function start() {
+      if (!configured) return fail("Sayt bazaya qoşulmayıb.");
+      if (!id) return fail("Material tapılmadı.");
+      const me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.status !== "approved") { location.href = "portal.html"; return; }
+
+      // Serverdən icazə + su nişanı məlumatı (baxış da qeyd olunur)
+      const { data: rows, error } = await sb.rpc("open_material", { p_material: id });
+      if (error || !rows?.length) return fail(error ? translateError(error) : "Bu materiala giriş icazən yoxdur.");
+      const info = rows[0];
+      titleEl.textContent = info.title;
+      document.title = `${info.title} — Wordora`;
+      wm = {
+        name: info.full_name,
+        code: info.student_code,
+        date: formatDate(info.opened_at),
+      };
+
+      // Faylı 60 saniyəlik gizli keçidlə al
+      const { data: signed, error: sErr } = await sb.storage.from("materials").createSignedUrl(info.file_path, 60);
+      if (sErr) return fail(translateError(sErr));
+      let bytes;
+      try {
+        const res = await fetch(signed.signedUrl, { cache: "no-store" });
+        if (!res.ok) throw new Error("Fayl açılmadı");
+        bytes = new Uint8Array(await res.arrayBuffer());
+      } catch (err) { return fail(translateError(err)); }
+
+      try {
+        pdf = await pdfjsLib.getDocument({
+          data: bytes,
+          standardFontDataUrl: VENDOR + "standard_fonts/",
+          cMapUrl: VENDOR + "cmaps/",
+          cMapPacked: true,
+          wasmUrl: VENDOR + "wasm/",
+          iccUrl: VENDOR + "iccs/",
+          isEvalSupported: false,
+        }).promise;
+      } catch (err) { return fail("PDF faylı açıla bilmədi."); }
+
+      await buildPages();
+    }
+
+    // ---------- Səhifələr ----------
+    async function buildPages() {
+      pagesEl.innerHTML = '<div class="notice">🔒 Bu material yalnız sənin üçündür. Hər səhifədə adın və şəxsi kodun yazılıb — ekran şəkli və ya foto paylaşılsa, kimin paylaşdığı bilinir.</div>';
+      const first = await pdf.getPage(1);
+      const v1 = first.getViewport({ scale: 1 });
+      const ratio = v1.height / v1.width;
+
+      observer?.disconnect();
+      observer = new IntersectionObserver((entries) => {
+        for (const en of entries) if (en.isIntersecting) renderPage(en.target);
+      }, { rootMargin: "600px 0px" });
+
+      for (let n = 1; n <= pdf.numPages; n++) {
+        const div = document.createElement("div");
+        div.className = "page";
+        div.dataset.n = n;
+        div.innerHTML = `<span class="num">${n} / ${pdf.numPages}</span>`;
+        setPageSize(div, ratio);
+        pagesEl.appendChild(div);
+        observer.observe(div);
+      }
+    }
+
+    function cssWidth() {
+      const avail = Math.min(pagesEl.clientWidth - 16, 900);
+      return Math.round(avail * zoom);
+    }
+    function setPageSize(div, ratio) {
+      const w = cssWidth();
+      div.style.width = w + "px";
+      div.style.height = Math.round(w * ratio) + "px";
+      div.dataset.ratio = ratio;
+    }
+
+    async function renderPage(div) {
+      const key = String(zoom);
+      if (div.dataset.rendered === key || div.dataset.busy === key) return;
+      div.dataset.busy = key;
+      const page = await pdf.getPage(Number(div.dataset.n));
+      const base = page.getViewport({ scale: 1 });
+      const ratio = base.height / base.width;
+      setPageSize(div, ratio);
+      const w = cssWidth();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const viewport = page.getViewport({ scale: (w / base.width) * dpr });
+
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.floor(viewport.width);
+      canvas.height = Math.floor(viewport.height);
+      const ctx = canvas.getContext("2d");
+      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+      drawWatermark(ctx, canvas.width, canvas.height, wm, Number(div.dataset.n));
+      if (div.dataset.busy !== key) return;   // bu vaxt zoom dəyişib
+      div.querySelector("canvas")?.remove();
+      div.prepend(canvas);
+      div.dataset.rendered = key;
+      delete div.dataset.busy;
+      page.cleanup();
+    }
+
+    // ---------- Zoom ----------
+    const ZOOMS = [0.75, 1, 1.25, 1.5, 2];
+    function setZoom(dir) {
+      const i = Math.max(0, Math.min(ZOOMS.length - 1, ZOOMS.indexOf(zoom) + dir));
+      if (ZOOMS[i] === zoom) return;
+      zoom = ZOOMS[i];
+      document.getElementById("zoom-val").textContent = Math.round(zoom * 100) + "%";
+      document.querySelectorAll(".page").forEach((div) => {
+        setPageSize(div, Number(div.dataset.ratio));
+        delete div.dataset.rendered;
+        observer.unobserve(div); observer.observe(div);
+      });
+    }
+    document.getElementById("zoom-in").addEventListener("click", () => setZoom(1));
+    document.getElementById("zoom-out").addEventListener("click", () => setZoom(-1));
+
+    start().catch((err) => fail(translateError(err)));
+  </script>
+</body>
+</html>

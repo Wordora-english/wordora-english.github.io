@@ -258,3 +258,39 @@ textarea { min-height: 110px; resize: vertical; }
   .person .actions .btn { flex: 1; }
   .hide-sm { display: none; }
 }
+
+/* ---------- Materiallar ---------- */
+.mat-group { margin-bottom: 18px; }
+.mat-cat { font-family: var(--display); font-weight: 600; font-size: 1rem; margin: 0 0 8px; }
+.mat-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.mat {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: #fff; border: 1px solid var(--line); border-radius: 14px;
+  padding: 14px; text-decoration: none; color: var(--navy);
+  transition: border-color .15s, box-shadow .15s, transform .08s;
+}
+.mat:hover { border-color: var(--violet-soft); box-shadow: var(--shadow); }
+.mat:active { transform: translateY(1px); }
+.mat-ico {
+  flex: 0 0 auto; width: 42px; height: 50px; border-radius: 8px;
+  background: linear-gradient(160deg, var(--indigo), var(--violet));
+  color: #fff; font: 700 .7rem/50px var(--font); text-align: center; letter-spacing: .04em;
+}
+.mat-body { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.mat-title { font-weight: 700; }
+.mat-desc { font-size: .86rem; color: var(--muted); }
+.mat-meta { font-size: .76rem; color: var(--muted); }
+
+.chk-row { display: flex; flex-wrap: wrap; gap: .4rem; }
+.chk { display: inline-flex; align-items: center; gap: .35rem; border: 1px solid var(--line); border-radius: 99px; padding: .35rem .7rem; font-size: .85rem; cursor: pointer; background: #fff; }
+.chk input { width: auto; margin: 0; accent-color: var(--violet); }
+.row2 { display: grid; gap: 0 12px; grid-template-columns: 1fr 1fr; }
+@media (max-width: 560px) { .row2 { grid-template-columns: 1fr; } }
+.progress { height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: .6rem; }
+.progress div { height: 100%; width: 0; background: var(--grad); transition: width .2s; }
+.views { margin-top: 10px; border-top: 1px dashed var(--line); padding-top: 10px; font-size: .86rem; }
+.views table { width: 100%; border-collapse: collapse; }
+.views td { padding: .3rem .2rem; border-bottom: 1px solid #f0eef7; vertical-align: top; }
+.views td.n { text-align: right; white-space: nowrap; color: var(--muted); }
+.pill.off { background: #eceaf3; color: var(--muted); }
+.pill.on { background: var(--ok-bg); color: var(--ok); }

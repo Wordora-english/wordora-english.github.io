@@ -76,6 +76,33 @@
         </article>`).join("");
     }
 
+    async function loadMaterials() {
+      const box = document.getElementById("mat-list");
+      const { data, error } = await sb
+        .from("materials")
+        .select("id, title, description, category, available_until, created_at")
+        .order("created_at", { ascending: false });
+      if (error) { box.innerHTML = `<div class="card empty">${esc(translateError(error))}</div>`; return; }
+      if (!data.length) { box.innerHTML = '<div class="card empty">Hələlik material yoxdur.</div>'; return; }
+      const groups = {};
+      for (const m of data) (groups[m.category] ||= []).push(m);
+      box.innerHTML = Object.entries(groups).map(([cat, items]) => `
+        <div class="mat-group">
+          <div class="mat-cat">${esc(cat)} <span class="muted">· ${items.length}</span></div>
+          <div class="mat-grid">
+            ${items.map((m) => `
+              <a class="mat" href="material.html?id=${encodeURIComponent(m.id)}">
+                <span class="mat-ico">PDF</span>
+                <span class="mat-body">
+                  <span class="mat-title">${esc(m.title)}</span>
+                  ${m.description ? `<span class="mat-desc">${esc(m.description)}</span>` : ""}
+                  <span class="mat-meta">${formatDate(m.created_at).split(",")[0]}${m.available_until ? " · " + formatDate(m.available_until) + " tarixinə qədər" : ""}</span>
+                </span>
+              </a>`).join("")}
+          </div>
+        </div>`).join("");
+    }
+
     async function start() {
       if (!configured) { app.innerHTML = '<div class="card empty">Sayt hələ bazaya qoşulmayıb.</div>'; return; }
       let me;
@@ -106,15 +133,18 @@
           <p>${esc(classLabel(me.class_name))} · @${esc(me.username)}</p>
         </section>
 
-        <div class="grid grid-3">
-          ${comingSoon("Sınaqlar", "Müəllimin açdığı vaxtlı sınaqlar burada görünəcək.", '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/>')}
-          ${comingSoon("Materiallar", "Qaydalar kitabı, söz siyahıları və PDF-lər.", '<path d="M2 5h7a3 3 0 0 1 3 3v12a2 2 0 0 0-2-2H2zM22 5h-7a3 3 0 0 0-3 3v12a2 2 0 0 1 2-2h8z"/>')}
-          ${comingSoon("Nəticələrim", "Sınaq balların və inkişaf qrafikin.", '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>')}
-        </div>
+        <div class="section-title" id="materials"><h2>Materiallar</h2></div>
+        <div id="mat-list"><div class="spinner"></div></div>
 
         <div class="section-title"><h2>Elanlar</h2></div>
         <div id="ann-list" class="grid"><div class="spinner"></div></div>
+
+        <div class="grid grid-3" style="margin-top:26px">
+          ${comingSoon("Sınaqlar", "Müəllimin açdığı vaxtlı sınaqlar burada görünəcək.", '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/>')}
+          ${comingSoon("Nəticələrim", "Sınaq balların və inkişaf qrafikin.", '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>')}
+        </div>
       `;
+      loadMaterials();
       loadAnnouncements();
     }
 

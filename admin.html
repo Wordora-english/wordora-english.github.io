@@ -40,6 +40,7 @@
       <button class="tab active" data-tab="pending">Yeni qeydiyyatlar <span class="badge" id="badge-pending">0</span></button>
       <button class="tab" data-tab="approved">Şagirdlər</button>
       <button class="tab" data-tab="blocked">Bloklanan / rədd</button>
+      <button class="tab" data-tab="mat">Materiallar</button>
       <button class="tab" data-tab="ann">Elanlar</button>
     </div>
 
@@ -58,6 +59,27 @@
 
     <section data-panel="blocked" class="hidden">
       <div class="people" id="list-blocked"></div>
+    </section>
+
+    <section data-panel="mat" class="hidden">
+      <form class="card" id="mat-form" style="margin-bottom:16px">
+        <h2 style="font-size:1.15rem">Yeni material (PDF)</h2>
+        <div class="field"><label for="mat-file">PDF fayl</label><input id="mat-file" type="file" accept="application/pdf,.pdf" required><div class="hint">Maksimum 50 MB.</div></div>
+        <div class="row2">
+          <div class="field"><label for="mat-title">Başlıq</label><input id="mat-title" maxlength="150" required></div>
+          <div class="field"><label for="mat-cat">Kateqoriya</label><input id="mat-cat" list="mat-cats" value="Qrammatika qaydaları" maxlength="60" required>
+            <datalist id="mat-cats"><option>Qrammatika qaydaları</option><option>Sınaqlar</option><option>Söz siyahıları</option><option>Oxu mətnləri</option><option>Digər</option></datalist></div>
+        </div>
+        <div class="field"><label for="mat-desc">Qısa izah (istəyə görə)</label><input id="mat-desc" maxlength="1000"></div>
+        <div class="field"><label>Kimlər görsün</label><div class="chk-row" id="mat-classes"></div><div class="hint">Heç biri seçilməsə — bütün siniflər görür.</div></div>
+        <div class="row2">
+          <div class="field"><label for="mat-until">Bu tarixə qədər açıq (istəyə görə)</label><input id="mat-until" type="datetime-local"></div>
+          <div class="field"><label>&nbsp;</label><label class="chk" style="width:max-content"><input type="checkbox" id="mat-pub" checked> Dərhal paylaş</label></div>
+        </div>
+        <button class="btn btn-primary" type="submit" id="mat-submit">Yüklə</button>
+        <div class="progress hidden" id="mat-progress"><div></div></div>
+      </form>
+      <div class="grid" id="mat-list"></div>
     </section>
 
     <section data-panel="ann" class="hidden">
@@ -190,6 +212,142 @@
         </article>`).join("") : '<div class="card empty">Hələ elan yoxdur.</div>';
     }
 
+    // ================= Materiallar =================
+    let materials = [];
+    const fmtSize = (b) => !b ? "" : b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.round(b / 1024) + " KB";
+
+    async function loadMaterials() {
+      const box = document.getElementById("mat-list");
+      const [{ data, error }, { data: views }] = await Promise.all([
+        sb.from("materials").select("*").order("created_at", { ascending: false }),
+        sb.from("material_views").select("material_id, user_id"),
+      ]);
+      if (error) { box.innerHTML = `<div class="card empty">${esc(translateError(error))}</div>`; return; }
+      materials = data;
+      const stats = {};
+      for (const v of views || []) {
+        const s = (stats[v.material_id] ||= { total: 0, users: new Set() });
+        s.total++; s.users.add(v.user_id);
+      }
+      if (!data.length) { box.innerHTML = '<div class="card empty">Hələ material yüklənməyib.</div>'; return; }
+      const now = Date.now();
+      box.innerHTML = data.map((m) => {
+        const s = stats[m.id] || { total: 0, users: new Set() };
+        const expired = m.available_until && new Date(m.available_until).getTime() < now;
+        const pill = !m.is_published ? '<span class="pill off">Gizli</span>'
+                   : expired ? '<span class="pill off">Müddəti bitib</span>' : '<span class="pill on">Açıq</span>';
+        const classes = m.target_classes?.length ? m.target_classes.map(classLabel).join(", ") : "Bütün siniflər";
+        return `
+          <article class="card" id="m-${m.id}">
+            <div style="display:flex;justify-content:space-between;gap:.6rem;flex-wrap:wrap;align-items:start">
+              <div style="min-width:0">
+                <h3 style="font-size:1.05rem;margin-bottom:.2rem">${esc(m.title)} ${pill}</h3>
+                <div class="muted small">${esc(m.category)} · ${esc(classes)} · ${fmtSize(m.file_size)}${m.available_until ? " · " + formatDate(m.available_until) + " tarixinə qədər" : ""}</div>
+                ${m.description ? `<div class="small" style="margin-top:.3rem">${esc(m.description)}</div>` : ""}
+                <div class="small" style="margin-top:.4rem"><b>${s.users.size}</b> şagird · <b>${s.total}</b> dəfə baxılıb</div>
+              </div>
+              <div class="actions" style="display:flex;gap:.4rem;flex-wrap:wrap">
+                <button class="btn btn-ghost btn-sm" data-mat="views" data-id="${m.id}">Kim baxıb</button>
+                <a class="btn btn-ghost btn-sm" href="material.html?id=${m.id}" target="_blank" rel="noopener">Bax</a>
+                <button class="btn btn-warn btn-sm" data-mat="toggle" data-id="${m.id}">${m.is_published ? "Gizlət" : "Paylaş"}</button>
+                <button class="btn btn-bad btn-sm" data-mat="delete" data-id="${m.id}">Sil</button>
+              </div>
+            </div>
+            <div class="views hidden"></div>
+          </article>`;
+      }).join("");
+    }
+
+    async function uploadMaterial(e) {
+      e.preventDefault();
+      const file = document.getElementById("mat-file").files[0];
+      const title = document.getElementById("mat-title").value.trim();
+      const category = document.getElementById("mat-cat").value.trim() || "Digər";
+      const description = document.getElementById("mat-desc").value.trim() || null;
+      const target_classes = [...document.querySelectorAll("#mat-classes input:checked")].map((i) => i.value);
+      const untilVal = document.getElementById("mat-until").value;
+      const is_published = document.getElementById("mat-pub").checked;
+
+      if (!file) return toast("PDF faylı seç", "err");
+      if (file.type !== "application/pdf" && !/\.pdf$/i.test(file.name)) return toast("Yalnız PDF fayl yükləmək olar", "err");
+      if (file.size > 50 * 1048576) return toast("Fayl 50 MB-dan böyükdür", "err");
+      if (!title) return toast("Başlıq yaz", "err");
+
+      const btn = document.getElementById("mat-submit");
+      const prog = document.getElementById("mat-progress");
+      btn.disabled = true; btn.textContent = "Yüklənir…";
+      prog.classList.remove("hidden"); prog.firstElementChild.style.width = "35%";
+
+      const path = `${crypto.randomUUID()}.pdf`;
+      try {
+        const up = await sb.storage.from("materials").upload(path, file, { contentType: "application/pdf", upsert: false });
+        if (up.error) throw up.error;
+        prog.firstElementChild.style.width = "85%";
+        const ins = await sb.from("materials").insert({
+          title, category, description, file_path: path, file_size: file.size,
+          target_classes: target_classes.length ? target_classes : null,
+          available_until: untilVal ? new Date(untilVal).toISOString() : null,
+          is_published,
+        });
+        if (ins.error) { await sb.storage.from("materials").remove([path]); throw ins.error; }
+        prog.firstElementChild.style.width = "100%";
+        toast("Material yükləndi ✓", "ok");
+        e.target.reset();
+        document.getElementById("mat-cat").value = category;
+        loadMaterials();
+      } catch (err) {
+        toast(translateError(err), "err");
+      } finally {
+        btn.disabled = false; btn.textContent = "Yüklə";
+        setTimeout(() => { prog.classList.add("hidden"); prog.firstElementChild.style.width = "0"; }, 600);
+      }
+    }
+
+    async function materialAction(action, id, btn) {
+      const m = materials.find((x) => x.id === id);
+      if (!m) return;
+      if (action === "toggle") {
+        const { error } = await sb.from("materials").update({ is_published: !m.is_published }).eq("id", id);
+        if (error) return toast(translateError(error), "err");
+        toast(m.is_published ? "Material gizlədildi" : "Material paylaşıldı", "ok");
+        return loadMaterials();
+      }
+      if (action === "delete") {
+        if (!confirm(`"${m.title}" tamamilə silinsin? Bunu geri qaytarmaq olmur.`)) return;
+        const rm = await sb.storage.from("materials").remove([m.file_path]);
+        if (rm.error) return toast(translateError(rm.error), "err");
+        const { error } = await sb.from("materials").delete().eq("id", id);
+        if (error) return toast(translateError(error), "err");
+        toast("Silindi", "ok");
+        return loadMaterials();
+      }
+      if (action === "views") {
+        const box = document.querySelector(`#m-${id} .views`);
+        if (!box.classList.contains("hidden")) { box.classList.add("hidden"); return; }
+        box.classList.remove("hidden");
+        box.innerHTML = '<div class="muted">Yüklənir…</div>';
+        const { data, error } = await sb
+          .from("material_views")
+          .select("viewed_at, user_id, profiles(full_name, class_name, student_code, role)")
+          .eq("material_id", id)
+          .order("viewed_at", { ascending: false })
+          .limit(1000);
+        if (error) { box.innerHTML = esc(translateError(error)); return; }
+        const byUser = new Map();
+        for (const v of data) {
+          if (v.profiles?.role === "admin") continue;
+          const u = byUser.get(v.user_id) || { p: v.profiles, n: 0, last: v.viewed_at };
+          u.n++; byUser.set(v.user_id, u);
+        }
+        if (!byUser.size) { box.innerHTML = '<div class="muted">Hələ heç bir şagird baxmayıb.</div>'; return; }
+        box.innerHTML = `<table>${[...byUser.values()].map((u) => `
+          <tr>
+            <td><b>${esc(u.p?.full_name || "—")}</b> <span class="muted">${esc(classLabel(u.p?.class_name))}</span> <span class="code" style="font-family:ui-monospace,monospace;font-size:.78rem;color:var(--indigo)">${esc(u.p?.student_code || "")}</span></td>
+            <td class="n">${u.n} dəfə · son: ${formatDate(u.last)}</td>
+          </tr>`).join("")}</table>`;
+      }
+    }
+
     async function start() {
       if (!configured) { app.innerHTML = '<div class="card empty">Sayt hələ bazaya qoşulmayıb.</div>'; return; }
       let me;
@@ -203,12 +361,20 @@
       for (const sel of [document.getElementById("class-filter"), document.getElementById("ann-class")]) {
         for (const c of CLASSES) sel.insertAdjacentHTML("beforeend", `<option value="${esc(c)}">${esc(classLabel(c))}</option>`);
       }
+      document.getElementById("mat-classes").innerHTML = CLASSES.map((c) =>
+        `<label class="chk"><input type="checkbox" value="${esc(c)}"> ${esc(classLabel(c))}</label>`).join("");
+      document.getElementById("mat-file").addEventListener("change", (e) => {
+        const f = e.target.files[0], t = document.getElementById("mat-title");
+        if (f && !t.value) t.value = f.name.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ");
+      });
+      document.getElementById("mat-form").addEventListener("submit", uploadMaterial);
 
       // Tablar
       app.querySelectorAll(".tab").forEach((t) => t.addEventListener("click", () => {
         app.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
         app.querySelectorAll("[data-panel]").forEach((s) => s.classList.toggle("hidden", s.dataset.panel !== t.dataset.tab));
         if (t.dataset.tab === "ann") loadAnnouncements();
+        if (t.dataset.tab === "mat") loadMaterials();
       }));
 
       // Düymələr
@@ -218,6 +384,7 @@
         if (b.dataset.act === "class") return changeClass(b.dataset.id);
         if (b.dataset.act) return setStatus(b.dataset.id, b.dataset.act);
         if (b.hasAttribute("data-refresh")) return loadPeople();
+        if (b.dataset.mat) return materialAction(b.dataset.mat, b.dataset.id, b);
         if (b.dataset.del) {
           if (!confirm("Elan silinsin?")) return;
           sb.from("announcements").delete().eq("id", b.dataset.del).then(({ error }) => {
