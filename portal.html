@@ -35,9 +35,12 @@
     import { testState, fmtNum, fmtDuration } from "./assets/js/tests-common.js";
     import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, STAR_SVG, showConfigWarning, canInstall, promptInstall, isStandalone, isIOS } from "./assets/js/app.js";
     import { percentChart } from "./assets/js/charts.js";
+    import { speak, canSpeak, wordOfDay } from "./assets/js/words.js";
+    import { CERT_MIN_PERCENT } from "./assets/js/config.js";
 
     showConfigWarning();
     const app = document.getElementById("app");
+    let me = null;
     document.getElementById("logout").addEventListener("click", logout);
 
     function stateScreen(kind, icon, title, text, note) {
@@ -123,6 +126,53 @@
       renderResults(tests, mine || []);
     }
 
+    // ---------- Günün sözü ----------
+    async function loadWotd() {
+      const box = document.getElementById("wotd");
+      const { data, error } = await sb.from("words").select("id, deck, word, meaning, example");
+      if (error || !data?.length) { box.innerHTML = ""; return; }
+      const w = wordOfDay(data);
+      box.innerHTML = `
+        <div class="card wotd">
+          <div class="wotd-l">
+            <div class="muted small">✨ Günün sözü</div>
+            <div class="wotd-w">${esc(w.word)} ${canSpeak() ? '<button class="btn btn-ghost btn-sm" id="wotd-say" aria-label="Səsləndir">🔊</button>' : ""}</div>
+            <div class="wotd-m">${esc(w.meaning)}</div>
+            ${w.example ? `<div class="wotd-ex">“${esc(w.example)}”</div>` : ""}
+          </div>
+          <a class="btn btn-primary btn-sm" href="words.html">🔤 Söz kartları →</a>
+        </div>`;
+      document.getElementById("wotd-say")?.addEventListener("click", () => speak(w.word));
+    }
+
+    // ---------- Reytinq ----------
+    let rankKind = "tests", rankScope = "class", rankDays = 30;
+    async function loadRank() {
+      const box = document.getElementById("rank-box");
+      const { data, error } = await sb.rpc("get_leaderboard", { p_kind: rankKind, p_scope: rankScope, p_days: rankDays });
+      if (error) { document.getElementById("rank").remove(); box.remove(); return; }
+      if (!data.enabled) { document.getElementById("rank").remove(); box.remove(); return; }
+      const rows = data.rows || [];
+      const sel = (v, cur, label) => `<button class="tab ${v === cur ? "active" : ""}" data-v="${v}">${label}</button>`;
+      box.innerHTML = `
+        <div class="card">
+          <div class="tabs" id="rk-kind">${sel("tests", rankKind, "📝 Sınaqlar")}${sel("live", rankKind, "🎮 Viktorina")}</div>
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:10px">
+            <select id="rk-scope" style="flex:1 1 140px"><option value="class" ${rankScope === "class" ? "selected" : ""}>Mənim sinfim</option><option value="all" ${rankScope === "all" ? "selected" : ""}>Bütün siniflər</option></select>
+            <select id="rk-days" style="flex:1 1 140px"><option value="30" ${rankDays === 30 ? "selected" : ""}>Son 30 gün</option><option value="0" ${rankDays === 0 ? "selected" : ""}>Bütün vaxt</option></select>
+          </div>
+          ${rows.length ? `<table class="res-table">${rows.map((r) => `
+            <tr style="${r.id === data.me ? "background:var(--soft);font-weight:700" : ""}">
+              <td style="width:2.5em">${r.rank === 1 ? "🥇" : r.rank === 2 ? "🥈" : r.rank === 3 ? "🥉" : r.rank + "."}</td>
+              <td>${esc(r.name)}${r.id === data.me ? " (sən)" : ""} <span class="muted small">${rankScope === "all" ? esc(classLabel(r.class)) : ""}</span></td>
+              <td class="r">${rankKind === "tests" ? `${Math.round(r.value)}%` : `${r.value} bal`} <span class="muted small">· ${r.n}</span></td></tr>`).join("")}</table>`
+            : '<div class="empty small">Hələ reytinq üçün nəticə yoxdur.</div>'}
+        </div>`;
+      box.querySelectorAll("#rk-kind [data-v]").forEach((b) => b.onclick = () => { rankKind = b.dataset.v; loadRank(); });
+      document.getElementById("rk-scope").onchange = (e) => { rankScope = e.target.value; loadRank(); };
+      document.getElementById("rk-days").onchange = (e) => { rankDays = Number(e.target.value); loadRank(); };
+    }
+
     // ---------- Nəticələrim ----------
     function renderResults(tests, mine) {
       const box = document.getElementById("my-results");
@@ -153,10 +203,21 @@
             <tr><th>Sınaq</th><th>Tarix</th><th class="r">Bal</th><th class="r">%</th></tr>
             ${rows.slice().reverse().map((a) => `<tr><td><a href="test.html?id=${a.test_id}">${esc(titles[a.test_id] || "Sınaq")}</a></td>
               <td class="muted">${formatDate(a.submitted_at).split(",")[0]}</td><td class="r">${fmtNum(a.score)} / ${fmtNum(a.total)}</td>
-              <td class="r"><span class="pct ${cls(pct(a))}">${Math.round(pct(a))}%</span></td></tr>`).join("")}
+              <td class="r"><span class="pct ${cls(pct(a))}">${Math.round(pct(a))}%</span>${pct(a) >= CERT_MIN_PERCENT ? ` <button class="btn btn-ghost btn-sm" data-cert="${a.test_id}" title="Sertifikat">🏅</button>` : ""}</td></tr>`).join("")}
           </table>
           ${waiting ? `<p class="muted small" style="margin:.6rem 0 0">Daha ${waiting} sınağın nəticəsi hələ açılmayıb.</p>` : ""}
         </div>`;
+      box.querySelectorAll("[data-cert]").forEach((btn) => btn.onclick = async () => {
+        const a = rows.find((x) => x.test_id === btn.dataset.cert);
+        btn.disabled = true;
+        try {
+          const { downloadCertificate } = await import("./assets/js/certificate.js");
+          await downloadCertificate({ name: me.full_name, className: classLabel(me.class_name), title: titles[a.test_id] || "Sınaq",
+            percent: pct(a), date: formatDate(a.submitted_at).split(",")[0], code: me.student_code, serial: a.test_id.slice(0, 8).toUpperCase() });
+          toast("Sertifikat yükləndi 🏅", "ok");
+        } catch (err) { toast(translateError(err), "err"); }
+        btn.disabled = false;
+      });
     }
 
     // ---------- Tətbiq kimi yükləmə ----------
@@ -212,7 +273,6 @@
 
     async function start() {
       if (!configured) { app.innerHTML = '<div class="card empty">Sayt hələ bazaya qoşulmayıb.</div>'; return; }
-      let me;
       try { me = await getMyProfile(); }
       catch (err) {
         if (isTorError(err)) return torScreen(app);
@@ -230,6 +290,10 @@
         return stateScreen("rejected", "✕", "Qeydiyyat qəbul edilmədi",
           "Müəllim bu qeydiyyatı təsdiqləmədi. Səhv olduğunu düşünürsənsə, müəllimə yaz.", me.status_note);
       }
+      if (me.status === "archived") {
+        return stateScreen("pending", "🎓", "Təbriklər, məzun oldun!",
+          "Hesabın arxivə köçürülüb. Wordora-da oxuduğun üçün təşəkkür edirik. Uğurlar! Hesabı yenidən açmaq lazımdırsa, müəllimə yaz.");
+      }
       if (me.status === "blocked") {
         return stateScreen("blocked", "🔒", "Hesabın bloklanıb",
           "Hesabın müvəqqəti bağlanıb. Açılması üçün müəllimə müraciət et.", me.status_note);
@@ -244,6 +308,7 @@
         </section>
 
         <div id="install-box" style="margin-bottom:12px"></div>
+        <div id="wotd" style="margin-bottom:12px"></div>
 
         <form class="card live-join" id="live-join">
           <div><b>🎮 Canlı viktorina</b><div class="muted small">Proyektordakı 6 rəqəmli kodu yaz</div></div>
@@ -258,6 +323,9 @@
 
         <div class="section-title" id="results"><h2>Nəticələrim</h2></div>
         <div id="my-results"><div class="spinner"></div></div>
+
+        <div class="section-title" id="rank"><h2>🏆 Reytinq</h2></div>
+        <div id="rank-box"><div class="spinner"></div></div>
 
         <div class="section-title" id="materials"><h2>Materiallar</h2></div>
         <div id="mat-list"><div class="spinner"></div></div>
@@ -274,6 +342,8 @@
         location.href = `live.html?code=${codeInp.value}`;
       });
       renderInstall();
+      loadWotd();
+      loadRank();
       addEventListener("wd-installable", renderInstall);
       loadTests();
       loadMaterials();

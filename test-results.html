@@ -54,6 +54,7 @@
     import { sb, configured, getMyProfile, esc, formatDate, toast, translateError, classLabel } from "./assets/js/app.js";
     import { fmtNum, wordCount } from "./assets/js/tests-common.js";
     import { downloadXlsx, safeName } from "./assets/js/xlsx-lite.js";
+    import { CERT_MIN_PERCENT } from "./assets/js/config.js";
 
     const app = document.getElementById("app");
     const testId = new URLSearchParams(location.search).get("id");
@@ -185,7 +186,9 @@
             ${essays}
             <div style="display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-top:10px;align-items:center">
               ${essayGrade}
-              <button class="btn btn-bad btn-sm" data-reset="${a.id}" title="Şagird sınağı yenidən yaza bilsin">Cəhdi sil (yenidən yazsın)</button>
+              <span style="display:flex;gap:.4rem;flex-wrap:wrap">
+              ${T && (Number(a.score) || 0) / T * 100 >= CERT_MIN_PERCENT ? `<button class="btn btn-ghost btn-sm" data-cert="${a.id}">🏅 Sertifikat</button>` : ""}
+              <button class="btn btn-bad btn-sm" data-reset="${a.id}" title="Şagird sınağı yenidən yaza bilsin">Cəhdi sil (yenidən yazsın)</button></span>
             </div>
           </details>
         </div>`;
@@ -229,6 +232,13 @@
         if (error) return toast(translateError(error), "err");
         toast("Esse balı yazıldı ✓", "ok");
         if (await load()) render();
+      });
+      app.querySelectorAll("[data-cert]").forEach((b) => b.onclick = async () => {
+        const a = attempts.find((x) => x.id === b.dataset.cert), p = a.profiles || {};
+        const { downloadCertificate } = await import("./assets/js/certificate.js");
+        await downloadCertificate({ name: p.full_name, className: classLabel(p.class_name), title: test.title,
+          percent: (Number(a.score) || 0) / total() * 100, date: formatDate(a.submitted_at).split(",")[0],
+          code: p.student_code, serial: a.id.slice(0, 8).toUpperCase() });
       });
       app.querySelectorAll("[data-reset]").forEach((b) => b.onclick = async () => {
         const a = attempts.find((x) => x.id === b.dataset.reset);

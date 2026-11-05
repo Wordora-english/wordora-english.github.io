@@ -401,3 +401,10 @@ textarea { min-height: 110px; resize: vertical; }
 .pct { font-weight: 800; }
 .pct.hi { color: var(--ok); } .pct.mid { color: var(--warn); } .pct.lo { color: var(--bad); }
 .install-card { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+
+/* ---------- Günün sözü ---------- */
+.wotd { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; border-left: 4px solid var(--gold); }
+.wotd-w { font: 700 1.6rem/1.2 var(--display); display: flex; align-items: center; gap: .4rem; }
+.wotd-m { font-weight: 600; }
+.wotd-ex { color: var(--muted); font-style: italic; font-size: .92rem; margin-top: .2rem; }
+.pill.arch { background: #e9e4ff; color: var(--indigo-text); }

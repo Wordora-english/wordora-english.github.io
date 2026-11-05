@@ -14,3 +14,9 @@ export const EMAIL_DOMAIN = "aliqurbanovfh.github.io";
 
 // Qeydiyyatda seçilə bilən siniflər
 export const CLASSES = ["5", "6", "7", "8", "9", "10", "11", "Magistratura"];
+
+// Sertifikatlarda müəllimin adı
+export const TEACHER_NAME = "Gülnar Salayeva";
+
+// Bu faizdən yuxarı nəticə üçün şagird sertifikat yükləyə bilər
+export const CERT_MIN_PERCENT = 85;
