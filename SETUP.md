@@ -4,6 +4,8 @@ Bu addımları bir dəfə edirsən. Hər şey pulsuzdur, heç bir yerdə kart is
 
 ---
 
+> ⚠️ **Vacib:** `assets/js/config.js` faylındakı `EMAIL_DOMAIN = "aliqurbanovfh.github.io"` sətrini **dəyişmə**. Bu, saytın ünvanı deyil, şagird hesablarının daxili adıdır. Dəyişsə, köhnə hesablarla giriş işləməz.
+
 ## 1. Supabase layihəsini yarat
 
 1. **supabase.com** → **Dashboard** → **New project**
@@ -37,7 +39,7 @@ Bu addımları bir dəfə edirsən. Hər şey pulsuzdur, heç bir yerdə kart is
 
 ## 5. Öz admin hesabını yarat
 
-1. Saytı aç: **https://aliqurbanovfh.github.io/wordora/**
+1. Saytı aç: **https://wordora-english.github.io/**
 2. **Qeydiyyat** → öz adınla qeydiyyatdan keç (məs. istifadəçi adı `gulnar`).
 3. Supabase → **SQL Editor** → **New query** → bunu yaz (istifadəçi adını özününkü ilə əvəz et) → **Run**:
 
@@ -49,7 +51,7 @@ Bu addımları bir dəfə edirsən. Hər şey pulsuzdur, heç bir yerdə kart is
 
 ## 6. Saytın "yatmaması" üçün (keep-alive)
 
-1. GitHub → `wordora` reposu → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
+1. GitHub → `wordora-english.github.io` reposu → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 2. İki secret əlavə et:
    - Name: `SUPABASE_URL` → Value: Project URL
    - Name: `SUPABASE_KEY` → Value: Publishable key

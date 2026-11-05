@@ -2,7 +2,7 @@
 
 **More Words • Bigger Dreams** — ingilis dili dərsləri üçün şəxsi platforma.
 
-🌐 **Sayt:** https://aliqurbanovfh.github.io/wordora/
+🌐 **Sayt:** https://wordora-english.github.io/
 
 ## Nə var (1-ci mərhələ)
 
