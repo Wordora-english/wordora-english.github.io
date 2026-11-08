@@ -376,8 +376,8 @@
         <div class="section-title" id="results"><h2>Nəticələrim</h2></div>
         <div id="my-results"><div class="spinner"></div></div>
 
-        <div class="section-title" id="rank"><h2>🏆 Reytinq</h2></div>
-        <div id="rank-box"><div class="spinner"></div></div>
+        ${me.class_name === "Magistratura" ? "" : `<div class="section-title" id="rank"><h2>🏆 Reytinq</h2></div>
+        <div id="rank-box"><div class="spinner"></div></div>`}
 
         <div class="section-title" id="materials"><h2>Materiallar</h2></div>
         <div id="mat-list"><div class="spinner"></div></div>
@@ -396,7 +396,7 @@
       renderInstall();
       loadWotd();
       loadQuick();
-      loadRank();
+      if (me.class_name !== "Magistratura") loadRank();   // magistrantlar üçün reytinq yoxdur
       addEventListener("wd-installable", renderInstall);
       loadTests();
       loadMaterials();
