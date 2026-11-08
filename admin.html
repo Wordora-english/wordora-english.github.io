@@ -961,7 +961,7 @@ seed"></textarea>
             <div style="min-width:0">
               <h3>${esc(t.title)} ${pill} ${t.results_released ? '<span class="pill on">Nəticələr açıq</span>' : ""}</h3>
               <div class="test-meta">
-                <span>${esc(classes)}</span><span>${t.duration_min} dəq</span>${t.audio_path ? "<span>🎧 dinləmə</span>" : ""}
+                <span>${esc(classes)}</span><span>${t.duration_min} dəq</span>${t.audio_path ? "<span>🎧 dinləmə</span>" : ""}${t.variants?.length ? `<span>🅰 ${["A", ...t.variants.map((v) => v.code)].join(", ")} variantları</span>` : ""}
                 <span>${(t.questions || []).length} sual · ${Math.round(total * 100) / 100} bal</span>
                 ${t.starts_at ? `<span>Başlama: ${formatDate(t.starts_at)}</span>` : ""}
                 ${t.ends_at ? `<span>Son: ${formatDate(t.ends_at)}</span>` : ""}
@@ -989,13 +989,13 @@ seed"></textarea>
         return loadTests();
       }
       if (action === "copy") {
-        const { data: k } = await sb.from("test_keys").select("answers").eq("test_id", id).maybeSingle();
+        const { data: k } = await sb.from("test_keys").select("answers, variants").eq("test_id", id).maybeSingle();
         const { id: _, created_at, ...rest } = t;
         const { data: n, error } = await sb.from("tests")
           .insert({ ...rest, title: `${t.title} (kopya)`, is_published: false, results_released: false, starts_at: null, ends_at: null })
           .select("id").single();
         if (error) return toast(translateError(error), "err");
-        await sb.from("test_keys").insert({ test_id: n.id, answers: k?.answers || {} });
+        await sb.from("test_keys").insert({ test_id: n.id, answers: k?.answers || {}, ...(k?.variants ? { variants: k.variants } : {}) });
         if (t.content?.mode === "online") {
           const { data: on } = await sb.from("test_online").select("questions, passages, source").eq("test_id", id).maybeSingle();
           if (on) await sb.from("test_online").insert({ test_id: n.id, ...on });
@@ -1011,6 +1011,14 @@ seed"></textarea>
         if (t.pdf_path) {
           const { count } = await sb.from("tests").select("id", { count: "exact", head: true }).eq("pdf_path", t.pdf_path);
           if (!count) await sb.storage.from("tests").remove([t.pdf_path]);
+        }
+        // variantların faylları (kopyalarda istifadə olunmursa)
+        for (const pth of (t.variants || []).flatMap((v) => [v.pdf_path, v.audio_path]).filter(Boolean)) {
+          try {
+            const { count: c1 } = await sb.from("tests").select("id", { count: "exact", head: true }).contains("variants", [{ pdf_path: pth }]);
+            const { count: c2 } = await sb.from("tests").select("id", { count: "exact", head: true }).contains("variants", [{ audio_path: pth }]);
+            if (!c1 && !c2) await sb.storage.from("tests").remove([pth]);
+          } catch {}
         }
         toast("Silindi", "ok");
         loadTests();

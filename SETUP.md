@@ -77,6 +77,7 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 12. `supabase/13-sections-rubric-storage.sql`
 13. `supabase/14-magistratura.sql`
 14. `supabase/15-delete-retake.sql`
+15. `supabase/16-variants.sql`
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 
@@ -141,3 +142,4 @@ select public.remove_telegram_chat('ID');   -- sil
 - **Magistratura bölməsi** → admin paneldə yuxarıdakı **🏫 Məktəb / 🎓 Magistratura** düyməsi ilə keç. Magistratura rejimində yüklədiyin material, elan və ev tapşırığını yalnız magistrantlar görür; məktəb rejimində "heç bir sinif seçilməyib" = yalnız 5–11-ci siniflər. Reytinq də ayrıdır. Sınaqlar əvvəlki kimidir (sinif seçimində "Magistratura" var)
 - **Şagirdi tamamilə silmək** → **Şagirdlər** (və ya **Bloklanan / məzun**) → **🗑 Sil** → təsdiq üçün istifadəçi adını yaz. Hesab, nəticələr, tapşırıqlar, mesajlar — hamısı silinir, geri qaytarmaq olmur. Yalnız girişi bağlamaq üçün **Blokla** kifayətdir
 - **Sınağı silmək** nəticələri də silir — nəticələr qalsın deyə **Gizlət** istifadə et
+- **Variantlar (A, B, C...)** → sınağı redaktə et → **3. Variantlar** → **+ B variantı əlavə et** → B-nin PDF-i və cavabları (`1 B, 2 D, ...` — sual sayı və tipləri A ilə eyni) → istəsən öz dinləməsi (yoxsa A-nınkı) → **Yadda saxla**. Şagird "Başla" basanda variant avtomatik verilir (bərabər paylanır, yenidən yazanda başqa variant düşür). Konkret şagirdə variant: **Nəticələr** → **Yazmayanlar** → "Variant" seçimi. Nəticələrdə hər şagirdin variantı görünür, sual analizi variant üzrə ayrıdır

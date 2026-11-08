@@ -485,3 +485,7 @@ body[data-group="mag"] .group-switch button.on { color: #8a5a00; }
 .ns { display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; padding: 4px 0; border-bottom: 1px dashed var(--line); }
 .ns:last-child { border-bottom: 0; }
 .ns-act { display: inline-flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.variant { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; background: var(--soft); }
+.variant-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 1.05rem; }
+.var-pill { display: inline-block; min-width: 1.6em; text-align: center; padding: .05rem .45rem; border-radius: 6px; background: var(--indigo, #3a32b5); color: #fff; font-weight: 700; font-size: .78rem; }
+.var-assign { width: auto; padding: .3rem .5rem; font-size: .85rem; border-radius: 8px; }

@@ -59,6 +59,11 @@
     const app = document.getElementById("app");
     const testId = new URLSearchParams(location.search).get("id");
     let test, key, attempts = [], notStarted = [], violCount = {}, qcs = [], retakes = {}, archive = {};
+    let vkeys = {}, assigns = {}, anVar = "A";
+    const hasVar = () => (test.variants || []).length > 0;
+    const varCodes = () => ["A", ...(test.variants || []).map((v) => v.code)];
+    const keyOf = (a) => (a?.variant && a.variant !== "A" && vkeys[a.variant]) || key;
+    const varPill = (a) => (hasVar() ? ` <span class="var-pill" title="Variant">${esc(a.variant || "A")}</span>` : "");
     let openIds = new Set(), rendered = false;
 
     const total = () => (test.questions || []).reduce((s, q) => s + (Number(q.points) || 0), 0);
@@ -71,21 +76,24 @@
 
     async function load() {
       await sb.rpc("admin_finalize_expired", { p_test: testId });
-      const [{ data: t, error }, { data: k }, { data: att }, { data: studs }, { data: qc }, { data: rt }, { data: ar }] = await Promise.all([
+      const [{ data: t, error }, { data: k }, { data: att }, { data: studs }, { data: qc }, { data: rt }, { data: ar }, { data: va }] = await Promise.all([
         sb.from("tests").select("*").eq("id", testId).maybeSingle(),
-        sb.from("test_keys").select("answers").eq("test_id", testId).maybeSingle(),
+        sb.from("test_keys").select("*").eq("test_id", testId).maybeSingle(),
         sb.from("attempts").select("*, profiles(full_name, class_name, student_code, username)").eq("test_id", testId),
         sb.from("profiles").select("id, full_name, class_name, student_code").eq("role", "student").eq("status", "approved"),
         sb.from("quick_comments").select("id, body").order("id"),
         sb.from("test_retakes").select("user_id, expires_at").eq("test_id", testId),
-        sb.from("attempts_archive").select("user_id, score, submitted_at, archived_at").eq("test_id", testId).order("archived_at"),
+        sb.from("attempts_archive").select("*").eq("test_id", testId).order("archived_at"),
+        sb.from("test_variant_assign").select("user_id, variant").eq("test_id", testId),
       ]);
       qcs = qc || [];
       retakes = Object.fromEntries((rt || []).filter((r) => new Date(r.expires_at) > Date.now()).map((r) => [r.user_id, r.expires_at]));
       archive = {};
       for (const x of ar || []) (archive[x.user_id] ||= []).push(x);
       if (error || !t) { app.innerHTML = '<div class="card empty">Sınaq tapılmadı.</div>'; return false; }
-      test = t; key = k?.answers || {}; attempts = att || [];
+      test = t; key = k?.answers || {}; vkeys = k?.variants || {}; attempts = att || [];
+      assigns = Object.fromEntries((va || []).map((x) => [x.user_id, x.variant]));
+      if (!varCodes().includes(anVar)) anVar = "A";
       const took = new Set(attempts.map((a) => a.user_id));
       const cls = t.target_classes || [];
       notStarted = (studs || []).filter((s) => !took.has(s.id) && (!cls.length || cls.includes(s.class_name)));
@@ -145,19 +153,21 @@
         <div class="grid" id="results">${done.length ? done.map((a, i) => row(a, i + 1)).join("") : '<div class="card empty">Hələ heç kim təhvil verməyib.</div>'}</div>
 
         ${live.length ? `<div class="section-title"><h2>İndi yazanlar</h2></div>
-          <div class="grid">${live.map((a) => `<div class="rrow"><div class="rrow-top"><span class="rank">⏳</span><div class="who"><b>${esc(a.profiles?.full_name)}</b> <span class="muted small">${esc(classLabel(a.profiles?.class_name))}</span><div class="muted small">Başladı: ${formatDate(a.started_at)} · vaxt bitir: ${formatDate(a.deadline)}${violCount[a.id] ? ` · ⚠️ ${violCount[a.id]} pozuntu` : ""}</div></div></div></div>`).join("")}</div>` : ""}
+          <div class="grid">${live.map((a) => `<div class="rrow"><div class="rrow-top"><span class="rank">⏳</span><div class="who"><b>${esc(a.profiles?.full_name)}</b>${varPill(a)} <span class="muted small">${esc(classLabel(a.profiles?.class_name))}</span><div class="muted small">Başladı: ${formatDate(a.started_at)} · vaxt bitir: ${formatDate(a.deadline)}${violCount[a.id] ? ` · ⚠️ ${violCount[a.id]} pozuntu` : ""}</div></div></div></div>`).join("")}</div>` : ""}
 
         ${secs().length && done.length ? `<div class="section-title"><h2>Bölmələr üzrə</h2><span class="muted small">sinif ortalaması</span></div>
           <div class="card" style="margin-bottom:8px">${classSections(done)}</div>` : ""}
 
         <div class="section-title"><h2>Sual analizi</h2><span class="muted small">neçə faiz düzgün cavablayıb</span></div>
-        <div class="qa">${analysis(done)}</div>
+        ${hasVar() ? `<div class="tabs" id="an-var" style="margin-bottom:10px">${varCodes().map((c) => `<button class="tab ${c === anVar ? "active" : ""}" data-anvar="${c}">${c} variantı (${done.filter((a) => (a.variant || "A") === c).length})</button>`).join("")}</div>` : ""}
+        <div class="qa">${analysis(hasVar() ? done.filter((a) => (a.variant || "A") === anVar) : done)}</div>
 
         <div class="section-title"><h2>Yazmayanlar <span class="muted small">(${notStarted.length})</span></h2></div>
         <div class="card small">${notStarted.length ? `<div class="ns-list">${notStarted.map((s) => `<div class="ns">
             <span>${esc(s.full_name)} <span class="muted">(${esc(classLabel(s.class_name))})</span>${archive[s.id] ? ` <span class="muted">· əvvəlki: ${archive[s.id].map((x) => fmtNum(x.score ?? 0)).join(", ")}</span>` : ""}</span>
+            <span class="ns-act">${hasVar() ? `<select class="var-assign" data-assign="${s.id}" title="Variant">${["", ...varCodes()].map((c) => `<option value="${c}" ${(assigns[s.id] || "") === c ? "selected" : ""}>${c ? `${c} variantı` : "Variant: avto"}</option>`).join("")}</select>` : ""}
             ${retakes[s.id] ? `<span class="ns-act"><span class="pill wait">🔄 ${formatDate(retakes[s.id])} tarixinə qədər yaza bilər</span> <button class="btn btn-ghost btn-sm" data-retake-cancel="${s.id}">Ləğv et</button></span>`
-              : closed ? `<button class="btn btn-ghost btn-sm" data-retake="${s.id}">🔄 Yazmağa icazə ver</button>` : ""}
+              : closed ? `<button class="btn btn-ghost btn-sm" data-retake="${s.id}">🔄 Yazmağa icazə ver</button>` : ""}</span>
           </div>`).join("")}</div>${closed ? "" : '<div class="muted" style="margin-top:6px">Sınaq hələ açıqdır — yazmayanlar özləri girib yaza bilər.</div>'}` : "Hamı yazıb 👍"}</div>
       `;
       bind();
@@ -172,7 +182,8 @@
       const cells = (test.questions || []).filter((q) => q.type !== "essay").map((q) => {
         const d = det[q.n] || {};
         const cls = d.frac >= 1 ? "ok" : d.frac > 0 ? "part" : "bad";
-        return `<div class="ans ${cls}" title="Düzgün: ${esc(key[q.n] || "")}"><b>${q.n}</b> ${esc(a.answers?.[q.n] || "—")}${cls !== "ok" ? ` <span style="opacity:.6">→ ${esc(key[q.n] || "")}</span>` : ""}</div>`;
+        const K = keyOf(a);
+        return `<div class="ans ${cls}" title="Düzgün: ${esc(K[q.n] || "")}"><b>${q.n}</b> ${esc(a.answers?.[q.n] || "—")}${cls !== "ok" ? ` <span style="opacity:.6">→ ${esc(K[q.n] || "")}</span>` : ""}</div>`;
       }).join("");
       const essays = essayQs().map((q) => {
         const txt = a.answers?.[q.n] || "";
@@ -207,9 +218,9 @@
           <div class="rrow-top">
             <span class="rank">${rank}</span>
             <div class="who">
-              <b>${esc(p.full_name)}</b> <span class="muted small">${esc(classLabel(p.class_name))} · ${esc(p.student_code || "")}</span> ${statusPill}
+              <b>${esc(p.full_name)}</b>${varPill(a)} <span class="muted small">${esc(classLabel(p.class_name))} · ${esc(p.student_code || "")}</span> ${statusPill}
               ${chips}
-              ${archive[a.user_id] ? `<div class="small" style="color:var(--muted)">🗂 Əvvəlki cəhd: ${archive[a.user_id].map((x) => `<b>${fmtNum(x.score ?? 0)}</b> / ${fmtNum(T)} (${formatDate(x.submitted_at || x.archived_at)})`).join(" · ")}</div>` : ""}
+              ${archive[a.user_id] ? `<div class="small" style="color:var(--muted)">🗂 Əvvəlki cəhd: ${archive[a.user_id].map((x) => `<b>${fmtNum(x.score ?? 0)}</b> / ${fmtNum(T)}${hasVar() && x.variant ? ` (${esc(x.variant)} variantı)` : ""} (${formatDate(x.submitted_at || x.archived_at)})`).join(" · ")}</div>` : ""}
               <div class="muted small">Təhvil: ${formatDate(a.submitted_at)}${used !== null ? ` · ${used} dəq` : ""}${violCount[a.id] ? ` · <span style="color:var(--bad)">⚠️ ${violCount[a.id]} pozuntu</span>` : ""}${essayQs().length ? ` · test: ${fmtNum(a.auto_score)} + esse: ${a.essay_score === null ? "?" : fmtNum(a.essay_score)}` : ""}</div>
             </div>
             <div class="sc">${fmtNum(a.score)}<span> / ${fmtNum(T)}</span></div>
@@ -251,12 +262,13 @@
 
     function analysis(done) {
       const qs = (test.questions || []).filter((q) => q.type !== "essay");
-      if (!done.length || !qs.length) return '<div class="card empty small" style="grid-column:1/-1">Təhvil verən olandan sonra görünəcək.</div>';
+      if (!done.length || !qs.length) return `<div class="card empty small" style="grid-column:1/-1">${hasVar() ? "Bu variantı hələ heç kim təhvil verməyib." : "Təhvil verən olandan sonra görünəcək."}</div>`;
       return qs.map((q) => {
         const fr = done.map((a) => Number(a.details?.[q.n]?.frac) || 0);
         const pct = Math.round((fr.reduce((s, x) => s + x, 0) / fr.length) * 100);
         const color = pct >= 70 ? "var(--ok)" : pct >= 40 ? "var(--gold)" : "var(--bad)";
-        return `<div class="qa-item"><b>${q.n}</b> <span class="muted">· düzgün: ${esc(key[q.n] || "")}</span><span style="float:right;font-weight:700">${pct}%</span>
+        const K = hasVar() ? keyOf({ variant: anVar }) : key;
+        return `<div class="qa-item"><b>${q.n}</b> <span class="muted">· düzgün: ${esc(K[q.n] || "")}</span><span style="float:right;font-weight:700">${pct}%</span>
           <div class="qa-bar"><div style="width:${pct}%;background:${color}"></div></div></div>`;
       }).join("");
     }
@@ -335,6 +347,16 @@
           percent: (Number(a.score) || 0) / total() * 100, date: formatDate(a.submitted_at).split(",")[0],
           code: p.student_code, serial: a.id.slice(0, 8).toUpperCase() });
       });
+      app.querySelectorAll("[data-anvar]").forEach((b) => b.onclick = () => { anVar = b.dataset.anvar; render(); });
+      app.querySelectorAll("[data-assign]").forEach((sel) => sel.onchange = async () => {
+        const uid = sel.dataset.assign, v = sel.value;
+        const { error } = v
+          ? await sb.from("test_variant_assign").upsert({ test_id: testId, user_id: uid, variant: v })
+          : await sb.from("test_variant_assign").delete().eq("test_id", testId).eq("user_id", uid);
+        if (error) { sel.value = assigns[uid] || ""; return toast(/relation|schema cache/i.test(error.message || "") ? "Əvvəlcə 16-variants.sql faylını Supabase-də işə sal" : translateError(error), "err"); }
+        if (v) assigns[uid] = v; else delete assigns[uid];
+        toast(v ? `${v} variantı təyin edildi ✓` : "Variant avtomatik veriləcək", "ok");
+      });
       app.querySelectorAll("[data-retake]").forEach((b) => b.onclick = async () => {
         const uid = b.dataset.retake;
         const name = attempts.find((x) => x.user_id === uid)?.profiles?.full_name || notStarted.find((x) => x.id === uid)?.full_name || "";
@@ -359,19 +381,27 @@
       const qs = test.questions || [];
       const done = attempts.filter((a) => a.status !== "in_progress").sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
       const n = (x) => (x === null || x === undefined ? "" : Math.round(Number(x) * 100) / 100);
-      const head = ["№", "Ad Soyad", "Sinif", "Kod", "Test balı", "Esse balı", "Yekun bal", "Maksimum", "%", "Təhvil", "Dəqiqə", "Pozuntu",
+      const head = ["№", "Ad Soyad", "Sinif", "Kod", ...(hasVar() ? ["Variant"] : []), "Test balı", "Esse balı", "Yekun bal", "Maksimum", "%", "Təhvil", "Dəqiqə", "Pozuntu",
                     ...qs.map((x) => (x.type === "essay" ? `S${x.n} (esse, söz)` : `S${x.n}`))];
-      const keyRow = ["", "DÜZGÜN CAVAB", "", "", "", "", "", "", "", "", "", "", ...qs.map((x) => (x.type === "essay" ? "" : key[x.n] || ""))];
+      const pad = hasVar() ? 13 : 12;
+      const keyRows = (hasVar() ? varCodes() : ["A"]).map((c) => {
+        const K = keyOf({ variant: c });
+        return ["", hasVar() ? `DÜZGÜN CAVAB (${c})` : "DÜZGÜN CAVAB", ...Array(pad - 2).fill(""), ...qs.map((x) => (x.type === "essay" ? "" : K[x.n] || ""))];
+      });
       const rows = done.map((a, i) => {
         const p = a.profiles || {};
         const used = a.submitted_at ? Math.round((new Date(a.submitted_at) - new Date(a.started_at)) / 60000) : "";
-        return [i + 1, p.full_name, classLabel(p.class_name), p.student_code, n(a.auto_score), n(a.essay_score), n(a.score), n(total()),
+        return [i + 1, p.full_name, classLabel(p.class_name), p.student_code, ...(hasVar() ? [a.variant || "A"] : []), n(a.auto_score), n(a.essay_score), n(a.score), n(total()),
           total() ? Math.round((Number(a.score) || 0) / total() * 100) : "", formatDate(a.submitted_at), used, violCount[a.id] || 0,
           ...qs.map((x) => (x.type === "essay" ? wordCount(a.answers?.[x.n]) : a.answers?.[x.n] || ""))];
       });
-      const analysisRows = qs.filter((x) => x.type !== "essay").map((x) => {
-        const fr = done.map((a) => Number(a.details?.[x.n]?.frac) || 0);
-        return [x.n, key[x.n] || "", fr.length ? Math.round(fr.reduce((s, v) => s + v, 0) / fr.length * 100) : ""];
+      const analysisRows = (hasVar() ? varCodes() : ["A"]).flatMap((c) => {
+        const dd = hasVar() ? done.filter((a) => (a.variant || "A") === c) : done;
+        const K = keyOf({ variant: c });
+        return qs.filter((x) => x.type !== "essay").map((x) => {
+          const fr = dd.map((a) => Number(a.details?.[x.n]?.frac) || 0);
+          return [...(hasVar() ? [c] : []), x.n, K[x.n] || "", fr.length ? Math.round(fr.reduce((s, v) => s + v, 0) / fr.length * 100) : ""];
+        });
       });
       const secSheet = secs().length ? [{ name: "Bölmələr", widths: [5, 26, 12, ...secs().flatMap(() => [10, 8])],
         rows: [["№", "Ad Soyad", "Sinif", ...secs().flatMap((x) => [`${x.name} (bal)`, `${x.name} %`])],
@@ -379,9 +409,9 @@
           ...done.map((a, i) => [i + 1, a.profiles?.full_name, classLabel(a.profiles?.class_name),
             ...secOf(a).flatMap((x) => (x.pending ? ["", ""] : [n(x.got), x.pct]))])] }] : [];
       downloadXlsx(`${safeName(test.title)}_neticeler.xlsx`, [
-        { name: "Nəticələr", widths: [5, 26, 12, 11, 9, 9, 9, 9, 6, 17, 7, 8], rows: [head, keyRow, ...rows] },
+        { name: "Nəticələr", widths: [5, 26, 12, 11, ...(hasVar() ? [8] : []), 9, 9, 9, 9, 6, 17, 7, 8], rows: [head, ...keyRows, ...rows] },
         ...secSheet,
-        { name: "Sual analizi", widths: [8, 18, 14], rows: [["Sual", "Düzgün cavab", "Düzgün %"], ...analysisRows] },
+        { name: "Sual analizi", widths: [...(hasVar() ? [8] : []), 8, 18, 14], rows: [[...(hasVar() ? ["Variant"] : []), "Sual", "Düzgün cavab", "Düzgün %"], ...analysisRows] },
         { name: "Yazmayanlar", widths: [28, 14, 12], rows: [["Ad Soyad", "Sinif", "Kod"], ...notStarted.map((s) => [s.full_name, classLabel(s.class_name), s.student_code])] },
       ]);
     }

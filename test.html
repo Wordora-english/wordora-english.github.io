@@ -121,6 +121,7 @@
         if (local && Object.keys(local).length > Object.keys(answers).length) { answers = local; dirty = true; }
       } catch {}
 
+      if (data.has_variants && data.variant) $("title").textContent = `${test.title} · ${data.variant} variantı`;
       renderExam();
       guard = startGuard({ me, page: `sınaq: ${test.title}`.slice(0, 120), tabSwitch: true, onBlocked: () => (location.href = "portal.html") });
       if (me.role !== "admin") examGuard = startExamGuard(guard);
@@ -563,7 +564,7 @@
       }).join("");
       const secs = sectionScores(data.sections, data.questions, det, data.essay_score);
       app.innerHTML = `<div class="container" style="max-width:760px">
-        <div class="card" style="margin-bottom:12px"><h1 style="font-size:1.35rem">${esc(data.title)}</h1>
+        <div class="card" style="margin-bottom:12px"><h1 style="font-size:1.35rem">${esc(data.title)}${data.variant ? ` <span class="var-pill">${esc(data.variant)}</span>` : ""}</h1>
         <div class="big-score" style="text-align:left">${fmtNum(data.score)}<span>/ ${fmtNum(data.total)}</span></div>
         ${secs.length ? `<div class="sec-bars">${secs.map(secBar).join("")}</div>` : ""}</div>
         <div class="card review">${rows}</div>

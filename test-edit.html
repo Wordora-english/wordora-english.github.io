@@ -121,6 +121,13 @@ Write about your favourite hobby.
         <div class="hint hidden" id="shuffle-hint">Yan-yana oturanlar eyni ardıcıllığı görmür. Mətnin sualları mətnin altında qalır, esse həmişə bölmənin sonunda olur.</div>
       </section>
 
+      <section class="card" style="margin-bottom:16px" id="variants-box">
+        <h2 style="font-size:1.15rem">3. Variantlar <span class="muted small" style="font-weight:500">(istəyə görə)</span></h2>
+        <p class="muted small" style="margin:.2rem 0 12px">Yuxarıdakı PDF və cavab kartı — <b>A variantıdır</b>. Hər əlavə variant üçün öz PDF-ini və cavablarını yaz. Sual sayı, tipləri və ballar A ilə eyni olmalıdır. Şagird "Başla" basanda variant avtomatik verilir — variantlar bərabər paylanır, yan-yana oturanlara fərqli variant düşür.</p>
+        <div id="variants" class="grid" style="gap:12px"></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="add-variant" style="margin-top:12px">+ Variant əlavə et</button>
+      </section>
+
       <section class="card savebar">
         <label class="chk"><input type="checkbox" id="published"> Şagirdlər görsün (paylaş)</label>
         <button class="btn btn-primary" type="submit" id="save">Yadda saxla</button>
@@ -137,6 +144,7 @@ Write about your favourite hobby.
     let rows = [];          // {n, type, options, parts, points, min_words, key}
     let current = null;     // mövcud sınaq
     let mode = "pdf", passages = [];
+    let variants = [];      // {code, pdf_path, audio_path, keytext}  — B, C, ...
 
     const $ = (id) => document.getElementById(id);
 
@@ -197,12 +205,63 @@ Write about your favourite hobby.
       return errs;
     }
 
+    // ---------- Variantlar ----------
+    const fmtKey = (key, base) => base.filter((r) => r.type !== "essay" || true).map((r) => `${r.n} ${r.type === "essay" ? "esse" : (key?.[r.n] ?? "")}`).join(", ");
+    function nextCode() {
+      for (const c of "BCDEFGH") if (!variants.some((v) => v.code === c)) return c;
+      return null;
+    }
+    function readVariants() {
+      document.querySelectorAll(".variant[data-code]").forEach((el) => {
+        const v = variants.find((x) => x.code === el.dataset.code);
+        if (!v) return;
+        v.keytext = el.querySelector("textarea").value;
+        v.audioDel = el.querySelector(".v-adel")?.checked || false;
+      });
+    }
+    function renderVariants() {
+      readVariantsSafe();
+      $("variants").innerHTML = variants.map((v) => `
+        <div class="variant" data-code="${v.code}">
+          <div class="variant-head"><b>${v.code} variantı</b><button type="button" class="btn btn-bad btn-sm" data-vdel="${v.code}">Sil</button></div>
+          <div class="row2">
+            <div class="field"><label>PDF</label><input type="file" class="v-pdf" accept="application/pdf,.pdf">
+              <div class="hint">${v.pdf_path ? "✓ PDF yüklənib. Dəyişmək üçün yeni fayl seç." : "Bu variantın sınaq faylı."}</div></div>
+            <div class="field"><label>🎧 Dinləmə (istəyə görə)</label><input type="file" class="v-audio" accept="audio/*,.mp3,.m4a,.wav,.ogg">
+              <div class="hint">${v.audio_path ? `✓ Öz dinləməsi var. <label class="chk" style="display:inline-flex;padding:.1rem .4rem"><input type="checkbox" class="v-adel"> sil</label>` : "Seçməsən, A variantının dinləməsi istifadə olunur."}</div></div>
+          </div>
+          <div class="field" style="margin:0"><label>${v.code} variantının cavabları</label>
+            <textarea style="min-height:70px;font-family:ui-monospace,Menlo,Consolas,monospace" placeholder="1 B, 2 D, 3 A, 4 ABBA, ... 10 went, 26 esse">${esc(v.keytext || "")}</textarea></div>
+        </div>`).join("");
+      $("add-variant").textContent = nextCode() ? `+ ${nextCode()} variantı əlavə et` : "Maksimum variant sayı";
+      $("add-variant").disabled = !nextCode();
+    }
+    function readVariantsSafe() { try { readVariants(); } catch {} }
+
+    // Variantın açarını yoxla: hər sual üçün cavab, tip A ilə uyğun
+    function variantKey(v) {
+      const { key, errors } = parseKey(v.keytext || "");
+      const out = {}, errs = errors.map((e) => `${v.code}: ${e}`);
+      const byN = Object.fromEntries(rows.map((r) => [r.n, r]));
+      for (const n of Object.keys(key).map(Number)) if (!byN[n]) errs.push(`${v.code} variantında ${n}-ci sual var, A-da yoxdur`);
+      for (const r of rows) {
+        if (r.type === "essay") continue;
+        const a = (key[r.n] ?? "").toString().trim();
+        if (!a) { errs.push(`${v.code} variantı: ${r.n}-ci sualın cavabı yoxdur`); continue; }
+        if (r.type === "choice" && !(a.length === 1 && (r.options || "ABCDE").includes(a.toUpperCase()))) errs.push(`${v.code}: ${r.n}-ci sual test sualıdır — bir hərf yaz (${r.options})`);
+        else if (r.type === "multi" && !(a.length === (r.key || "").length && /^[A-Za-z]+$/.test(a))) errs.push(`${v.code}: ${r.n}-ci sual ${(r.key || "").length} hissəlidir`);
+        out[r.n] = r.type === "open" ? a : a.toUpperCase();
+      }
+      return { key: out, errs };
+    }
+
     function setMode(m) {
       mode = m;
       document.querySelectorAll("#mode-tabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.mode === m));
       $("online-box").classList.toggle("hidden", m !== "online");
       $("pdf-key-box").classList.toggle("hidden", m === "online");
       $("pdf-key-btns").classList.toggle("hidden", m === "online");
+      $("variants-box").classList.toggle("hidden", m === "online");
       $("shuffle-wrap").classList.toggle("hidden", m !== "online");
       $("shuffle-hint").classList.toggle("hidden", m !== "online");
       $("pdf-current").innerHTML = m === "online"
@@ -237,6 +296,9 @@ Write about your favourite hobby.
       $("total").value = totalPoints(rows) || 100;
       passages = on?.passages || [];
       $("sections").value = formatSections(t.content?.sections);
+      variants = (t.variants || []).map((v) => ({ ...v, keytext: fmtKey(k?.variants?.[v.code] || {}, rows) }));
+      $("variants").innerHTML = "";
+      renderVariants();
       $("shuffle").checked = t.content?.shuffle !== false;
       if (t.content?.mode === "online") { $("onlinetext").value = on?.source || ""; setMode("online"); }
       renderRows();
@@ -267,6 +329,17 @@ Write about your favourite hobby.
       const maxN = Math.max(...rows.map((r) => r.n));
       const badSec = sec.sections.find((x) => x.from > maxN);
       if (badSec) return toast(`Bölmə "${badSec.name}": ${badSec.from}-ci sual yoxdur`, "err");
+
+      readVariants();
+      const vErrs = [], vKeys = {};
+      if (mode === "pdf") for (const v of variants) {
+        const vk = variantKey(v);
+        vErrs.push(...vk.errs); vKeys[v.code] = vk.key;
+        const f = document.querySelector(`.variant[data-code="${v.code}"] .v-pdf`)?.files[0];
+        if (!f && !v.pdf_path) vErrs.push(`${v.code} variantının PDF-ini seç`);
+        if (f && f.size > 50 * 1048576) vErrs.push(`${v.code} variantının PDF-i 50 MB-dan böyükdür`);
+      }
+      if (vErrs.length) { $("parse-msg").textContent = vErrs.slice(0, 6).join(" · "); $("parse-msg").classList.remove("hidden"); $("variants-box").scrollIntoView({ behavior: "smooth" }); return toast(vErrs[0], "err"); }
 
       const questions = rows.map((r) => {
         const q = { n: r.n, type: r.type, points: Number(r.points) || 0 };
@@ -309,7 +382,37 @@ Write about your favourite hobby.
           await sb.storage.from("tests").remove([audio_path]);
           audio_path = null;
         }
+        // Variantların faylları
+        const vOut = [];
+        const removePaths = [];
+        if (mode === "pdf") for (const v of variants) {
+          const el = document.querySelector(`.variant[data-code="${v.code}"]`);
+          let vp = v.pdf_path || null, va = v.audio_path || null;
+          const f = el.querySelector(".v-pdf").files[0];
+          if (f) {
+            const path = `${crypto.randomUUID()}.pdf`;
+            const up = await sb.storage.from("tests").upload(path, f, { contentType: "application/pdf" });
+            if (up.error) throw up.error;
+            if (vp) removePaths.push(vp);
+            vp = path;
+          }
+          const af = el.querySelector(".v-audio").files[0];
+          if (af) {
+            if (af.size > 50 * 1048576) throw new Error(`${v.code} variantının audiosu 50 MB-dan böyükdür`);
+            const ext = (af.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp3";
+            const apath = `${crypto.randomUUID()}.${ext}`;
+            const upA = await sb.storage.from("tests").upload(apath, af, { contentType: af.type || "audio/mpeg" });
+            if (upA.error) throw upA.error;
+            if (va) removePaths.push(va);
+            va = apath;
+          } else if (v.audioDel && va) { removePaths.push(va); va = null; }
+          vOut.push({ code: v.code, pdf_path: vp, audio_path: va });
+        }
+        for (const old of current?.variants || []) {   // silinmiş variantların faylları
+          if (!vOut.some((x) => x.code === old.code)) removePaths.push(old.pdf_path, old.audio_path);
+        }
         const row = {
+          variants: vOut,
           audio_path, audio_max_plays: Number($("audio-max").value),
           title, description: $("desc").value.trim() || null, pdf_path, questions, duration_min, starts_at, ends_at,
           target_classes: (() => { const c = [...document.querySelectorAll("#classes input:checked")].map((i) => i.value); return c.length ? c : null; })(),
@@ -326,8 +429,14 @@ Write about your favourite hobby.
           testId = data.id;
           history.replaceState(null, "", `test-edit.html?id=${testId}`);
         }
-        const { error: kErr } = await sb.from("test_keys").upsert({ test_id: testId, answers: key });
+        const { error: kErr } = await sb.from("test_keys").upsert({ test_id: testId, answers: key, variants: mode === "pdf" ? vKeys : {} });
         if (kErr) throw kErr;
+        // köhnə variant faylları (başqa sınaqda istifadə olunmursa)
+        for (const pth of removePaths.filter(Boolean)) {
+          const { count } = await sb.from("tests").select("id", { count: "exact", head: true }).contains("variants", [{ pdf_path: pth }]);
+          const { count: c2 } = await sb.from("tests").select("id", { count: "exact", head: true }).contains("variants", [{ audio_path: pth }]);
+          if (!count && !c2) await sb.storage.from("tests").remove([pth]);
+        }
         if (mode === "online") {
           const { error: oErr } = await sb.from("test_online").upsert({ test_id: testId, questions: texts, passages, source: $("onlinetext").value, updated_at: new Date().toISOString() });
           if (oErr) throw oErr;
@@ -384,6 +493,29 @@ Write about your favourite hobby.
         if (errors.length) { msg.textContent = errors.join(" · "); msg.classList.remove("hidden"); } else msg.classList.add("hidden");
         renderRows();
         toast(`${rows.length} sual yaradıldı`, "ok");
+      });
+      renderVariants();
+      $("add-variant").addEventListener("click", () => {
+        document.querySelectorAll(".qrow[data-i]").forEach(readRow);
+        if (!rows.length) return toast("Əvvəlcə A variantının cavab kartını yarat", "err");
+        readVariants();
+        const code = nextCode(); if (!code) return;
+        variants.push({ code, pdf_path: null, audio_path: null, keytext: "" });
+        renderVariants();
+        document.querySelector(`.variant[data-code="${code}"] textarea`)?.focus();
+      });
+      $("variants").addEventListener("click", async (e) => {
+        const b = e.target.closest("[data-vdel]"); if (!b) return;
+        const code = b.dataset.vdel;
+        let warn = "";
+        if (testId && (current?.variants || []).some((v) => v.code === code)) {
+          const { count } = await sb.from("attempts").select("id", { count: "exact", head: true }).eq("test_id", testId).eq("variant", code);
+          if (count) warn = `\n\n⚠️ ${count} şagird bu variantı yazıb — onların nəticəsi A variantının açarı ilə hesablanacaq!`;
+        }
+        if (!confirm(`${code} variantı silinsin?${warn}`)) return;
+        readVariants();
+        variants = variants.filter((v) => v.code !== code);
+        renderVariants();
       });
       $("add-row").addEventListener("click", () => {
         document.querySelectorAll(".qrow[data-i]").forEach(readRow);
