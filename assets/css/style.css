@@ -492,3 +492,4 @@ body[data-group="mag"] .group-switch button.on { color: #8a5a00; }
 .pf-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .pf-row select, .pf-row input { flex: 1 1 200px; width: auto; }
 .paper-form { border-top: 4px solid var(--indigo, #3a32b5); }
+.weekly-row { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-top: 12px; }

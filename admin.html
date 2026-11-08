@@ -210,6 +210,13 @@ seed"></textarea>
             <select id="set-rank"><option value="on">Açıq — şagirdlər görür</option><option value="off">Gizli</option></select>
           </div>
         </div>
+        <div class="weekly-row">
+          <div class="field" style="margin:0;flex:1 1 220px">
+            <label for="set-weekly">📬 Həftəlik Telegram hesabatı</label>
+            <select id="set-weekly"><option value="on">Açıq — hər bazar 20:00</option><option value="off">Bağlı</option></select>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="weekly-now" type="button">İndi göndər</button>
+        </div>
         <p class="muted small" style="margin:.8rem 0 0" id="set-info"></p>
       </div>
       <div class="toolbar">
@@ -1033,6 +1040,7 @@ seed"></textarea>
       document.getElementById("set-max").value = String(data.max_warnings);
       document.getElementById("set-tor").value = data.tor_block;
       document.getElementById("set-rank").value = data.leaderboard || "on";
+      document.getElementById("set-weekly").value = data.weekly || "on";
       info.innerHTML =
         `Tor siyahısında <b>${data.tor_count}</b> IP var (30 dəqiqədən bir yenilənir). ` +
         (data.telegram ? "Telegram bildirişləri <b>qoşulub</b> ✓" : "Telegram bildirişləri <b>qoşulmayıb</b> — SETUP.md, 8-ci addım.");
@@ -1418,6 +1426,18 @@ seed"></textarea>
       document.getElementById("live-cancel").addEventListener("click", resetLiveForm);
       document.getElementById("set-max").addEventListener("change", (e) => saveSetting("max_warnings", e.target.value));
       document.getElementById("set-tor").addEventListener("change", (e) => saveSetting("tor_block", e.target.value));
+      document.getElementById("set-weekly").addEventListener("change", async (e) => {
+        const { error } = await sb.rpc("admin_set_weekly", { p_on: e.target.value === "on" });
+        if (error) return toast(/function|schema cache/i.test(error.message || "") ? "Əvvəlcə 18-weekly-report.sql faylını Supabase-də işə sal" : translateError(error), "err");
+        toast(e.target.value === "on" ? "Həftəlik hesabat açıldı ✓" : "Həftəlik hesabat bağlandı", "ok");
+      });
+      document.getElementById("weekly-now").addEventListener("click", async (e) => {
+        e.target.disabled = true;
+        const { error } = await sb.rpc("admin_weekly_report_now");
+        e.target.disabled = false;
+        if (error) return toast(/function|schema cache/i.test(error.message || "") ? "Əvvəlcə 18-weekly-report.sql faylını Supabase-də işə sal" : translateError(error), "err");
+        toast("Hesabat Telegram-a göndərildi ✓", "ok");
+      });
       document.getElementById("set-rank").addEventListener("change", async (e) => {
         const { error } = await sb.rpc("admin_set_leaderboard", { p_on: e.target.value === "on" });
         if (error) return toast(translateError(error) + " (09-words-year-rank.sql işə salınıb?)", "err");
