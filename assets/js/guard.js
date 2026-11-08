@@ -13,7 +13,7 @@ export const VIOLATION_LABELS = {
   devtools: "Developer paneli (F12) açıldı",
   devtools_key: "F12 / developer düymələri basıldı",
   printscreen: "Ekran şəkli düyməsi basıldı",
-  tab_switch: "Sınaq zamanı başqa tab/pəncərəyə keçid",
+  tab_switch: "Sınaq zamanı başqa tab, proqram və ya pəncərəyə keçid",
   second_device: "Hesaba ikinci cihazdan giriş",
 };
 
@@ -49,7 +49,7 @@ export function startGuard({ me, page = location.pathname.split("/").pop(), tabS
   let stopped = false;
   const timers = [];
 
-  async function report(kind, details = "") {
+  async function report(kind, details = "", label = "") {
     if (stopped) return;
     const now = Date.now();
     if (kind !== "second_device" && now - lastReport < 4000) return;   // eyni anda təkrar siqnal
@@ -66,14 +66,14 @@ export function startGuard({ me, page = location.pathname.split("/").pop(), tabS
       stop();
       modal({
         icon: "🔒", danger: true, title: "Hesabın bloklandı",
-        text: `${esc(VIOLATION_LABELS[kind] || kind)}.<br>Xəbərdarlıq limiti keçildi. Hesabını yalnız müəllim aça bilər.`,
+        text: `${esc(label || VIOLATION_LABELS[kind] || kind)}.<br>Xəbərdarlıq limiti keçildi. Hesabını yalnız müəllim aça bilər.`,
         onClose: () => (onBlocked ? onBlocked() : (location.href = "portal.html")),
       });
     } else if (res.counted) {
       const left = Math.max(res.max - res.warnings, 0);
       modal({
         icon: "⚠️", title: `Xəbərdarlıq ${res.warnings}/${res.max}`,
-        text: `<b>${esc(VIOLATION_LABELS[kind] || kind)}.</b><br>Bu hərəkət qeyd olundu və müəllimə bildirildi.<br>` +
+        text: `<b>${esc(label || VIOLATION_LABELS[kind] || kind)}.</b><br>Bu hərəkət qeyd olundu və müəllimə bildirildi.<br>` +
               (left === 0 ? "<b>Növbəti pozuntuda hesabın avtomatik bloklanacaq.</b>"
                           : `Daha ${left} xəbərdarlıqdan sonra hesabın bloklanacaq.`),
       });

@@ -30,13 +30,14 @@
   <script type="module">
     import { sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
     import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
+    import { startExamGuard, enterFullscreen } from "./assets/js/exam-guard.js";
     import { wordCount, fmtNum, fmtDuration, testState, seededRandom, shuffleWith, sectionScores } from "./assets/js/tests-common.js";
 
     const app = document.getElementById("app");
     const $ = (id) => document.getElementById(id);
     const testId = new URLSearchParams(location.search).get("id");
 
-    let me, test, attempt, answers = {}, guard = null;
+    let me, test, attempt, answers = {}, guard = null, examGuard = null, viewer = null;
     let offset = 0, deadline = 0, tick = null, dirty = false, saving = false, submitted = false;
     let wakeLock = null;
 
@@ -91,7 +92,9 @@
           <li>⏱ Taymer "Başla" basan kimi işə düşür və dayanmır. Vaxt bitəndə cavablar <b>avtomatik təhvil verilir</b>.</li>
           <li>💾 Cavabların avtomatik yadda saxlanılır. İnternet kəsilsə və ya səhifə bağlansa, qayıdıb davam edə bilərsən.</li>
           <li>🚫 <b>Başqa tab, proqram və ya pəncərəyə keçmək</b>, F12 və ekran şəkli <b>pozuntu sayılır</b> — xəbərdarlıq gəlir, limitdən sonra hesab bloklanır.</li>
-          <li>📱 Telefondan yazırsansa, ekranı kilidləmə və başqa proqrama keçmə.</li>
+          <li>⛶ Sınaq <b>tam ekranda</b> açılır. Tam ekrandan çıxsan, suallar gizlənir.</li>
+          <li>📱 <b>Üzən pəncərə, yan panel (Edge panel), ekranı bölmək</b>, Gemini və digər köməkçilər — hamısı pozuntudur. Başqa proqrama toxunan kimi suallar ekrandan silinir.</li>
+          <li>🔔 Sınaqdan əvvəl bildirişləri sustur və ekranı kilidləmə.</li>
           <li>1️⃣ Sınağı yalnız <b>bir dəfə</b> yaza bilərsən.</li>
         </ul>
         <button class="btn btn-primary btn-block" id="go">${resume ? "Davam et" : "Başla"}</button>`);
@@ -100,6 +103,7 @@
 
     // ================= Sınaq =================
     async function begin() {
+      enterFullscreen();   // düymə basılan anda — brauzer yalnız belə icazə verir
       const btn = $("go");
       btn.disabled = true; btn.textContent = "Açılır…";
       const { data, error } = await sb.rpc("start_attempt", { p_test: testId });
@@ -116,6 +120,7 @@
 
       renderExam();
       guard = startGuard({ me, page: `sınaq: ${test.title}`.slice(0, 120), tabSwitch: true, onBlocked: () => (location.href = "portal.html") });
+      if (me.role !== "admin") examGuard = startExamGuard(guard);
       try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
       document.addEventListener("visibilitychange", async () => {
         if (document.visibilityState === "visible" && !submitted) { try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {} }
@@ -137,7 +142,13 @@
           <button data-pane="card">✏️ Cavab kartı <span id="answered-count"></span></button>
         </div>
         <div class="exam" id="exam">
-          <section class="exam-pdf" id="pdf-pane"><div class="pages" id="pages"><div class="spinner"></div></div></section>
+          <section class="exam-pdf" id="pdf-pane">
+            <div class="pdf-zoom hidden" id="pdf-zoom">
+              <button type="button" data-z="-" aria-label="Kiçilt">−</button>
+              <button type="button" data-z="1" id="zoom-val" aria-label="Əvvəlki ölçü">100%</button>
+              <button type="button" data-z="+" aria-label="Böyüt">+</button>
+            </div>
+            <div class="pages" id="pages"><div class="spinner"></div></div></section>
           <aside class="exam-card" id="card-pane">
             <div id="audio-box"></div>
             <div class="card-head">${attempt.pdf_path ? "Cavab kartı" : "Suallar"} <span class="muted small" id="answered-count2"></span></div>
@@ -167,10 +178,68 @@
         if (!res.ok) throw new Error("Sınaq faylı açılmadı");
         const bytes = new Uint8Array(await res.arrayBuffer());
         const { renderPdf } = await import("./assets/js/pdfview.js");
-        await renderPdf(pane, bytes, { name: me.full_name, code: me.student_code, date: formatDate(new Date().toISOString()) }, { maxWidth: 1000 });
+        viewer = await renderPdf(pane, bytes, { name: me.full_name, code: me.student_code, date: formatDate(new Date().toISOString()) }, { maxWidth: 1000 });
+        setupZoom();
       } catch (err) {
         pane.innerHTML = `<div class="card empty">${esc(translateError(err))}<br><button class="btn btn-ghost btn-sm" onclick="location.reload()">Yenidən yoxla</button></div>`;
       }
+    }
+
+    // ================= Böyütmə / kiçiltmə =================
+    const ZOOMS = [0.6, 0.8, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+    function setZoom(z) {
+      if (!viewer) return;
+      z = Math.min(3, Math.max(0.6, Math.round(z * 100) / 100));
+      const pane = $("pdf-pane");
+      const box = matchMedia("(max-width: 860px)").matches ? document.scrollingElement : pane;
+      const cx = (pane.scrollLeft + pane.clientWidth / 2) / Math.max(pane.scrollWidth, 1);
+      const cy = box.scrollTop / Math.max(box.scrollHeight, 1);
+      viewer.setZoom(z);
+      $("zoom-val").textContent = Math.round(z * 100) + "%";
+      requestAnimationFrame(() => {
+        pane.scrollLeft = cx * pane.scrollWidth - pane.clientWidth / 2;
+        box.scrollTop = cy * box.scrollHeight;
+      });
+    }
+    function setupZoom() {
+      const bar = $("pdf-zoom");
+      bar.classList.remove("hidden");
+      bar.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-z]"); if (!b) return;
+        const z = viewer.zoom;
+        if (b.dataset.z === "1") return setZoom(1);
+        const next = b.dataset.z === "+" ? ZOOMS.find((x) => x > z + 0.01) : [...ZOOMS].reverse().find((x) => x < z - 0.01);
+        if (next) setZoom(next);
+      });
+      // İki barmaqla böyütmə (telefonda)
+      const pane = $("pdf-pane"), pages = $("pages");
+      let d0 = 0, s = 1;
+      const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+      pane.addEventListener("touchstart", (e) => {
+        if (e.touches.length === 2) {
+          d0 = dist(e.touches); s = 1;
+          const r = pages.getBoundingClientRect();
+          pages.style.transformOrigin = `${(e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left}px ${(e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top}px`;
+        }
+      }, { passive: true });
+      pane.addEventListener("touchmove", (e) => {
+        if (e.touches.length !== 2 || !d0) return;
+        e.preventDefault();
+        s = Math.min(3 / viewer.zoom, Math.max(0.6 / viewer.zoom, dist(e.touches) / d0));
+        pages.style.transform = `scale(${s})`;
+      }, { passive: false });
+      pane.addEventListener("touchend", (e) => {
+        if (!d0 || e.touches.length > 1) return;
+        d0 = 0;
+        pages.style.transform = "";
+        if (Math.abs(s - 1) > 0.05) setZoom(viewer.zoom * s);
+      });
+      // Kompüterdə Ctrl + təkər
+      pane.addEventListener("wheel", (e) => {
+        if (!e.ctrlKey) return;
+        e.preventDefault();
+        setZoom(viewer.zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
+      }, { passive: false });
     }
 
     // ================= Dinləmə =================
@@ -393,6 +462,22 @@
     }
 
     // ================= Təhvil =================
+    // Brauzerin öz confirm() pəncərəsi tam ekranı bağlayır — ona görə səhifə daxilində soruşuruq
+    function askConfirm(msg) {
+      return new Promise((resolve) => {
+        const el = document.createElement("div");
+        el.className = "wd-modal";
+        el.innerHTML = `<div class="wd-modal-box" role="alertdialog" aria-modal="true">
+          <div class="wd-modal-ico">📨</div><h2>Təhvil verilsin?</h2>
+          <p style="white-space:pre-line">${esc(msg)}</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <button class="btn btn-ghost" data-v="0">Geri qayıt</button>
+            <button class="btn btn-primary" data-v="1">Təhvil ver</button></div></div>`;
+        document.body.appendChild(el);
+        el.addEventListener("click", (e) => { const b = e.target.closest("[data-v]"); if (!b) return; el.remove(); resolve(b.dataset.v === "1"); });
+      });
+    }
+
     async function submit(auto) {
       if (submitted) return;
       if (!auto) {
@@ -401,11 +486,12 @@
         let msg = "Sınağı təhvil vermək istəyirsən? Bundan sonra cavabları dəyişmək olmayacaq.";
         if (missing) msg += `\n\n${missing} sual cavabsızdır.`;
         if (essayShort.length) msg += `\nEsse minimum söz sayına çatmayıb.`;
-        if (!confirm(msg)) return;
+        if (!(await askConfirm(msg))) return;
       }
       submitted = true;
       clearInterval(tick);
       guard?.stop();
+      examGuard?.stop();
       try { await wakeLock?.release(); } catch {}
       $("submit").disabled = true;
       app.innerHTML = card('<div class="spinner"></div><p class="center muted">Təhvil verilir…</p>');

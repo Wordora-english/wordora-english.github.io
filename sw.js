@@ -2,7 +2,7 @@
 // Həmişə əvvəlcə internetdən götürür (yeniliklər dərhal çatsın),
 // internet yoxdursa, yadda saxlanmış nüsxəni göstərir.
 // Supabase sorğuları və PDF-lər heç vaxt yaddaşa yazılmır.
-const CACHE = "wordora-v10";
+const CACHE = "wordora-v11";
 const SHELL = ["./", "index.html", "login.html", "portal.html", "assets/css/style.css", "assets/js/app.js",
   "assets/js/config.js", "assets/img/logo-icon.png", "assets/img/favicon-32.png", "offline.html"];
 
