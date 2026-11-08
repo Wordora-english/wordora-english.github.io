@@ -103,11 +103,12 @@ export function fromLocalInput(v) {
 }
 
 // Sınağın indiki vəziyyəti (şagird üçün)
-export function testState(t, attempt, now = Date.now()) {
+export function testState(t, attempt, now = Date.now(), retake = false) {
   if (attempt) {
     if (attempt.status === "in_progress") return "in_progress";
     return "done";      // submitted / graded / expired
   }
+  if (retake) return "open";   // müəllim yenidən yazmağa icazə verib — vaxt məhdudiyyəti yoxdur
   if (t.starts_at && now < new Date(t.starts_at).getTime()) return "upcoming";
   if (t.ends_at && now >= new Date(t.ends_at).getTime()) return "closed";
   return "open";

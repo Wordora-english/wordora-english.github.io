@@ -76,6 +76,7 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 11. `supabase/12-homework-bank-online.sql`
 12. `supabase/13-sections-rubric-storage.sql`
 13. `supabase/14-magistratura.sql`
+14. `supabase/15-delete-retake.sql`
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 
@@ -115,7 +116,7 @@ select public.remove_telegram_chat('ID');   -- sil
 - **Elan** → **Elanlar** → bütün siniflərə və ya bir sinfə
 - **Yeni sınaq** → **Sınaqlar** → **+ Yeni sınaq** → ad, PDF, vaxt, siniflər → cavab açarını yapışdır (`1 A, 2 C, 4 BBAA, 10 went/has gone, 26 esse`) → **Cavab kartını yarat** → esseyə bal yaz → **Balları bərabər payla** → **Şagirdlər görsün** → **Yadda saxla**
 - **Sınaq nəticələri** → **Sınaqlar** → **Nəticələr**: bal, cavablar, esse balı, sual analizi, **⬇ Excel**; hazır olanda **Nəticələri şagirdlərə aç**
-- **Şagird sınağı yenidən yazsın** → Nəticələr → **Cavablar** → **Cəhdi sil**
+- **Şagird sınağı yenidən yazsın** → Nəticələr → **Cavablar** → **🔄 Yenidən yazsın** → neçə gün (məs. 3). Köhnə nəticə arxivdə qalır ("🗂 Əvvəlki cəhd"), son tarix keçsə belə şagird yaza bilir. Sınağı ümumiyyətlə yazmayan şagirdə: **Yazmayanlar** → **🔄 Yazmağa icazə ver**
 - **Köhnə sınaqdan yenisini düzəlt** → **Kopyala** → adını, PDF-i və açarı dəyiş
 - **Davamiyyət** → **✅ Davamiyyət** → sinif və tarix seç → hər şagirdə ✓ / ⏰ / ✕ / 📄 → **Yadda saxla**; **Ay** tabında cədvəl və Excel
 - **Şagird sualı** → **💬 Mesajlar** (sual gələndə Telegram-a da bildiriş gedir)
@@ -138,3 +139,5 @@ select public.remove_telegram_chat('ID');   -- sil
 - **Esse yoxlama** → **Nəticələr** → **Cavablar və esse** → 4 meyara bal yaz (cəm özü hesablanır) → şərh yaz və ya hazır şərhə toxun → **Yadda saxla**. Yeni hazır şərh: mətni yaz → **+ Şərhi hazır siyahıya əlavə et**. Şagird nəticələr açılanda balları və şərhi görür
 - **Yaddaş** → **🧹 Yaddaş** — fayllar və baza nə qədər dolub; köhnə ev tapşırığı şəkillərini buradan sil. 80%-i keçəndə admin paneldə xəbərdarlıq çıxır
 - **Magistratura bölməsi** → admin paneldə yuxarıdakı **🏫 Məktəb / 🎓 Magistratura** düyməsi ilə keç. Magistratura rejimində yüklədiyin material, elan və ev tapşırığını yalnız magistrantlar görür; məktəb rejimində "heç bir sinif seçilməyib" = yalnız 5–11-ci siniflər. Reytinq də ayrıdır. Sınaqlar əvvəlki kimidir (sinif seçimində "Magistratura" var)
+- **Şagirdi tamamilə silmək** → **Şagirdlər** (və ya **Bloklanan / məzun**) → **🗑 Sil** → təsdiq üçün istifadəçi adını yaz. Hesab, nəticələr, tapşırıqlar, mesajlar — hamısı silinir, geri qaytarmaq olmur. Yalnız girişi bağlamaq üçün **Blokla** kifayətdir
+- **Sınağı silmək** nəticələri də silir — nəticələr qalsın deyə **Gizlət** istifadə et

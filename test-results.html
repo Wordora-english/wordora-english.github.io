@@ -58,7 +58,7 @@
 
     const app = document.getElementById("app");
     const testId = new URLSearchParams(location.search).get("id");
-    let test, key, attempts = [], notStarted = [], violCount = {}, qcs = [];
+    let test, key, attempts = [], notStarted = [], violCount = {}, qcs = [], retakes = {}, archive = {};
     let openIds = new Set(), rendered = false;
 
     const total = () => (test.questions || []).reduce((s, q) => s + (Number(q.points) || 0), 0);
@@ -71,14 +71,19 @@
 
     async function load() {
       await sb.rpc("admin_finalize_expired", { p_test: testId });
-      const [{ data: t, error }, { data: k }, { data: att }, { data: studs }, { data: qc }] = await Promise.all([
+      const [{ data: t, error }, { data: k }, { data: att }, { data: studs }, { data: qc }, { data: rt }, { data: ar }] = await Promise.all([
         sb.from("tests").select("*").eq("id", testId).maybeSingle(),
         sb.from("test_keys").select("answers").eq("test_id", testId).maybeSingle(),
         sb.from("attempts").select("*, profiles(full_name, class_name, student_code, username)").eq("test_id", testId),
         sb.from("profiles").select("id, full_name, class_name, student_code").eq("role", "student").eq("status", "approved"),
         sb.from("quick_comments").select("id, body").order("id"),
+        sb.from("test_retakes").select("user_id, expires_at").eq("test_id", testId),
+        sb.from("attempts_archive").select("user_id, score, submitted_at, archived_at").eq("test_id", testId).order("archived_at"),
       ]);
       qcs = qc || [];
+      retakes = Object.fromEntries((rt || []).filter((r) => new Date(r.expires_at) > Date.now()).map((r) => [r.user_id, r.expires_at]));
+      archive = {};
+      for (const x of ar || []) (archive[x.user_id] ||= []).push(x);
       if (error || !t) { app.innerHTML = '<div class="card empty">Sınaq tapılmadı.</div>'; return false; }
       test = t; key = k?.answers || {}; attempts = att || [];
       const took = new Set(attempts.map((a) => a.user_id));
@@ -107,6 +112,7 @@
       const pendingEssay = done.filter((a) => a.status === "submitted").length;
       const T = total();
 
+      const closed = !!(test.ends_at && Date.now() >= new Date(test.ends_at).getTime());
       app.innerHTML = `
         <div class="card" style="margin-bottom:16px">
           <div class="res-head">
@@ -148,7 +154,11 @@
         <div class="qa">${analysis(done)}</div>
 
         <div class="section-title"><h2>Yazmayanlar <span class="muted small">(${notStarted.length})</span></h2></div>
-        <div class="card small">${notStarted.length ? notStarted.map((s) => `${esc(s.full_name)} <span class="muted">(${esc(classLabel(s.class_name))})</span>`).join(" · ") : "Hamı yazıb 👍"}</div>
+        <div class="card small">${notStarted.length ? `<div class="ns-list">${notStarted.map((s) => `<div class="ns">
+            <span>${esc(s.full_name)} <span class="muted">(${esc(classLabel(s.class_name))})</span>${archive[s.id] ? ` <span class="muted">· əvvəlki: ${archive[s.id].map((x) => fmtNum(x.score ?? 0)).join(", ")}</span>` : ""}</span>
+            ${retakes[s.id] ? `<span class="ns-act"><span class="pill wait">🔄 ${formatDate(retakes[s.id])} tarixinə qədər yaza bilər</span> <button class="btn btn-ghost btn-sm" data-retake-cancel="${s.id}">Ləğv et</button></span>`
+              : closed ? `<button class="btn btn-ghost btn-sm" data-retake="${s.id}">🔄 Yazmağa icazə ver</button>` : ""}
+          </div>`).join("")}</div>${closed ? "" : '<div class="muted" style="margin-top:6px">Sınaq hələ açıqdır — yazmayanlar özləri girib yaza bilər.</div>'}` : "Hamı yazıb 👍"}</div>
       `;
       bind();
       rendered = true;
@@ -199,6 +209,7 @@
             <div class="who">
               <b>${esc(p.full_name)}</b> <span class="muted small">${esc(classLabel(p.class_name))} · ${esc(p.student_code || "")}</span> ${statusPill}
               ${chips}
+              ${archive[a.user_id] ? `<div class="small" style="color:var(--muted)">🗂 Əvvəlki cəhd: ${archive[a.user_id].map((x) => `<b>${fmtNum(x.score ?? 0)}</b> / ${fmtNum(T)} (${formatDate(x.submitted_at || x.archived_at)})`).join(" · ")}</div>` : ""}
               <div class="muted small">Təhvil: ${formatDate(a.submitted_at)}${used !== null ? ` · ${used} dəq` : ""}${violCount[a.id] ? ` · <span style="color:var(--bad)">⚠️ ${violCount[a.id]} pozuntu</span>` : ""}${essayQs().length ? ` · test: ${fmtNum(a.auto_score)} + esse: ${a.essay_score === null ? "?" : fmtNum(a.essay_score)}` : ""}</div>
             </div>
             <div class="sc">${fmtNum(a.score)}<span> / ${fmtNum(T)}</span></div>
@@ -211,7 +222,7 @@
               ${essayGrade}
               <span style="display:flex;gap:.4rem;flex-wrap:wrap">
               ${T && (Number(a.score) || 0) / T * 100 >= CERT_MIN_PERCENT ? `<button class="btn btn-ghost btn-sm" data-cert="${a.id}">🏅 Sertifikat</button>` : ""}
-              <button class="btn btn-bad btn-sm" data-reset="${a.id}" title="Şagird sınağı yenidən yaza bilsin">Cəhdi sil (yenidən yazsın)</button></span>
+              <button class="btn btn-warn btn-sm" data-retake="${a.user_id}" title="Köhnə nəticə arxivdə qalır, şagird sınağı yenidən yaza bilir">🔄 Yenidən yazsın</button></span>
             </div>
           </details>
         </div>`;
@@ -324,12 +335,22 @@
           percent: (Number(a.score) || 0) / total() * 100, date: formatDate(a.submitted_at).split(",")[0],
           code: p.student_code, serial: a.id.slice(0, 8).toUpperCase() });
       });
-      app.querySelectorAll("[data-reset]").forEach((b) => b.onclick = async () => {
-        const a = attempts.find((x) => x.id === b.dataset.reset);
-        if (!confirm(`${a?.profiles?.full_name} — bu cəhd silinsin? Şagird sınağı yenidən yaza biləcək. Köhnə cavablar itəcək.`)) return;
-        const { error } = await sb.rpc("admin_reset_attempt", { p_attempt: b.dataset.reset });
+      app.querySelectorAll("[data-retake]").forEach((b) => b.onclick = async () => {
+        const uid = b.dataset.retake;
+        const name = attempts.find((x) => x.user_id === uid)?.profiles?.full_name || notStarted.find((x) => x.id === uid)?.full_name || "";
+        const had = attempts.some((x) => x.user_id === uid);
+        const days = prompt(`${name} sınağı yenidən yaza bilsin.\n${had ? "Köhnə nəticə arxivdə saxlanılacaq (silinmir).\n" : ""}Sınağın son tarixi keçsə belə, neçə gün ərzində yaza bilsin?`, "3");
+        if (days === null) return;
+        const n = Math.max(1, Math.min(60, parseInt(days, 10) || 3));
+        const { error } = await sb.rpc("admin_allow_retake", { p_test: testId, p_user: uid, p_days: n });
+        if (error) return toast(/function|schema cache/i.test(error.message || "") ? "Əvvəlcə 15-delete-retake.sql faylını Supabase-də işə sal" : translateError(error), "err");
+        toast(`${name} sınağı ${n} gün ərzində yenidən yaza bilər ✓`, "ok");
+        if (await load()) render();
+      });
+      app.querySelectorAll("[data-retake-cancel]").forEach((b) => b.onclick = async () => {
+        const { error } = await sb.rpc("admin_cancel_retake", { p_test: testId, p_user: b.dataset.retakeCancel });
         if (error) return toast(translateError(error), "err");
-        toast("Cəhd silindi", "ok");
+        toast("İcazə ləğv edildi", "ok");
         if (await load()) render();
       });
     }

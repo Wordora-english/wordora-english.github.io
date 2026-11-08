@@ -87,22 +87,24 @@
 
     async function loadTests() {
       const box = document.getElementById("test-list");
-      const [{ data: tests, error }, { data: mine }] = await Promise.all([
+      const [{ data: tests, error }, { data: mine }, { data: rt }] = await Promise.all([
         sb.from("tests").select("id, title, duration_min, starts_at, ends_at, questions, results_released").order("created_at", { ascending: false }),
         sb.rpc("get_my_attempts"),
+        sb.from("test_retakes").select("test_id, expires_at"),
       ]);
+      const retake = Object.fromEntries((rt || []).filter((r) => new Date(r.expires_at) > Date.now()).map((r) => [r.test_id, r.expires_at]));
       if (error) { box.innerHTML = '<div class="card empty">Hələlik sınaq yoxdur.</div>'; return; }
       const byTest = Object.fromEntries((mine || []).map((a) => [a.test_id, a]));
       const now = Date.now();
       // Bağlanmış və yazılmamış köhnə sınaqları gizlət
-      const list = tests.filter((t) => byTest[t.id] || !(t.ends_at && now >= new Date(t.ends_at)));
+      const list = tests.filter((t) => byTest[t.id] || retake[t.id] || !(t.ends_at && now >= new Date(t.ends_at)));
       if (!list.length) { box.innerHTML = '<div class="card empty">Hələlik açıq sınaq yoxdur.</div>'; return; }
       box.innerHTML = list.map((t) => {
         const a = byTest[t.id];
-        const st = testState(t, a);
+        const st = testState(t, a, now, !!retake[t.id]);
         const total = (t.questions || []).reduce((s, q) => s + (Number(q.points) || 0), 0);
         let pill = "", action = "";
-        if (st === "open") { pill = '<span class="pill live">Açıqdır</span>'; action = `<a class="btn btn-primary btn-sm" href="test.html?id=${t.id}">Başla</a>`; }
+        if (st === "open") { pill = retake[t.id] ? '<span class="pill live">🔄 Yenidən yaz</span>' : '<span class="pill live">Açıqdır</span>'; action = `<a class="btn btn-primary btn-sm" href="test.html?id=${t.id}">Başla</a>`; }
         else if (st === "in_progress") {
           pill = '<span class="pill wait">Yarımçıq</span>';
           action = `<a class="btn btn-primary btn-sm" href="test.html?id=${t.id}">${a.status === "expired" ? "Nəticə" : "Davam et"}</a>`;

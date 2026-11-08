@@ -300,10 +300,12 @@ seed"></textarea>
           <a class="btn btn-ghost btn-sm" href="student.html?id=${p.id}">📈 Profil</a>
           <button class="btn btn-ghost btn-sm" data-pwd="${p.id}">🔑 Şifrə</button>
           <button class="btn btn-ghost btn-sm" data-act="class" data-id="${p.id}">Sinfi dəyiş</button>
-          <button class="btn btn-bad btn-sm" data-act="blocked" data-id="${p.id}">🔒 Blokla</button>`;
+          <button class="btn btn-bad btn-sm" data-act="blocked" data-id="${p.id}">🔒 Blokla</button>
+          <button class="btn btn-bad btn-sm" data-act="delete" data-id="${p.id}" title="Hesabı və bütün nəticələri tamamilə sil">🗑 Sil</button>`;
       } else {
         actions = `${p.status === "blocked" ? `<a class="btn btn-ghost btn-sm" href="student.html?id=${p.id}">📈 Profil</a><button class="btn btn-ghost btn-sm" data-pwd="${p.id}">🔑 Şifrə</button>` : ""}
-          <button class="btn btn-ok btn-sm" data-act="approved" data-id="${p.id}">${p.status === "blocked" ? "🔓 Blokdan çıxar" : p.status === "archived" ? "↩ Bərpa et" : "✓ Təsdiqlə"}</button>`;
+          <button class="btn btn-ok btn-sm" data-act="approved" data-id="${p.id}">${p.status === "blocked" ? "🔓 Blokdan çıxar" : p.status === "archived" ? "↩ Bərpa et" : "✓ Təsdiqlə"}</button>
+          <button class="btn btn-bad btn-sm" data-act="delete" data-id="${p.id}" title="Hesabı və bütün nəticələri tamamilə sil">🗑 Sil</button>`;
       }
       const pill = p.status === "blocked" ? '<span class="pill blocked">Bloklanıb</span>'
                  : p.status === "rejected" ? '<span class="pill rejected">Rədd edilib</span>'
@@ -374,6 +376,26 @@ seed"></textarea>
       const { error } = await sb.rpc("admin_set_status", { p_user: id, p_status: status, p_note: note || null });
       if (error) { toast(translateError(error), "err"); return; }
       toast(status === "approved" ? "Təsdiqləndi ✓" : status === "blocked" ? "Bloklandı" : "Rədd edildi", "ok");
+      loadPeople();
+    }
+
+    // Şagirdi saytdan tamamilə silmək
+    async function deleteStudent(id) {
+      const p = people.find((x) => x.id === id);
+      if (!p) return;
+      if (!confirm(`${p.full_name} saytdan TAMAMİLƏ silinsin?\n\nHesabı, bütün sınaq nəticələri, ev tapşırıqları, mesajları və davamiyyəti silinəcək. Bunu geri qaytarmaq olmur.\n\nYalnız girişini bağlamaq istəyirsənsə, "Blokla" düyməsindən istifadə et.`)) return;
+      const typed = prompt(`Təsdiq üçün şagirdin istifadəçi adını yaz: ${p.username}`);
+      if (typed === null) return;
+      if (typed.trim().toLowerCase().replace(/^@/, "") !== p.username) return toast("İstifadəçi adı uyğun gəlmədi — silinmədi", "err");
+      // ev tapşırığı fayllarını da sil
+      try {
+        const { data: subs } = await sb.from("hw_submissions").select("files").eq("user_id", id);
+        const files = (subs || []).flatMap((x) => x.files || []);
+        if (files.length) await sb.storage.from("homework").remove(files);
+      } catch {}
+      const { error } = await sb.rpc("admin_delete_student", { p_user: id });
+      if (error) return toast(/function|schema cache/i.test(error.message || "") ? "Əvvəlcə 15-delete-retake.sql faylını Supabase-də işə sal" : translateError(error), "err");
+      toast(`${p.full_name} silindi`, "ok");
       loadPeople();
     }
 
@@ -1355,6 +1377,7 @@ seed"></textarea>
         const b = e.target.closest("button");
         if (!b) return;
         if (b.dataset.act === "class") return changeClass(b.dataset.id);
+        if (b.dataset.act === "delete") return deleteStudent(b.dataset.id);
         if (b.dataset.act) return setStatus(b.dataset.id, b.dataset.act);
         if (b.hasAttribute("data-refresh")) return loadPeople();
         if (b.dataset.mat) return materialAction(b.dataset.mat, b.dataset.id, b);

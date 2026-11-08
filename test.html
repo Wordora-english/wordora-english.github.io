@@ -37,7 +37,7 @@
     const $ = (id) => document.getElementById(id);
     const testId = new URLSearchParams(location.search).get("id");
 
-    let me, test, attempt, answers = {}, guard = null, examGuard = null, viewer = null;
+    let me, test, attempt, answers = {}, guard = null, examGuard = null, viewer = null, retakeUntil = null;
     let offset = 0, deadline = 0, tick = null, dirty = false, saving = false, submitted = false;
     let wakeLock = null;
 
@@ -52,10 +52,12 @@
       if (!me) { location.href = "login.html"; return; }
       if (me.status !== "approved") { location.href = "portal.html"; return; }
 
-      const [{ data: t, error }, { data: mine }] = await Promise.all([
+      const [{ data: t, error }, { data: mine }, { data: rt }] = await Promise.all([
         sb.from("tests").select("id, title, description, questions, content, duration_min, starts_at, ends_at, results_mode, results_released").eq("id", testId).maybeSingle(),
         sb.rpc("get_my_attempts"),
+        sb.from("test_retakes").select("expires_at").eq("test_id", testId),
       ]);
+      retakeUntil = (rt || []).map((r) => r.expires_at).find((x) => new Date(x) > Date.now()) || null;
       if (error || !t) return fail("Bu sınaq sənin üçün açıq deyil.");
       test = t;
       $("title").textContent = t.title;
@@ -67,7 +69,7 @@
         const { data: again } = await sb.rpc("get_my_attempts");
         my = (again || []).find((a) => a.test_id === testId);
       }
-      const st = testState(t, my);
+      const st = testState(t, my, Date.now(), !!retakeUntil);
 
       if (st === "in_progress") return intro(true);
       if (st === "done") return showDone(my);
@@ -87,7 +89,8 @@
           <div><b>${qs.length}</b><span>sual</span></div>
           <div><b>${fmtNum(total)}</b><span>bal</span></div>
         </div>
-        ${test.ends_at ? `<p class="small muted">Son tarix: <b>${formatDate(test.ends_at)}</b> — bu vaxtdan sonra sınaq avtomatik bağlanır.</p>` : ""}
+        ${retakeUntil && !resume ? `<p class="small" style="background:var(--soft);padding:.5rem .7rem;border-radius:10px">🔄 Müəllim sənə bu sınağı <b>yenidən yazmağa</b> icazə verib — <b>${formatDate(retakeUntil)}</b> tarixinə qədər başlaya bilərsən.</p>`
+          : test.ends_at ? `<p class="small muted">Son tarix: <b>${formatDate(test.ends_at)}</b> — bu vaxtdan sonra sınaq avtomatik bağlanır.</p>` : ""}
         <ul class="rules">
           <li>⏱ Taymer "Başla" basan kimi işə düşür və dayanmır. Vaxt bitəndə cavablar <b>avtomatik təhvil verilir</b>.</li>
           <li>💾 Cavabların avtomatik yadda saxlanılır. İnternet kəsilsə və ya səhifə bağlansa, qayıdıb davam edə bilərsən.</li>
