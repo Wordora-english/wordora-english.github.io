@@ -53,7 +53,7 @@
       if (me.status !== "approved") { location.href = "portal.html"; return; }
 
       const [{ data: t, error }, { data: mine }, { data: rt }] = await Promise.all([
-        sb.from("tests").select("id, title, description, questions, content, duration_min, starts_at, ends_at, results_mode, results_released").eq("id", testId).maybeSingle(),
+        sb.from("tests").select("*").eq("id", testId).maybeSingle(),
         sb.rpc("get_my_attempts"),
         sb.from("test_retakes").select("expires_at").eq("test_id", testId),
       ]);
@@ -71,6 +71,7 @@
       }
       const st = testState(t, my, Date.now(), !!retakeUntil);
 
+      if (t.is_paper && st !== "done") return app.innerHTML = card(`<h1 style="font-size:1.4rem">${esc(t.title)}</h1><p class="muted">📝 Bu sınaq <b>kağız üzərində</b> yazılır. Nəticən müəllim daxil edəndən sonra burada görünəcək.</p><a class="btn btn-ghost" href="portal.html">Portala qayıt</a>`);
       if (st === "in_progress") return intro(true);
       if (st === "done") return showDone(my);
       if (st === "upcoming") return app.innerHTML = card(`<h1 style="font-size:1.4rem">${esc(t.title)}</h1><p class="muted">Sınaq <b>${formatDate(t.starts_at)}</b> tarixində açılacaq.</p><a class="btn btn-ghost" href="portal.html">Portala qayıt</a>`);

@@ -88,7 +88,7 @@
     async function loadTests() {
       const box = document.getElementById("test-list");
       const [{ data: tests, error }, { data: mine }, { data: rt }] = await Promise.all([
-        sb.from("tests").select("id, title, duration_min, starts_at, ends_at, questions, results_released").order("created_at", { ascending: false }),
+        sb.from("tests").select("*").order("created_at", { ascending: false }),
         sb.rpc("get_my_attempts"),
         sb.from("test_retakes").select("test_id, expires_at"),
       ]);
@@ -97,7 +97,8 @@
       const byTest = Object.fromEntries((mine || []).map((a) => [a.test_id, a]));
       const now = Date.now();
       // Bağlanmış və yazılmamış köhnə sınaqları gizlət
-      const list = tests.filter((t) => byTest[t.id] || retake[t.id] || !(t.ends_at && now >= new Date(t.ends_at)));
+      // kağız sınaqlar yalnız nəticə daxil ediləndən sonra görünür
+      const list = tests.filter((t) => byTest[t.id] || (!t.is_paper && (retake[t.id] || !(t.ends_at && now >= new Date(t.ends_at)))));
       if (!list.length) { box.innerHTML = '<div class="card empty">Hələlik açıq sınaq yoxdur.</div>'; return; }
       box.innerHTML = list.map((t) => {
         const a = byTest[t.id];
@@ -111,7 +112,7 @@
         }
         else if (st === "upcoming") { pill = '<span class="pill off">Gözləyir</span>'; action = `<span class="muted small">${formatDate(t.starts_at)}</span>`; }
         else if (st === "done") {
-          pill = '<span class="pill done">Təhvil verilib</span>';
+          pill = t.is_paper ? '<span class="pill done">📝 Kağız sınaq</span>' : '<span class="pill done">Təhvil verilib</span>';
           action = a.show_score && a.score !== null
             ? `<a class="btn btn-ghost btn-sm" href="test.html?id=${t.id}"><b>${fmtNum(a.score)}</b>&nbsp;/ ${fmtNum(a.total)}</a>`
             : `<a class="btn btn-ghost btn-sm" href="test.html?id=${t.id}">Nəticə gözlənilir</a>`;

@@ -78,6 +78,7 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 13. `supabase/14-magistratura.sql`
 14. `supabase/15-delete-retake.sql`
 15. `supabase/16-variants.sql`
+16. `supabase/17-paper-tests.sql`
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 
@@ -143,3 +144,5 @@ select public.remove_telegram_chat('ID');   -- sil
 - **Şagirdi tamamilə silmək** → **Şagirdlər** (və ya **Bloklanan / məzun**) → **🗑 Sil** → təsdiq üçün istifadəçi adını yaz. Hesab, nəticələr, tapşırıqlar, mesajlar — hamısı silinir, geri qaytarmaq olmur. Yalnız girişi bağlamaq üçün **Blokla** kifayətdir
 - **Sınağı silmək** nəticələri də silir — nəticələr qalsın deyə **Gizlət** istifadə et
 - **Variantlar (A, B, C...)** → sınağı redaktə et → **3. Variantlar** → **+ B variantı əlavə et** → B-nin PDF-i və cavabları (`1 B, 2 D, ...` — sual sayı və tipləri A ilə eyni) → istəsən öz dinləməsi (yoxsa A-nınkı) → **Yadda saxla**. Şagird "Başla" basanda variant avtomatik verilir (bərabər paylanır, yenidən yazanda başqa variant düşür). Konkret şagirdə variant: **Nəticələr** → **Yazmayanlar** → "Variant" seçimi. Nəticələrdə hər şagirdin variantı görünür, sual analizi variant üzrə ayrıdır
+- **Kağız sınaq** → **+ Yeni sınaq** → **📝 Kağız sınaq** işarələ → cavab açarını yarat (PDF məcburi deyil; variantlar da olar) → **Yadda saxla** → **Nəticələr** → yuxarıdakı formada şagirdi seç (siyahıda yoxdursa — "Siyahıda yoxdur", adını yaz) → variantı seç → cavabları sırası ilə yaz (`C D B BBAA went`; çox sözlü cavab varsa vergüllə; boş sual `-`) → **Enter**. Növbəti şagird avtomatik seçilir. Esse — nəticədə 4 meyar üzrə. **📄 PDF hesabatlar** — hər şagird üçün bir səhifə; hər sətirdə **📄 PDF** — tək şagird. Nəticələri açanda qeydiyyatlı şagirdlər portalda görür
+- **PDF hesabat** onlayn sınaqlarda da var: **Nəticələr** → **📄 PDF hesabatlar**

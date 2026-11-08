@@ -489,3 +489,6 @@ body[data-group="mag"] .group-switch button.on { color: #8a5a00; }
 .variant-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 1.05rem; }
 .var-pill { display: inline-block; min-width: 1.6em; text-align: center; padding: .05rem .45rem; border-radius: 6px; background: var(--indigo, #3a32b5); color: #fff; font-weight: 700; font-size: .78rem; }
 .var-assign { width: auto; padding: .3rem .5rem; font-size: .85rem; border-radius: 8px; }
+.pf-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.pf-row select, .pf-row input { flex: 1 1 200px; width: auto; }
+.paper-form { border-top: 4px solid var(--indigo, #3a32b5); }

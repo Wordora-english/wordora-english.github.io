@@ -961,7 +961,7 @@ seed"></textarea>
             <div style="min-width:0">
               <h3>${esc(t.title)} ${pill} ${t.results_released ? '<span class="pill on">Nəticələr açıq</span>' : ""}</h3>
               <div class="test-meta">
-                <span>${esc(classes)}</span><span>${t.duration_min} dəq</span>${t.audio_path ? "<span>🎧 dinləmə</span>" : ""}${t.variants?.length ? `<span>🅰 ${["A", ...t.variants.map((v) => v.code)].join(", ")} variantları</span>` : ""}
+                <span>${esc(classes)}</span><span>${t.duration_min} dəq</span>${t.audio_path ? "<span>🎧 dinləmə</span>" : ""}${t.variants?.length ? `<span>🅰 ${["A", ...t.variants.map((v) => v.code)].join(", ")} variantları</span>` : ""}${t.is_paper ? "<span>📝 kağız sınaq</span>" : ""}
                 <span>${(t.questions || []).length} sual · ${Math.round(total * 100) / 100} bal</span>
                 ${t.starts_at ? `<span>Başlama: ${formatDate(t.starts_at)}</span>` : ""}
                 ${t.ends_at ? `<span>Son: ${formatDate(t.ends_at)}</span>` : ""}

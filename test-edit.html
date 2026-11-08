@@ -31,6 +31,8 @@
     <form id="form" novalidate>
       <section class="card" style="margin-bottom:16px">
         <h2 style="font-size:1.15rem">1. Əsas məlumat</h2>
+        <label class="chk paper-chk" style="width:max-content;margin-bottom:12px"><input type="checkbox" id="is-paper"> 📝 <b>Kağız sınaq</b> — şagirdlər kağızda yazır, cavablarını mən sayta daxil edirəm</label>
+        <div class="hint hidden" id="paper-hint" style="margin:-6px 0 12px">Kağız sınaqda PDF məcburi deyil, şagirdlər saytda "Başla" düyməsini görmür. Cavab açarını aşağıda yarat, sonra <b>Nəticələr</b> səhifəsində hər şagirdin cavablarını yaz — sayt yoxlayır, analiz edir və PDF hesabat hazırlayır.</div>
         <div class="field"><label for="title">Sınağın adı</label><input id="title" maxlength="150" placeholder="məs. OTK hazırlıq 3 — 11-ci sinif" required></div>
         <div class="field"><label for="desc">Şagirdlər üçün qeyd (istəyə görə)</label><textarea id="desc" maxlength="2000" style="min-height:70px" placeholder="məs. Dinləmə mətni müəllim tərəfindən oxunacaq."></textarea></div>
         <div class="field">
@@ -255,6 +257,12 @@ Write about your favourite hobby.
       return { key: out, errs };
     }
 
+    function paperUi() {
+      const on = $("is-paper").checked && mode === "pdf";
+      $("paper-hint").classList.toggle("hidden", !on);
+      document.querySelector(".paper-chk").classList.toggle("hidden", mode === "online");
+    }
+
     function setMode(m) {
       mode = m;
       document.querySelectorAll("#mode-tabs .tab").forEach((t) => t.classList.toggle("active", t.dataset.mode === m));
@@ -262,6 +270,7 @@ Write about your favourite hobby.
       $("pdf-key-box").classList.toggle("hidden", m === "online");
       $("pdf-key-btns").classList.toggle("hidden", m === "online");
       $("variants-box").classList.toggle("hidden", m === "online");
+      paperUi();
       $("shuffle-wrap").classList.toggle("hidden", m !== "online");
       $("shuffle-hint").classList.toggle("hidden", m !== "online");
       $("pdf-current").innerHTML = m === "online"
@@ -296,6 +305,7 @@ Write about your favourite hobby.
       $("total").value = totalPoints(rows) || 100;
       passages = on?.passages || [];
       $("sections").value = formatSections(t.content?.sections);
+      $("is-paper").checked = !!t.is_paper; paperUi();
       variants = (t.variants || []).map((v) => ({ ...v, keytext: fmtKey(k?.variants?.[v.code] || {}, rows) }));
       $("variants").innerHTML = "";
       renderVariants();
@@ -318,7 +328,8 @@ Write about your favourite hobby.
       if (!title) return toast("Sınağın adını yaz", "err");
       if (!(duration_min >= 1 && duration_min <= 600)) return toast("Vaxt 1–600 dəqiqə olmalıdır", "err");
       if (starts_at && ends_at && new Date(ends_at) <= new Date(starts_at)) return toast("Son tarix başlamadan sonra olmalıdır", "err");
-      if (mode === "pdf" && !file && !current?.pdf_path) return toast("Sınaq PDF-ini seç", "err");
+      const isPaper = $("is-paper").checked;
+      if (mode === "pdf" && !isPaper && !file && !current?.pdf_path) return toast("Sınaq PDF-ini seç", "err");
       if (file && file.size > 50 * 1048576) return toast("PDF 50 MB-dan böyükdür", "err");
       if (!rows.length) return toast("Cavab kartı boşdur", "err");
       const errs = validate();
@@ -336,7 +347,7 @@ Write about your favourite hobby.
         const vk = variantKey(v);
         vErrs.push(...vk.errs); vKeys[v.code] = vk.key;
         const f = document.querySelector(`.variant[data-code="${v.code}"] .v-pdf`)?.files[0];
-        if (!f && !v.pdf_path) vErrs.push(`${v.code} variantının PDF-ini seç`);
+        if (!f && !v.pdf_path && !$("is-paper").checked) vErrs.push(`${v.code} variantının PDF-ini seç`);
         if (f && f.size > 50 * 1048576) vErrs.push(`${v.code} variantının PDF-i 50 MB-dan böyükdür`);
       }
       if (vErrs.length) { $("parse-msg").textContent = vErrs.slice(0, 6).join(" · "); $("parse-msg").classList.remove("hidden"); $("variants-box").scrollIntoView({ behavior: "smooth" }); return toast(vErrs[0], "err"); }
@@ -412,6 +423,7 @@ Write about your favourite hobby.
           if (!vOut.some((x) => x.code === old.code)) removePaths.push(old.pdf_path, old.audio_path);
         }
         const row = {
+          is_paper: mode === "pdf" && isPaper,
           variants: vOut,
           audio_path, audio_max_plays: Number($("audio-max").value),
           title, description: $("desc").value.trim() || null, pdf_path, questions, duration_min, starts_at, ends_at,
@@ -495,6 +507,7 @@ Write about your favourite hobby.
         toast(`${rows.length} sual yaradıldı`, "ok");
       });
       renderVariants();
+      $("is-paper").addEventListener("change", paperUi);
       $("add-variant").addEventListener("click", () => {
         document.querySelectorAll(".qrow[data-i]").forEach(readRow);
         if (!rows.length) return toast("Əvvəlcə A variantının cavab kartını yarat", "err");

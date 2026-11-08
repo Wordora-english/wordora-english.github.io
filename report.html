@@ -70,7 +70,7 @@
       const from = new Date(y, m - 1, 1).toISOString();
       const to = new Date(y, m, 1).toISOString();
       const inMonth = (col) => (q) => q.gte(col, from).lt(col, to);
-      const [profiles, tests, attempts, violations, views, sessions, players] = await Promise.all([
+      const [profiles, tests, attempts, violations, views, sessions, players, paper] = await Promise.all([
         fetchAll("profiles", "id, full_name, class_name, student_code, role, status, created_at"),
         fetchAll("tests", "id, title, questions, target_classes"),
         fetchAll("attempts", "id, test_id, user_id, score, status, submitted_at", inMonth("submitted_at")),
@@ -78,7 +78,9 @@
         fetchAll("material_views", "user_id, kind, viewed_at, material_id", inMonth("viewed_at")),
         fetchAll("live_sessions", "id, created_at, status, live_quizzes(title)", inMonth("created_at")),
         fetchAll("live_players", "session_id, user_id, score, joined_at", inMonth("joined_at")),
+        fetchAll("paper_entries", "id, test_id, user_id, score, status, created_at", inMonth("created_at")),   // kağız sınaqlar
       ]);
+      attempts.push(...paper.filter((p) => p.user_id).map((p) => ({ ...p, submitted_at: p.created_at })));
       data = { y, m, profiles, tests, attempts: attempts.filter((a) => a.status !== "in_progress"), violations, views, sessions, players };
       render();
     }

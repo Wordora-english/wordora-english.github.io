@@ -60,6 +60,8 @@
     const testId = new URLSearchParams(location.search).get("id");
     let test, key, attempts = [], notStarted = [], violCount = {}, qcs = [], retakes = {}, archive = {};
     let vkeys = {}, assigns = {}, anVar = "A";
+    let allStudents = [], pf = { edit: null, user: "", name: "", cls: "", variant: "A", text: "" };   // kağız forması
+    const isPaper = () => !!test?.is_paper;
     const hasVar = () => (test.variants || []).length > 0;
     const varCodes = () => ["A", ...(test.variants || []).map((v) => v.code)];
     const keyOf = (a) => (a?.variant && a.variant !== "A" && vkeys[a.variant]) || key;
@@ -76,7 +78,7 @@
 
     async function load() {
       await sb.rpc("admin_finalize_expired", { p_test: testId });
-      const [{ data: t, error }, { data: k }, { data: att }, { data: studs }, { data: qc }, { data: rt }, { data: ar }, { data: va }] = await Promise.all([
+      const [{ data: t, error }, { data: k }, { data: att }, { data: studs }, { data: qc }, { data: rt }, { data: ar }, { data: va }, { data: pe }] = await Promise.all([
         sb.from("tests").select("*").eq("id", testId).maybeSingle(),
         sb.from("test_keys").select("*").eq("test_id", testId).maybeSingle(),
         sb.from("attempts").select("*, profiles(full_name, class_name, student_code, username)").eq("test_id", testId),
@@ -85,6 +87,7 @@
         sb.from("test_retakes").select("user_id, expires_at").eq("test_id", testId),
         sb.from("attempts_archive").select("*").eq("test_id", testId).order("archived_at"),
         sb.from("test_variant_assign").select("user_id, variant").eq("test_id", testId),
+        sb.from("paper_entries").select("*, profiles(student_code)").eq("test_id", testId),
       ]);
       qcs = qc || [];
       retakes = Object.fromEntries((rt || []).filter((r) => new Date(r.expires_at) > Date.now()).map((r) => [r.user_id, r.expires_at]));
@@ -92,6 +95,12 @@
       for (const x of ar || []) (archive[x.user_id] ||= []).push(x);
       if (error || !t) { app.innerHTML = '<div class="card empty">Sınaq tapılmadı.</div>'; return false; }
       test = t; key = k?.answers || {}; vkeys = k?.variants || {}; attempts = att || [];
+      allStudents = studs || [];
+      if (t.is_paper) {
+        // kağız sınaq: nəticələr müəllimin daxil etdiyi cədvəldən — onlayn cəhdlərlə eyni formaya salınır
+        attempts = (pe || []).map((e) => ({ ...e, paper: true, started_at: null, deadline: null, submitted_at: e.updated_at || e.created_at,
+          profiles: { full_name: e.student_name, class_name: e.class_name, student_code: e.profiles?.student_code || "" } }));
+      }
       assigns = Object.fromEntries((va || []).map((x) => [x.user_id, x.variant]));
       if (!varCodes().includes(anVar)) anVar = "A";
       const took = new Set(attempts.map((a) => a.user_id));
@@ -100,7 +109,7 @@
 
       // Sınaq zamanı pozuntular
       violCount = {};
-      if (attempts.length) {
+      if (attempts.length && !t.is_paper) {
         const { data: v } = await sb.from("violations").select("user_id, created_at, cancelled")
           .in("user_id", attempts.map((a) => a.user_id)).eq("cancelled", false);
         for (const a of attempts) {
@@ -124,12 +133,13 @@
       app.innerHTML = `
         <div class="card" style="margin-bottom:16px">
           <div class="res-head">
-            <div><h1 style="font-size:1.45rem;margin-bottom:.2rem">${esc(test.title)}</h1>
+            <div><h1 style="font-size:1.45rem;margin-bottom:.2rem">${esc(test.title)}${isPaper() ? ' <span class="pill done">📝 Kağız sınaq</span>' : ""}</h1>
               <div class="muted small">${test.target_classes?.length ? test.target_classes.map(classLabel).join(", ") : "Bütün siniflər"} · ${test.duration_min} dəq · ${(test.questions || []).length} sual · ${fmtNum(T)} bal
               ${test.ends_at ? ` · son: ${formatDate(test.ends_at)}` : ""}</div></div>
             <div class="res-actions">
               <button class="btn ${test.results_released ? "btn-warn" : "btn-ok"} btn-sm" id="release">${test.results_released ? "Nəticələri bağla" : "Nəticələri şagirdlərə aç"}</button>
               <button class="btn btn-ghost btn-sm" id="csv">⬇ Excel</button>
+              <button class="btn btn-ghost btn-sm" id="pdf-all" title="Hər şagird üçün bir səhifə — çap etmək və ya göndərmək üçün">📄 PDF hesabatlar</button>
               <button class="btn btn-ghost btn-sm" id="regrade" title="Cavab açarını dəyişmisənsə">Yenidən hesabla</button>
               <a class="btn btn-ghost btn-sm" href="test-edit.html?id=${test.id}">Redaktə</a>
               <button class="btn btn-ghost btn-sm" id="refresh">↻</button>
@@ -141,8 +151,10 @@
             : "🔒 Nəticələr bağlıdır — şagirdlər hələ heç nə görmür."}</p>
         </div>
 
+        ${isPaper() ? paperForm() : ""}
+
         <div class="stats five">
-          <div class="stat"><div class="n">${done.length}</div><div class="l">Təhvil verib</div></div>
+          <div class="stat"><div class="n">${done.length}</div><div class="l">${isPaper() ? "Daxil edilib" : "Təhvil verib"}</div></div>
           <div class="stat"><div class="n">${live.length}</div><div class="l">İndi yazır</div></div>
           <div class="stat"><div class="n">${avg === null ? "—" : fmtNum(Math.round(avg * 10) / 10)}</div><div class="l">Orta bal</div></div>
           <div class="stat"><div class="n">${scores.length ? fmtNum(Math.max(...scores)) : "—"}</div><div class="l">Ən yüksək</div></div>
@@ -162,13 +174,13 @@
         ${hasVar() ? `<div class="tabs" id="an-var" style="margin-bottom:10px">${varCodes().map((c) => `<button class="tab ${c === anVar ? "active" : ""}" data-anvar="${c}">${c} variantı (${done.filter((a) => (a.variant || "A") === c).length})</button>`).join("")}</div>` : ""}
         <div class="qa">${analysis(hasVar() ? done.filter((a) => (a.variant || "A") === anVar) : done)}</div>
 
-        <div class="section-title"><h2>Yazmayanlar <span class="muted small">(${notStarted.length})</span></h2></div>
+        <div class="section-title"><h2>${isPaper() ? "Cavabı daxil edilməyənlər" : "Yazmayanlar"} <span class="muted small">(${notStarted.length})</span></h2></div>
         <div class="card small">${notStarted.length ? `<div class="ns-list">${notStarted.map((s) => `<div class="ns">
             <span>${esc(s.full_name)} <span class="muted">(${esc(classLabel(s.class_name))})</span>${archive[s.id] ? ` <span class="muted">· əvvəlki: ${archive[s.id].map((x) => fmtNum(x.score ?? 0)).join(", ")}</span>` : ""}</span>
-            <span class="ns-act">${hasVar() ? `<select class="var-assign" data-assign="${s.id}" title="Variant">${["", ...varCodes()].map((c) => `<option value="${c}" ${(assigns[s.id] || "") === c ? "selected" : ""}>${c ? `${c} variantı` : "Variant: avto"}</option>`).join("")}</select>` : ""}
-            ${retakes[s.id] ? `<span class="ns-act"><span class="pill wait">🔄 ${formatDate(retakes[s.id])} tarixinə qədər yaza bilər</span> <button class="btn btn-ghost btn-sm" data-retake-cancel="${s.id}">Ləğv et</button></span>`
+            <span class="ns-act">${hasVar() && !isPaper() ? `<select class="var-assign" data-assign="${s.id}" title="Variant">${["", ...varCodes()].map((c) => `<option value="${c}" ${(assigns[s.id] || "") === c ? "selected" : ""}>${c ? `${c} variantı` : "Variant: avto"}</option>`).join("")}</select>` : ""}
+            ${isPaper() ? `<button class="btn btn-ghost btn-sm" data-pf-pick="${s.id}">✏️ Daxil et</button>` : retakes[s.id] ? `<span class="ns-act"><span class="pill wait">🔄 ${formatDate(retakes[s.id])} tarixinə qədər yaza bilər</span> <button class="btn btn-ghost btn-sm" data-retake-cancel="${s.id}">Ləğv et</button></span>`
               : closed ? `<button class="btn btn-ghost btn-sm" data-retake="${s.id}">🔄 Yazmağa icazə ver</button>` : ""}</span>
-          </div>`).join("")}</div>${closed ? "" : '<div class="muted" style="margin-top:6px">Sınaq hələ açıqdır — yazmayanlar özləri girib yaza bilər.</div>'}` : "Hamı yazıb 👍"}</div>
+          </div>`).join("")}</div>${closed ? "" : '<div class="muted" style="margin-top:6px">${isPaper() ? "Saytda qeydiyyatı olan şagirdlər. Siyahıda olmayanları formada adı ilə daxil edə bilərsən." : "Sınaq hələ açıqdır — yazmayanlar özləri girib yaza bilər."}</div>'}` : "Hamı yazıb 👍"}</div>
       `;
       bind();
       rendered = true;
@@ -185,7 +197,7 @@
         const K = keyOf(a);
         return `<div class="ans ${cls}" title="Düzgün: ${esc(K[q.n] || "")}"><b>${q.n}</b> ${esc(a.answers?.[q.n] || "—")}${cls !== "ok" ? ` <span style="opacity:.6">→ ${esc(K[q.n] || "")}</span>` : ""}</div>`;
       }).join("");
-      const essays = essayQs().map((q) => {
+      const essays = a.paper ? "" : essayQs().map((q) => {
         const txt = a.answers?.[q.n] || "";
         const w = wordCount(txt);
         return `<div class="essay-box">
@@ -221,7 +233,7 @@
               <b>${esc(p.full_name)}</b>${varPill(a)} <span class="muted small">${esc(classLabel(p.class_name))} · ${esc(p.student_code || "")}</span> ${statusPill}
               ${chips}
               ${archive[a.user_id] ? `<div class="small" style="color:var(--muted)">🗂 Əvvəlki cəhd: ${archive[a.user_id].map((x) => `<b>${fmtNum(x.score ?? 0)}</b> / ${fmtNum(T)}${hasVar() && x.variant ? ` (${esc(x.variant)} variantı)` : ""} (${formatDate(x.submitted_at || x.archived_at)})`).join(" · ")}</div>` : ""}
-              <div class="muted small">Təhvil: ${formatDate(a.submitted_at)}${used !== null ? ` · ${used} dəq` : ""}${violCount[a.id] ? ` · <span style="color:var(--bad)">⚠️ ${violCount[a.id]} pozuntu</span>` : ""}${essayQs().length ? ` · test: ${fmtNum(a.auto_score)} + esse: ${a.essay_score === null ? "?" : fmtNum(a.essay_score)}` : ""}</div>
+              <div class="muted small">${a.paper ? "Daxil edilib" : "Təhvil"}: ${formatDate(a.submitted_at)}${used !== null ? ` · ${used} dəq` : ""}${violCount[a.id] ? ` · <span style="color:var(--bad)">⚠️ ${violCount[a.id]} pozuntu</span>` : ""}${essayQs().length ? ` · test: ${fmtNum(a.auto_score)} + esse: ${a.essay_score === null ? "?" : fmtNum(a.essay_score)}` : ""}</div>
             </div>
             <div class="sc">${fmtNum(a.score)}<span> / ${fmtNum(T)}</span></div>
           </div>
@@ -233,10 +245,184 @@
               ${essayGrade}
               <span style="display:flex;gap:.4rem;flex-wrap:wrap">
               ${T && (Number(a.score) || 0) / T * 100 >= CERT_MIN_PERCENT ? `<button class="btn btn-ghost btn-sm" data-cert="${a.id}">🏅 Sertifikat</button>` : ""}
-              <button class="btn btn-warn btn-sm" data-retake="${a.user_id}" title="Köhnə nəticə arxivdə qalır, şagird sınağı yenidən yaza bilir">🔄 Yenidən yazsın</button></span>
+              <button class="btn btn-ghost btn-sm" data-pdf="${a.id}">📄 PDF</button>
+              ${a.paper ? `<button class="btn btn-ghost btn-sm" data-pf-edit="${a.id}">✏️ Cavabları düzəlt</button><button class="btn btn-bad btn-sm" data-pf-del="${a.id}">🗑 Sil</button>`
+                : `<button class="btn btn-warn btn-sm" data-retake="${a.user_id}" title="Köhnə nəticə arxivdə qalır, şagird sınağı yenidən yaza bilir">🔄 Yenidən yazsın</button>`}</span>
             </div>
           </details>
         </div>`;
+    }
+
+    // ================= Kağız sınaq: cavabların daxil edilməsi =================
+    const ansQs = () => (test.questions || []).filter((q) => q.type !== "essay").sort((a, b) => a.n - b.n);
+    const BLANK = /^[-–—?0_.]$/;
+
+    // "C D B BBAA went"  |  "C, D, B, has gone"  |  "1C 2D 3B 4BBAA 5 went"
+    function parsePaper(text) {
+      const qs = ansQs(), answers = {}, errors = [];
+      const src = String(text || "").trim();
+      if (!src) return { answers, errors, filled: 0 };
+      let pairs = [];
+      if (/^\d/.test(src)) {
+        for (const part of src.split(/[,;\n]+/)) {
+          for (const piece of part.trim().split(/\s+(?=\d{1,3}\s*[).:\-]?\s*\S)/)) {
+            const m = piece.trim().match(/^(\d{1,3})\s*[).:\-]?\s*(.*)$/);
+            if (m) pairs.push([Number(m[1]), m[2].trim()]); else if (piece.trim()) errors.push(`"${piece.trim()}" başa düşülmədi`);
+          }
+        }
+      } else {
+        const toks = /[,;\n]/.test(src) ? src.split(/[,;\n]+/).map((t) => t.trim()) : src.split(/\s+/);
+        if (toks.length > qs.length) errors.push(`${toks.length} cavab yazılıb, amma ${qs.length} sual var (esse sayılmır)`);
+        pairs = toks.slice(0, qs.length).map((t, i) => [qs[i].n, t]);
+      }
+      const byN = Object.fromEntries(qs.map((q) => [q.n, q]));
+      for (const [n, raw] of pairs) {
+        const q = byN[n];
+        if (!q) { errors.push(`${n}-ci sual yoxdur`); continue; }
+        if (!raw || BLANK.test(raw)) continue;
+        if (q.type === "choice") {
+          const v = raw.toUpperCase();
+          if (v.length !== 1 || !(q.options || "ABCDE").includes(v)) errors.push(`${n}: "${raw}" — ${q.options || "ABCDE"} hərflərindən biri olmalıdır`);
+          else answers[n] = v;
+        } else if (q.type === "multi") {
+          const v = raw.toUpperCase().replace(/\s+/g, "");
+          if (v.length !== (q.parts || v.length)) errors.push(`${n}: ${q.parts} hissə olmalıdır (məs. ${"ABAB".slice(0, q.parts || 4)})`);
+          else answers[n] = v;
+        } else answers[n] = raw;
+      }
+      return { answers, errors, filled: Object.keys(answers).length };
+    }
+    function formatPaper(ans) {
+      const toks = ansQs().map((q) => String(ans?.[q.n] ?? "").trim() || "-");
+      return toks.some((t) => /\s/.test(t)) ? toks.join(", ") : toks.join(" ");
+    }
+    // Ön baxış: təxmini yoxlama (dəqiq bal serverdə hesablanır)
+    function previewCell(q, a, K) {
+      const k = String(K[q.n] ?? "");
+      let cls = "bad";
+      if (!a) cls = "empty";
+      else if (q.type === "open") cls = k.split("/").map((x) => x.trim().toLowerCase().replace(/\s+/g, " ")).includes(a.trim().toLowerCase().replace(/\s+/g, " ")) ? "ok" : "bad";
+      else if (q.type === "multi") { const hit = [...a].filter((ch, i) => ch === k[i]).length; cls = hit === k.length ? "ok" : hit ? "part" : "bad"; }
+      else cls = a === k ? "ok" : "bad";
+      return `<div class="ans ${cls === "empty" ? "" : cls}"><b>${q.n}</b> ${esc(a || "—")}${cls !== "ok" && a ? ` <span style="opacity:.6">→ ${esc(k)}</span>` : ""}</div>`;
+    }
+    function pfStudents() {
+      const cls = test.target_classes || [];
+      const entered = new Set(attempts.map((a) => a.user_id).filter(Boolean));
+      return allStudents.filter((s) => (!cls.length || cls.includes(s.class_name)) && (!entered.has(s.id) || s.id === pf.user))
+        .sort((a, b) => (Number(a.class_name) || 99) - (Number(b.class_name) || 99) || String(a.class_name).localeCompare(String(b.class_name)) || a.full_name.localeCompare(b.full_name, "az"));
+    }
+    function paperForm() {
+      const list = pfStudents();
+      const editing = pf.edit ? attempts.find((x) => x.id === pf.edit) : null;
+      const guest = pf.user === "__guest";
+      return `<div class="card paper-form" id="paper-form" style="margin-bottom:16px">
+        <h2 style="font-size:1.15rem;margin-bottom:10px">${editing ? `✏️ Düzəliş: ${esc(editing.profiles.full_name)}` : "📝 Kağız cavablarını daxil et"}</h2>
+        <div class="pf-row">
+          <select id="pf-student" ${editing && !guest ? "disabled" : ""}>
+            <option value="">— Şagird seç (${list.length}) —</option>
+            ${list.map((s) => `<option value="${s.id}" ${pf.user === s.id ? "selected" : ""}>${esc(s.full_name)} · ${esc(classLabel(s.class_name))}</option>`).join("")}
+            <option value="__guest" ${guest ? "selected" : ""}>➕ Siyahıda yoxdur — adını yazım</option>
+          </select>
+          <input id="pf-name" class="${guest ? "" : "hidden"}" maxlength="120" placeholder="Ad Soyad" value="${esc(pf.name)}">
+          <input id="pf-class" class="${guest ? "" : "hidden"}" maxlength="40" placeholder="Sinif (məs. 11)" value="${esc(pf.cls)}" style="max-width:150px">
+          ${hasVar() ? `<select id="pf-var" style="max-width:150px">${varCodes().map((c) => `<option value="${c}" ${pf.variant === c ? "selected" : ""}>${c} variantı</option>`).join("")}</select>` : ""}
+        </div>
+        <input id="pf-ans" autocomplete="off" spellcheck="false" style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1.05rem;margin-top:10px"
+          placeholder="${esc(ansQs().slice(0, 5).map((q) => q.type === "open" ? "went" : q.type === "multi" ? "ABAB".slice(0, q.parts || 4) : "C").join(" "))} …" value="${esc(pf.text)}">
+        <div class="hint">Cavabları <b>sual sırası ilə, boşluqla</b> yaz (${ansQs().length} sual). Açıq cavab bir neçə sözdürsə — hamısını <b>vergüllə</b> ayır. Boş sual: <b>-</b>. Nömrə ilə də olar: <b>1C 2D 3B</b>. Esseni yazmağa ehtiyac yoxdur — balını nəticədə verirsən. <b>Enter</b> → yadda saxla.</div>
+        <div id="pf-preview" class="ans-grid" style="margin-top:10px"></div>
+        <div id="pf-msg" class="small" style="margin-top:6px"></div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:10px">
+          <button class="btn btn-primary" id="pf-save">Yadda saxla</button>
+          ${editing || pf.text ? '<button class="btn btn-ghost" id="pf-cancel">Ləğv et</button>' : ""}
+        </div>
+      </div>`;
+    }
+    function pfUpdatePreview() {
+      const box = document.getElementById("pf-preview"); if (!box) return;
+      const { answers, errors, filled } = parsePaper(pf.text);
+      const K = keyOf({ variant: pf.variant });
+      box.innerHTML = pf.text.trim() ? ansQs().map((q) => previewCell(q, answers[q.n], K)).join("") : "";
+      const msg = document.getElementById("pf-msg");
+      msg.innerHTML = errors.length ? `<span style="color:var(--bad)">⚠️ ${esc(errors.slice(0, 3).join(" · "))}</span>`
+        : pf.text.trim() ? `<span class="muted">${filled} / ${ansQs().length} sual cavablanıb</span>` : "";
+    }
+    function bindPaper() {
+      if (!isPaper()) return;
+      const st = document.getElementById("pf-student"), ans = document.getElementById("pf-ans");
+      st.onchange = () => { pf.user = st.value; if (pf.user !== "__guest") { pf.name = ""; pf.cls = ""; } render(); setTimeout(() => (pf.user === "__guest" ? document.getElementById("pf-name") : document.getElementById("pf-ans"))?.focus(), 0); };
+      document.getElementById("pf-name").oninput = (e) => (pf.name = e.target.value);
+      document.getElementById("pf-class").oninput = (e) => (pf.cls = e.target.value);
+      const vs = document.getElementById("pf-var"); if (vs) vs.onchange = () => { pf.variant = vs.value; pfUpdatePreview(); };
+      ans.oninput = () => { pf.text = ans.value; pfUpdatePreview(); };
+      ans.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); pfSave(); } };
+      document.getElementById("pf-save").onclick = pfSave;
+      const cancel = document.getElementById("pf-cancel");
+      if (cancel) cancel.onclick = () => { pf = { edit: null, user: "", name: "", cls: "", variant: pf.variant, text: "" }; render(); };
+      pfUpdatePreview();
+      app.querySelectorAll("[data-pf-pick]").forEach((b) => b.onclick = () => {
+        pf = { edit: null, user: b.dataset.pfPick, name: "", cls: "", variant: pf.variant, text: "" };
+        render(); document.getElementById("paper-form").scrollIntoView({ behavior: "smooth" }); setTimeout(() => document.getElementById("pf-ans")?.focus(), 300);
+      });
+      app.querySelectorAll("[data-pf-edit]").forEach((b) => b.onclick = () => {
+        const e = attempts.find((x) => x.id === b.dataset.pfEdit);
+        pf = { edit: e.id, user: e.user_id || "__guest", name: e.user_id ? "" : e.student_name, cls: e.user_id ? "" : (e.class_name || ""), variant: e.variant || "A", text: formatPaper(e.answers) };
+        render(); document.getElementById("paper-form").scrollIntoView({ behavior: "smooth" }); setTimeout(() => document.getElementById("pf-ans")?.focus(), 300);
+      });
+      app.querySelectorAll("[data-pf-del]").forEach((b) => b.onclick = async () => {
+        const e = attempts.find((x) => x.id === b.dataset.pfDel);
+        if (!confirm(`${e.profiles.full_name} — daxil edilmiş nəticə silinsin?`)) return;
+        const { error } = await sb.from("paper_entries").delete().eq("id", e.id);
+        if (error) return toast(translateError(error), "err");
+        toast("Silindi", "ok");
+        if (await load()) render();
+      });
+    }
+    let pfBusy = false;
+    async function pfSave() {
+      if (pfBusy) return;
+      const guest = pf.user === "__guest";
+      if (!pf.user) return toast("Əvvəlcə şagirdi seç", "err");
+      if (guest && !pf.name.trim()) return toast("Şagirdin adını yaz", "err");
+      const { answers, errors } = parsePaper(pf.text);
+      if (errors.length) return toast(errors[0], "err");
+      if (!Object.keys(answers).length && !confirm("Heç bir cavab yazılmayıb. Yenə də yadda saxlansın?")) return;
+      pfBusy = true;
+      const order = pfStudents().map((s) => s.id);
+      const { error } = await sb.rpc("admin_paper_save", {
+        p_test: testId, p_entry: pf.edit, p_user: guest ? null : pf.user, p_name: guest ? pf.name.trim() : null,
+        p_class: guest ? pf.cls.trim() : null, p_variant: pf.variant || "A", p_answers: answers,
+      });
+      pfBusy = false;
+      if (error) return toast(/function|schema cache|relation/i.test(error.message || "") ? "Əvvəlcə 17-paper-tests.sql faylını Supabase-də işə sal" : translateError(error), "err");
+      toast(pf.edit ? "Düzəliş yadda saxlandı ✓" : "Yadda saxlandı ✓", "ok");
+      // növbəti şagird avtomatik seçilsin
+      const idx = order.indexOf(pf.user);
+      const next = !pf.edit && !guest && idx >= 0 ? order.filter((id) => id !== pf.user)[idx] || "" : "";
+      pf = { edit: null, user: next, name: "", cls: "", variant: pf.variant, text: "" };
+      if (await load()) render();
+      setTimeout(() => document.getElementById(next ? "pf-ans" : "pf-student")?.focus(), 50);
+    }
+
+    // ================= PDF hesabat =================
+    async function reportCanvas(a) {
+      const { drawReport } = await import("./assets/js/report-pdf.js");
+      const v = hasVar() ? (a.variant || "A") : null;
+      return drawReport({
+        title: test.title, date: formatDate(a.submitted_at || new Date().toISOString()).split(",")[0],
+        student: { name: a.profiles?.full_name, className: classLabel(a.profiles?.class_name), code: a.profiles?.student_code },
+        variant: v, score: a.score, total: total(), questions: test.questions || [], answers: a.answers, details: a.details, key: keyOf(a),
+        sections: secOf(a), essayScore: a.essay_score, essayMax: essayMax(), essayReview: a.essay_review, paper: !!a.paper,
+      });
+    }
+    async function downloadReports(list, name) {
+      if (!list.length) return toast("Hələ nəticə yoxdur", "err");
+      const { reportsToPdf, downloadBlob } = await import("./assets/js/report-pdf.js");
+      toast(`PDF hazırlanır… (${list.length} şagird)`, "ok");
+      const pages = [];
+      for (const a of list) pages.push(await reportCanvas(a));
+      downloadBlob(await reportsToPdf(pages), name);
     }
 
     function classSections(done) {
@@ -290,6 +476,15 @@
         if (await load()) render();
       };
       document.getElementById("csv").onclick = exportCsv;
+      document.getElementById("pdf-all").onclick = () => {
+        const done = attempts.filter((a) => a.status !== "in_progress").sort((a, b) => String(a.profiles?.full_name).localeCompare(String(b.profiles?.full_name), "az"));
+        downloadReports(done, `${safeName(test.title)}_hesabatlar.pdf`);
+      };
+      app.querySelectorAll("[data-pdf]").forEach((b) => b.onclick = () => {
+        const a = attempts.find((x) => x.id === b.dataset.pdf);
+        downloadReports([a], `${safeName(a.profiles?.full_name || "sagird")}_${safeName(test.title)}.pdf`);
+      });
+      bindPaper();
       app.querySelectorAll("[data-rub]").forEach((inp) => inp.oninput = () => {
         const id = inp.dataset.rub;
         const vals = [...app.querySelectorAll(`[data-rub="${id}"]`)].filter((x) => x.value !== "").map((x) => Number(x.value) || 0);
@@ -335,7 +530,10 @@
         }
         const comment = app.querySelector(`[data-comment="${id}"]`).value.trim();
         const review = { ...(Object.keys(c).length ? { c } : {}), ...(comment ? { comment } : {}) };
-        const { error } = await sb.rpc("admin_save_essay", { p_attempt: id, p_points: v, p_review: review });
+        const rec = attempts.find((x) => x.id === id);
+        const { error } = rec?.paper
+          ? await sb.rpc("admin_paper_essay", { p_entry: id, p_points: v, p_review: review })
+          : await sb.rpc("admin_save_essay", { p_attempt: id, p_points: v, p_review: review });
         if (error) return toast(translateError(error), "err");
         toast("Esse balı yazıldı ✓", "ok");
         if (await load()) render();
@@ -425,7 +623,7 @@
       if (await load()) render();
       // Yazanlar varsa, siyahını 30 saniyədən bir yenilə
       setInterval(async () => {
-        if (document.hidden || document.activeElement?.matches("input, textarea") || !attempts.some((a) => a.status === "in_progress")) return;
+        if (document.hidden || document.activeElement?.matches("input, textarea, select") || !attempts.some((a) => a.status === "in_progress")) return;
         if (await load()) render();
       }, 30000);
     }
