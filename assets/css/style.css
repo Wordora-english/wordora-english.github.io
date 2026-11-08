@@ -470,3 +470,14 @@ a.quick-item:hover, button.quick-item:hover { border-color: var(--violet-soft); 
 .usage .bar { height: 12px; border-radius: 99px; background: var(--line); overflow: hidden; margin-top: 6px; }
 .usage .bar div { height: 100%; border-radius: 99px; }
 .usage-row { display: flex; justify-content: space-between; gap: .5rem; font-size: .9rem; flex-wrap: wrap; }
+
+/* ---------- Bölmə seçimi: Məktəb / Magistratura ---------- */
+.group-switch { display: inline-flex; gap: 4px; padding: 4px; border-radius: 14px; background: var(--soft); border: 1px solid var(--line); margin-bottom: 14px; max-width: 100%; }
+.group-switch button { border: 0; background: none; color: var(--text); font: inherit; font-weight: 600; padding: .5rem 1rem; border-radius: 10px; cursor: pointer; display: inline-flex; align-items: center; gap: .4rem; white-space: nowrap; }
+.group-switch button.on { background: var(--card); box-shadow: 0 1px 4px rgba(20, 20, 60, .12); color: var(--indigo-text); }
+body[data-group="mag"] .group-switch button.on { color: #8a5a00; }
+:root[data-theme=dark] body[data-group="mag"] .group-switch button.on { color: #f3c969; }
+.mag-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .2rem .7rem; border-radius: 99px; background: #fff2d9; color: #7a4d00; font-weight: 600; font-size: .85rem; margin-bottom: .4rem; }
+:root[data-theme=dark] .mag-chip { background: #3a2e12; color: #f3c969; }
+.mag-note { margin: -4px 0 14px; font-weight: 600; color: #8a5a00; }
+:root[data-theme=dark] .mag-note { color: #f3c969; }

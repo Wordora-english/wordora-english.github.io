@@ -2,9 +2,11 @@
 //  WORDORA — ortaq funksiyalar
 // =========================================================
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { SUPABASE_URL, SUPABASE_KEY, EMAIL_DOMAIN, CLASSES } from "./config.js";
+import { SUPABASE_URL, SUPABASE_KEY, EMAIL_DOMAIN, CLASSES, MAG_CLASS } from "./config.js";
 
-export { CLASSES };
+export { CLASSES, MAG_CLASS };
+export const SCHOOL_CLASSES = CLASSES.filter((c) => c !== MAG_CLASS);
+export const isMag = (c) => c === MAG_CLASS;
 
 export const configured =
   !SUPABASE_URL.startsWith("BURAYA") && !SUPABASE_KEY.startsWith("BURAYA");

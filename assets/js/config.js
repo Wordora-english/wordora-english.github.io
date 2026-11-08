@@ -14,6 +14,8 @@ export const EMAIL_DOMAIN = "aliqurbanovfh.github.io";
 
 // Qeydiyyatda seçilə bilən siniflər
 export const CLASSES = ["5", "6", "7", "8", "9", "10", "11", "Magistratura"];
+// Magistrantlar ayrıca bölmədir: materiallar, elanlar, ev tapşırıqları və reytinq məktəblilərdən ayrıdır
+export const MAG_CLASS = "Magistratura";
 
 // Sertifikatlarda müəllimin adı
 export const TEACHER_NAME = "Gülnar Salayeva";

@@ -75,6 +75,7 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 10. `supabase/11-telegram-multi.sql`
 11. `supabase/12-homework-bank-online.sql`
 12. `supabase/13-sections-rubric-storage.sql`
+13. `supabase/14-magistratura.sql`
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 
@@ -136,3 +137,4 @@ select public.remove_telegram_chat('ID');   -- sil
 - **Qarışdırma** → onlayn sınaqda **🔀 Sualları və variantları qarışdır** (yeni sınaqlarda özü açıqdır) — hər şagird fərqli ardıcıllıq görür
 - **Esse yoxlama** → **Nəticələr** → **Cavablar və esse** → 4 meyara bal yaz (cəm özü hesablanır) → şərh yaz və ya hazır şərhə toxun → **Yadda saxla**. Yeni hazır şərh: mətni yaz → **+ Şərhi hazır siyahıya əlavə et**. Şagird nəticələr açılanda balları və şərhi görür
 - **Yaddaş** → **🧹 Yaddaş** — fayllar və baza nə qədər dolub; köhnə ev tapşırığı şəkillərini buradan sil. 80%-i keçəndə admin paneldə xəbərdarlıq çıxır
+- **Magistratura bölməsi** → admin paneldə yuxarıdakı **🏫 Məktəb / 🎓 Magistratura** düyməsi ilə keç. Magistratura rejimində yüklədiyin material, elan və ev tapşırığını yalnız magistrantlar görür; məktəb rejimində "heç bir sinif seçilməyib" = yalnız 5–11-ci siniflər. Reytinq də ayrıdır. Sınaqlar əvvəlki kimidir (sinif seçimində "Magistratura" var)

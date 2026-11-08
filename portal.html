@@ -346,8 +346,9 @@
       app.innerHTML = `
         <section class="welcome">
           <span class="star">${STAR_SVG}</span>
+          ${me.class_name === "Magistratura" ? '<span class="mag-chip">🎓 Magistratura bölməsi</span>' : ""}
           <h1>Salam, ${esc(firstName)}!</h1>
-          <p>${esc(classLabel(me.class_name))} · @${esc(me.username)}${me.warnings > 0 ? ` · ⚠️ ${me.warnings} xəbərdarlıq` : ""}</p>
+          <p>${me.class_name === "Magistratura" ? "Magistrant" : esc(classLabel(me.class_name))} · @${esc(me.username)}${me.warnings > 0 ? ` · ⚠️ ${me.warnings} xəbərdarlıq` : ""}</p>
         </section>
 
         <div id="install-box" style="margin-bottom:12px"></div>

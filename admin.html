@@ -40,6 +40,11 @@
     </div>
     <div style="height:12px"></div>
 
+    <div class="group-switch" id="group-switch" role="tablist" aria-label="Bölmə">
+      <button type="button" data-group="school">🏫 Məktəb <span class="badge zero" id="gb-school">0</span></button>
+      <button type="button" data-group="mag">🎓 Magistratura <span class="badge zero" id="gb-mag">0</span></button>
+    </div>
+
     <div class="stats">
       <div class="stat"><div class="n" id="st-pending">0</div><div class="l">Təsdiq gözləyir</div></div>
       <div class="stat"><div class="n" id="st-approved">0</div><div class="l">Aktiv şagird</div></div>
@@ -89,7 +94,7 @@
           <div class="field"><label for="hw-max">Maksimum bal</label><input id="hw-max" type="number" min="1" step="0.5" value="10"></div>
           <div class="field"><label>&nbsp;</label><label class="chk" style="width:max-content"><input type="checkbox" id="hw-files" checked> Şəkil/PDF əlavə etmək olar</label></div>
         </div>
-        <div class="field"><label>Kimlər üçün</label><div class="chk-row" id="hw-classes"></div><div class="hint">Heç biri seçilməsə — bütün siniflər.</div></div>
+        <div class="field"><label>Kimlər üçün</label><div class="chk-row" id="hw-classes"></div><div class="hint">Heç biri seçilməsə — bütün məktəb sinifləri (5–11).</div></div>
         <button class="btn btn-primary" type="submit">Paylaş</button>
       </form>
       <div class="grid" id="hw-list"></div>
@@ -227,7 +232,7 @@ seed"></textarea>
             <datalist id="mat-cats"><option>Qrammatika qaydaları</option><option>Sınaqlar</option><option>Söz siyahıları</option><option>Oxu mətnləri</option><option>Digər</option></datalist></div>
         </div>
         <div class="field"><label for="mat-desc">Qısa izah (istəyə görə)</label><input id="mat-desc" maxlength="1000"></div>
-        <div class="field"><label>Kimlər görsün</label><div class="chk-row" id="mat-classes"></div><div class="hint">Heç biri seçilməsə — bütün siniflər görür.</div></div>
+        <div class="field"><label>Kimlər görsün</label><div class="chk-row" id="mat-classes"></div><div class="hint">Heç biri seçilməsə — bütün məktəb sinifləri (5–11) görür.</div></div>
         <div class="row2">
           <div class="field"><label for="mat-until">Bu tarixə qədər açıq (istəyə görə)</label><input id="mat-until" type="datetime-local"></div>
           <div class="field"><label>&nbsp;</label>
@@ -256,7 +261,17 @@ seed"></textarea>
   </template>
 
   <script type="module">
-    import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, CLASSES, showConfigWarning } from "./assets/js/app.js";
+    import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, CLASSES, showConfigWarning, MAG_CLASS, SCHOOL_CLASSES, isMag } from "./assets/js/app.js";
+
+    // ---- Bölmə: məktəb və ya magistratura (şagirdlər, materiallar, elanlar, tapşırıqlar ayrıdır) ----
+    let group = "school";
+    try { group = localStorage.getItem("wd_admin_group") === "mag" ? "mag" : "school"; } catch {}
+    const inGroup = (cls) => (group === "mag" ? isMag(cls) : !isMag(cls));
+    const itemInGroup = (targets) => {
+      const t = targets?.length ? targets : null;
+      return group === "mag" ? !!t?.includes(MAG_CLASS) : !t || t.some((c) => !isMag(c));
+    };
+    const groupTargets = (checked) => (group === "mag" ? [MAG_CLASS] : checked.length ? checked : null);
     import { VIOLATION_LABELS } from "./assets/js/guard.js";
     import { parseLive, toLiveText } from "./assets/js/live-common.js";
     import { downloadXlsx } from "./assets/js/xlsx-lite.js";
@@ -305,7 +320,12 @@ seed"></textarea>
     }
 
     function render() {
-      const by = (s) => people.filter((p) => p.role === "student" && s.includes(p.status));
+      const all = people.filter((p) => p.role === "student");
+      for (const [g, pred] of [["school", (p) => !isMag(p.class_name)], ["mag", (p) => isMag(p.class_name)]]) {
+        const n = all.filter((p) => p.status === "pending" && pred(p)).length;
+        const b = document.getElementById(`gb-${g}`); b.textContent = n; b.classList.toggle("zero", !n);
+      }
+      const by = (s) => all.filter((p) => s.includes(p.status) && inGroup(p.class_name));
       const pending = by(["pending"]);
       const approved = by(["approved"]);
       const blocked = by(["blocked", "rejected", "archived"]);
@@ -371,7 +391,8 @@ seed"></textarea>
       const box = document.getElementById("ann-list");
       const { data, error } = await sb.from("announcements").select("*").order("created_at", { ascending: false });
       if (error) { box.innerHTML = `<div class="card empty">${esc(translateError(error))}</div>`; return; }
-      box.innerHTML = data.length ? data.map((a) => `
+      const list = data.filter((a) => itemInGroup(a.target_class ? [a.target_class] : null));
+      box.innerHTML = list.length ? list.map((a) => `
         <article class="card ann">
           <div style="display:flex;justify-content:space-between;gap:.5rem;align-items:start">
             <h3>${esc(a.title)}</h3>
@@ -596,7 +617,7 @@ seed"></textarea>
       ]);
       const box = document.getElementById("hw-list");
       if (error) { if (!badgeOnly) box.innerHTML = `<div class="card empty">${esc(translateError(error))}<br><span class="small">12-homework-bank-online.sql işə salınıb?</span></div>`; return; }
-      hws = data; hwSubs = subs || [];
+      hws = data.filter((h) => itemInGroup(h.target_classes)); hwSubs = subs || [];
       const ungraded = hwSubs.filter((x) => x.grade === null).length;
       const bd = document.getElementById("badge-hw"); bd.textContent = ungraded; bd.classList.toggle("zero", !ungraded);
       if (badgeOnly) return;
@@ -650,7 +671,7 @@ seed"></textarea>
       e.preventDefault();
       const title = document.getElementById("hw-title").value.trim();
       if (!title) return toast("Başlıq yaz", "err");
-      const cls = [...document.querySelectorAll("#hw-classes input:checked")].map((i) => i.value);
+      const cls = groupTargets([...document.querySelectorAll("#hw-classes input:checked")].map((i) => i.value)) || [];
       const due = document.getElementById("hw-due").value;
       const { error } = await sb.from("homework").insert({
         title, description: document.getElementById("hw-desc").value.trim() || null,
@@ -1054,12 +1075,13 @@ seed"></textarea>
 
     async function loadMaterials() {
       const box = document.getElementById("mat-list");
-      const [{ data, error }, { data: views }] = await Promise.all([
+      let [{ data, error }, { data: views }] = await Promise.all([
         sb.from("materials").select("*").order("created_at", { ascending: false }),
         sb.from("material_views").select("material_id, user_id, kind"),
       ]);
       if (error) { box.innerHTML = `<div class="card empty">${esc(translateError(error))}</div>`; return; }
       materials = data;
+      data = data.filter((m) => itemInGroup(m.target_classes));
       const stats = {};
       for (const v of views || []) {
         const s = (stats[v.material_id] ||= { total: 0, dl: 0, users: new Set() });
@@ -1103,7 +1125,7 @@ seed"></textarea>
       const title = document.getElementById("mat-title").value.trim();
       const category = document.getElementById("mat-cat").value.trim() || "Digər";
       const description = document.getElementById("mat-desc").value.trim() || null;
-      const target_classes = [...document.querySelectorAll("#mat-classes input:checked")].map((i) => i.value);
+      const target_classes = groupTargets([...document.querySelectorAll("#mat-classes input:checked")].map((i) => i.value));
       const untilVal = document.getElementById("mat-until").value;
       const is_published = document.getElementById("mat-pub").checked;
       const allow_download = document.getElementById("mat-dl").checked;
@@ -1195,6 +1217,45 @@ seed"></textarea>
       }
     }
 
+    function setupGroup() {
+      const opts = (list) => list.map((c) => `<option value="${esc(c)}">${esc(classLabel(c))}</option>`).join("");
+      const chks = (list) => list.map((c) => `<label class="chk"><input type="checkbox" value="${esc(c)}"> ${esc(classLabel(c))}</label>`).join("");
+      const sw = document.getElementById("group-switch");
+      const apply = () => {
+        const mag = group === "mag";
+        document.body.dataset.group = group;
+        sw.querySelectorAll("[data-group]").forEach((b) => b.classList.toggle("on", b.dataset.group === group));
+        const cf = document.getElementById("class-filter");
+        cf.innerHTML = '<option value="">Bütün siniflər</option>' + opts(SCHOOL_CLASSES);
+        cf.classList.toggle("hidden", mag);
+        document.getElementById("ann-class").innerHTML = '<option value="">Bütün siniflər</option>' + opts(SCHOOL_CLASSES);
+        document.getElementById("mat-classes").innerHTML = chks(SCHOOL_CLASSES);
+        document.getElementById("hw-classes").innerHTML = chks(SCHOOL_CLASSES);
+        for (const id of ["ann-class", "mat-classes", "hw-classes"]) {
+          const field = document.getElementById(id).closest(".field");
+          field.classList.toggle("hidden", mag);
+          let note = field.parentElement.querySelector(`.mag-note[data-for="${id}"]`);
+          if (!note) {
+            note = document.createElement("div"); note.className = "mag-note hint"; note.dataset.for = id;
+            note.textContent = "🎓 Yalnız magistrantlar görəcək.";
+            field.after(note);
+          }
+          note.classList.toggle("hidden", !mag);
+        }
+        render();
+        loadAnnouncements(); loadMaterials();
+        if (hws.length || hwOpen) loadHw();
+      };
+      sw.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-group]"); if (!b || b.dataset.group === group) return;
+        group = b.dataset.group;
+        try { localStorage.setItem("wd_admin_group", group); } catch {}
+        hwOpen = null;
+        apply();
+      });
+      setupGroup.apply = apply;
+    }
+
     async function start() {
       if (!configured) { app.innerHTML = '<div class="card empty">Sayt hələ bazaya qoşulmayıb.</div>'; return; }
       let me;
@@ -1205,11 +1266,7 @@ seed"></textarea>
       app.innerHTML = document.getElementById("tpl-admin").innerHTML;
       document.getElementById("hello").textContent = `Xoş gəldin, ${me.full_name}.`;
 
-      for (const sel of [document.getElementById("class-filter"), document.getElementById("ann-class")]) {
-        for (const c of CLASSES) sel.insertAdjacentHTML("beforeend", `<option value="${esc(c)}">${esc(classLabel(c))}</option>`);
-      }
-      document.getElementById("mat-classes").innerHTML = CLASSES.map((c) =>
-        `<label class="chk"><input type="checkbox" value="${esc(c)}"> ${esc(classLabel(c))}</label>`).join("");
+      setupGroup();
       document.getElementById("mat-file").addEventListener("change", (e) => {
         const f = e.target.files[0], t = document.getElementById("mat-title");
         if (f && !t.value) t.value = f.name.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ");
@@ -1275,7 +1332,6 @@ seed"></textarea>
         toast("Ayar yadda saxlandı ✓", "ok");
       });
       document.getElementById("year-btn").addEventListener("click", promoteYear);
-      document.getElementById("hw-classes").innerHTML = CLASSES.map((c) => `<label class="chk"><input type="checkbox" value="${esc(c)}"> ${esc(classLabel(c))}</label>`).join("");
       document.getElementById("hw-form").addEventListener("submit", saveHw);
       document.getElementById("bank-form").addEventListener("submit", saveBank);
       document.getElementById("bank-filter").addEventListener("change", renderBank);
@@ -1291,7 +1347,7 @@ seed"></textarea>
         e.preventDefault();
         const title = document.getElementById("ann-title").value.trim();
         const body = document.getElementById("ann-body").value.trim();
-        const target_class = document.getElementById("ann-class").value || null;
+        const target_class = group === "mag" ? MAG_CLASS : document.getElementById("ann-class").value || null;
         if (!title || !body) return toast("Başlıq və mətni yaz", "err");
         const { error } = await sb.from("announcements").insert({ title, body, target_class });
         if (error) return toast(translateError(error), "err");
@@ -1300,6 +1356,7 @@ seed"></textarea>
         loadAnnouncements();
       });
 
+      setupGroup.apply();
       await loadPeople();
       loadViolations();   // nişan sayı üçün
       loadMsgs();         // oxunmamış mesaj sayı üçün
