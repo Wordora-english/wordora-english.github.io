@@ -1107,6 +1107,7 @@ seed"></textarea>
                 <div class="small" style="margin-top:.4rem"><b>${s.users.size}</b> şagird · <b>${s.total}</b> baxış · <b>${s.dl}</b> yükləmə</div>
               </div>
               <div class="actions" style="display:flex;gap:.4rem;flex-wrap:wrap">
+                <button class="btn btn-primary btn-sm" data-mat="edit" data-id="${m.id}">✏️ Redaktə et</button>
                 <button class="btn btn-ghost btn-sm" data-mat="views" data-id="${m.id}">Kim baxıb</button>
                 <a class="btn btn-ghost btn-sm" href="material.html?id=${m.id}" target="_blank" rel="noopener">Bax</a>
                 <button class="btn btn-warn btn-sm" data-mat="toggle" data-id="${m.id}">${m.is_published ? "Gizlət" : "Paylaş"}</button>
@@ -1165,9 +1166,69 @@ seed"></textarea>
       }
     }
 
+    // Materialı redaktə et: ad, kateqoriya, izah, kimlər görsün, müddət, paylaşma və yükləmə
+    function editMaterial(m) {
+      const pad = (n) => String(n).padStart(2, "0");
+      const local = (iso) => { if (!iso) return ""; const d = new Date(iso); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+      const t = m.target_classes || [];
+      const box = document.createElement("div");
+      box.className = "wd-modal";
+      box.innerHTML = `<form class="wd-modal-box" style="border-top-color:var(--violet);text-align:left;max-width:540px;max-height:92vh;overflow:auto">
+        <h2 style="font-size:1.2rem;margin-bottom:12px">✏️ Materialı redaktə et</h2>
+        <div class="field"><label for="em-title">Başlıq</label><input id="em-title" maxlength="150" required value="${esc(m.title)}"></div>
+        <div class="field"><label for="em-cat">Kateqoriya</label><input id="em-cat" list="mat-cats" maxlength="60" required value="${esc(m.category)}"></div>
+        <div class="field"><label for="em-desc">Qısa izah</label><input id="em-desc" maxlength="1000" value="${esc(m.description || "")}"></div>
+        <div class="field"><label>Kimlər görsün</label>
+          <div class="chk-row">${SCHOOL_CLASSES.map((c) => `<label class="chk"><input type="checkbox" name="em-cls" value="${esc(c)}" ${t.includes(c) ? "checked" : ""}> ${esc(classLabel(c))}</label>`).join("")}</div>
+          <label class="chk em-mag" style="width:max-content;margin-top:8px"><input type="checkbox" name="em-cls" value="${esc(MAG_CLASS)}" ${t.includes(MAG_CLASS) ? "checked" : ""}> 🎓 Magistrantlar</label>
+          <div class="hint" id="em-hint"></div></div>
+        <div class="field"><label for="em-until">Bu tarixə qədər açıq (boş = müddətsiz)</label><input id="em-until" type="datetime-local" value="${local(m.available_until)}"></div>
+        <div class="chk-row" style="margin-bottom:14px">
+          <label class="chk"><input type="checkbox" id="em-pub" ${m.is_published ? "checked" : ""}> Paylaşılıb (görünür)</label>
+          <label class="chk"><input type="checkbox" id="em-dl" ${m.allow_download ? "checked" : ""}> Yükləmək olar</label></div>
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+          <button class="btn btn-primary" type="submit">Yadda saxla</button>
+          <button class="btn btn-ghost" type="button" data-k="x">Ləğv et</button></div>
+      </form>`;
+      document.body.appendChild(box);
+      const form = box.firstElementChild;
+      const hint = () => {
+        const sel = [...form.querySelectorAll('input[name="em-cls"]:checked')].map((i) => i.value);
+        const school = sel.filter((c) => !isMag(c)), mag = sel.includes(MAG_CLASS);
+        form.querySelector("#em-hint").textContent =
+          !sel.length ? "Heç biri seçilməyib → bütün məktəb sinifləri (5–11) görür, magistrantlar görmür."
+          : `Görəcəklər: ${[...school.map(classLabel), ...(mag ? ["magistrantlar"] : [])].join(", ")}.`;
+      };
+      hint();
+      form.addEventListener("change", hint);
+      box.addEventListener("click", (e) => { if (e.target === box || e.target.closest('[data-k="x"]')) box.remove(); });
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const sel = [...form.querySelectorAll('input[name="em-cls"]:checked')].map((i) => i.value);
+        const until = form.querySelector("#em-until").value;
+        const row = {
+          title: form.querySelector("#em-title").value.trim(),
+          category: form.querySelector("#em-cat").value.trim() || "Digər",
+          description: form.querySelector("#em-desc").value.trim() || null,
+          target_classes: sel.length ? sel : null,
+          available_until: until ? new Date(until).toISOString() : null,
+          is_published: form.querySelector("#em-pub").checked,
+          allow_download: form.querySelector("#em-dl").checked,
+        };
+        if (!row.title) return toast("Başlıq yaz", "err");
+        const { error } = await sb.from("materials").update(row).eq("id", m.id);
+        if (error) return toast(translateError(error), "err");
+        box.remove();
+        const stays = itemInGroup(row.target_classes);
+        toast(stays ? "Yadda saxlanıldı ✓" : `Yadda saxlanıldı ✓ — material indi "${group === "mag" ? "🏫 Məktəb" : "🎓 Magistratura"}" bölməsində görünür`, "ok");
+        loadMaterials();
+      });
+    }
+
     async function materialAction(action, id, btn) {
       const m = materials.find((x) => x.id === id);
       if (!m) return;
+      if (action === "edit") return editMaterial(m);
       if (action === "toggle") {
         const { error } = await sb.from("materials").update({ is_published: !m.is_published }).eq("id", id);
         if (error) return toast(translateError(error), "err");
