@@ -55,7 +55,7 @@
   <main class="pages" id="pages"><div class="spinner"></div></main>
 
   <script type="module">
-    import { sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
+    import { reportError, sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
     import { drawWatermark } from "./assets/js/watermark.js";
     import { openMaterial, fetchMaterialBytes, downloadMaterial } from "./assets/js/materials.js";
     import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
@@ -120,7 +120,7 @@
           iccUrl: VENDOR + "iccs/",
           isEvalSupported: false,
         }).promise;
-      } catch (err) { return fail("PDF faylı açıla bilmədi."); }
+      } catch (err) { reportError("Material PDF-i açılmadı", err?.message || "", "material"); return fail("PDF faylı açıla bilmədi."); }
 
       await buildPages();
     }

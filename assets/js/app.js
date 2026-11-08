@@ -17,6 +17,34 @@ export const sb = configured
     })
   : null;
 
+// ---------- Xəta bildirişi: şagirddə sayt xəta verəndə müəllimə Telegram-la xəbər gedir ----------
+let errSent = 0;
+export async function reportError(message, details = "", page = decodeURIComponent(location.pathname.split("/").pop() || "index.html")) {
+  try {
+    if (!sb || errSent >= 5 || !navigator.onLine) return;
+    const { data } = await sb.auth.getSession();
+    if (!data?.session) return;
+    errSent++;
+    await sb.rpc("report_client_error", {
+      p_page: String(page).slice(0, 200), p_message: String(message || "Naməlum xəta").slice(0, 500),
+      p_details: String(details || "").slice(0, 2000), p_ua: navigator.userAgent.slice(0, 300),
+    });
+  } catch { /* bildiriş göndərilməsə də sayt işləməyə davam edir */ }
+}
+const ERR_IGNORE = /ResizeObserver loop|^Script error\.?$|Load failed|Failed to fetch|NetworkError|AbortError|aborted|cancel|Non-Error promise rejection|fullscreen|play\(\) request|NotAllowedError|wakeLock|Wake Lock/i;
+if (typeof window !== "undefined") {
+  addEventListener("error", (e) => {
+    if (!e.message || ERR_IGNORE.test(e.message)) return;
+    if (e.filename && !e.filename.startsWith(location.origin)) return;   // brauzer əlavələrinin xətaları
+    reportError(e.message, `${(e.filename || "").split("/").pop()}:${e.lineno || 0}:${e.colno || 0}`);
+  });
+  addEventListener("unhandledrejection", (e) => {
+    const m = e.reason?.message || (typeof e.reason === "string" ? e.reason : "");
+    if (!m || ERR_IGNORE.test(m)) return;
+    reportError(m, String(e.reason?.stack || "").split("\n").slice(0, 3).join(" | "));
+  });
+}
+
 export const USERNAME_RE = /^[a-z0-9._]{3,20}$/;
 
 // ---------- Mövzu (açıq / qaranlıq) ----------

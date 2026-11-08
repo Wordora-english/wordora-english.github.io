@@ -80,6 +80,7 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 15. `supabase/16-variants.sql`
 16. `supabase/17-paper-tests.sql`
 17. `supabase/18-weekly-report.sql`
+18. `supabase/19-backup-errors.sql` — sonda göstərilən **açarı** GitHub-a `BACKUP_SECRET` kimi yaz (aşağıya bax)
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 
@@ -148,3 +149,5 @@ select public.remove_telegram_chat('ID');   -- sil
 - **Kağız sınaq** → **+ Yeni sınaq** → **📝 Kağız sınaq** işarələ → cavab açarını yarat (PDF məcburi deyil; variantlar da olar) → **Yadda saxla** → **Nəticələr** → yuxarıdakı formada şagirdi seç (siyahıda yoxdursa — "Siyahıda yoxdur", adını yaz) → variantı seç → cavabları sırası ilə yaz (`C D B BBAA went`; çox sözlü cavab varsa vergüllə; boş sual `-`) → **Enter**. Növbəti şagird avtomatik seçilir. Esse — nəticədə 4 meyar üzrə. **📄 PDF hesabatlar** — hər şagird üçün bir səhifə; hər sətirdə **📄 PDF** — tək şagird. Nəticələri açanda qeydiyyatlı şagirdlər portalda görür
 - **PDF hesabat** onlayn sınaqlarda da var: **Nəticələr** → **📄 PDF hesabatlar**
 - **Həftəlik hesabat** → hər bazar 20:00 Telegram-a xülasə gəlir (sınaqlar, orta bal, yazmayanlar, ev tapşırıqları, yoxlanılmalı esse/tapşırıq, oxunmamış mesajlar, pozuntular, davamiyyət). **Pozuntular** → **Qoruma ayarları** → **📬 Həftəlik Telegram hesabatı**: aç/bağla, **İndi göndər**
+- **Həftəlik ehtiyat nüsxə** → hər bazar 20:30 bütün baza `.json.gz` faylı kimi Telegram-a gəlir. Quraşdırma (bir dəfə): 19-backup-errors.sql işə salınanda nəticədə uzun açar çıxır → GitHub → repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret** → Name: `BACKUP_SECRET`, Secret: həmin açar → **Add secret** → **Actions** tabı → **Həftəlik ehtiyat nüsxə** → **Run workflow** (yoxlama). Fayl itəndə bərpa üçün Claude-a göndər
+- **Xəta bildirişi** → şagirddə sayt xəta verəndə (məs. sınaqda cavablar yadda saxlanmır, PDF açılmır) Telegram-a dərhal xəbər gəlir; siyahı: **Pozuntular** → **🚨 Saytda xətalar**

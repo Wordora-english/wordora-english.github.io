@@ -1,0 +1,53 @@
+# Həftəlik ehtiyat nüsxə: hər bazar 20:30 (Bakı) bütün baza fayl kimi Telegram-a göndərilir.
+# Lazım olan secrets: SUPABASE_URL, SUPABASE_KEY (artıq var) və BACKUP_SECRET
+# (19-backup-errors.sql işə salınanda göstərilən açar). Telegram token-i bazadan götürülür.
+# DİQQƏT: repo açıqdır — buradakı loglarda heç bir şəxsi məlumat çap olunmur, fayl yalnız Telegram-a gedir.
+name: Həftəlik ehtiyat nüsxə
+
+on:
+  schedule:
+    - cron: "30 16 * * 0"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bazanı götür və Telegram-a göndər
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_KEY }}
+          SECRET: ${{ secrets.BACKUP_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${URL}" ] || [ -z "${KEY}" ] || [ -z "${SECRET}" ]; then
+            echo "SUPABASE_URL, SUPABASE_KEY və ya BACKUP_SECRET secrets yoxdur — SETUP.md-ə bax."
+            exit 1
+          fi
+          curl -fsS -X POST "${URL}/rest/v1/rpc/backup_bundle" \
+            -H "apikey: ${KEY}" -H "Content-Type: application/json" \
+            -d "$(jq -n --arg s "${SECRET}" '{p_secret: $s}')" -o bundle.json
+          TOKEN=$(jq -r '.telegram.token // empty' bundle.json)
+          CHATS=$(jq -r '.telegram.chats // empty' bundle.json)
+          [ -n "${TOKEN}" ] && echo "::add-mask::${TOKEN}"
+          if [ -z "${TOKEN}" ] || [ -z "${CHATS}" ]; then
+            echo "Telegram qoşulmayıb (set_telegram)."
+            rm -f bundle.json; exit 1
+          fi
+          DATE=$(TZ=Asia/Baku date +%Y-%m-%d)
+          FILE="wordora-backup-${DATE}.json"
+          jq '{created_at, counts, data}' bundle.json > "${FILE}"
+          gzip -9 "${FILE}"
+          SUMMARY=$(jq -r '.counts | "👥 profil: \(.profiles // 0) · 📝 sınaq: \(.tests // 0) · nəticə: \((.attempts // 0) + (.paper_entries // 0)) · 📚 ev tapşırığı cavabı: \(.hw_submissions // 0)"' bundle.json)
+          SIZE=$(du -h "${FILE}.gz" | cut -f1)
+          CAPTION="💾 Wordora — həftəlik ehtiyat nüsxə (${DATE}, ${SIZE})
+          ${SUMMARY}
+          Bu faylı saxla. Nə isə itsə, faylı Claude-a göndər — bərpa edər."
+          rm -f bundle.json
+          for CHAT in $(echo "${CHATS}" | tr ',' ' '); do
+            curl -sS -o /dev/null -w "Telegram: %{http_code}\n" \
+              -F chat_id="${CHAT}" -F document=@"${FILE}.gz" -F caption="${CAPTION}" \
+              "https://api.telegram.org/bot${TOKEN}/sendDocument"
+          done
+          rm -f "${FILE}.gz"
+          echo "Ehtiyat nüsxə göndərildi ✓ (${SIZE})"

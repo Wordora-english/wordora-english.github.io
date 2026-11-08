@@ -28,7 +28,7 @@
   <main id="app"><div class="spinner"></div></main>
 
   <script type="module">
-    import { sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
+    import { reportError, sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
     import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
     import { startExamGuard, enterFullscreen } from "./assets/js/exam-guard.js";
     import { wordCount, fmtNum, fmtDuration, testState, seededRandom, shuffleWith, sectionScores } from "./assets/js/tests-common.js";
@@ -186,6 +186,7 @@
         viewer = await renderPdf(pane, bytes, { name: me.full_name, code: me.student_code, date: formatDate(new Date().toISOString()) }, { maxWidth: 1000 });
         setupZoom();
       } catch (err) {
+        reportError("Sınaq PDF-i açılmadı", err?.message || "", `sınaq: ${test?.title || ""}`);
         pane.innerHTML = `<div class="card empty">${esc(translateError(err))}<br><button class="btn btn-ghost btn-sm" onclick="location.reload()">Yenidən yoxla</button></div>`;
       }
     }
@@ -438,6 +439,7 @@
       saveTimer = setTimeout(save, 1200);
     }
 
+    let saveFails = 0;
     async function save() {
       if (saving || submitted || !attempt) return;
       saving = true; dirty = false;
@@ -445,10 +447,13 @@
       try {
         const { data, error } = await sb.rpc("save_answers", { p_attempt: attempt.attempt_id, p_answers: JSON.parse(snapshot) });
         if (error) throw error;
+        saveFails = 0;
         $("save-state").textContent = data ? "✓ saxlandı" : "";
         $("save-state").className = "save-state ok";
-      } catch {
+      } catch (err) {
         dirty = true;
+        saveFails++;
+        if (saveFails === 3 && navigator.onLine) reportError("Sınaq: cavablar yadda saxlanmır (3 dəfə ardıcıl)", err?.message || "", `sınaq: ${test?.title || ""}`);
         $("save-state").textContent = "⚠ internet?";
         $("save-state").className = "save-state bad";
       } finally { saving = false; }
@@ -507,6 +512,7 @@
         await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
       }
       if (!res) {
+        if (navigator.onLine) reportError("Sınaq təhvil verilmədi (3 cəhd)", "", `sınaq: ${test?.title || ""}`);
         app.innerHTML = card(`<h1 style="font-size:1.3rem">İnternet problemi</h1><p class="muted">Cavabların avtomatik yadda saxlanılıb. İnternet qayıdanda səhifəni yenilə — sınaq avtomatik təhvil veriləcək.</p><button class="btn btn-primary" onclick="location.reload()">Yenilə</button>`);
         return;
       }

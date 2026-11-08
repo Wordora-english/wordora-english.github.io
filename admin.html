@@ -227,6 +227,8 @@ seed"></textarea>
         <button class="btn btn-ghost btn-sm" data-viol-refresh>↻ Yenilə</button>
       </div>
       <div class="grid" id="viol-list"></div>
+      <div class="section-title" style="margin-top:22px"><h2>🚨 Saytda xətalar</h2><span class="muted small">şagirdlərdə baş verən texniki xətalar (son 30)</span></div>
+      <div class="card small" id="err-list"><div class="muted">Yüklənir…</div></div>
     </section>
 
     <section data-panel="mat" class="hidden">
@@ -1052,6 +1054,16 @@ seed"></textarea>
       toast("Ayar yadda saxlandı ✓", "ok");
     }
 
+    async function loadErrors() {
+      const box = document.getElementById("err-list");
+      const { data, error } = await sb.from("client_errors").select("*, profiles(full_name, class_name)").order("created_at", { ascending: false }).limit(30);
+      if (error) { box.innerHTML = '<div class="muted">19-backup-errors.sql işə salınandan sonra burada görünəcək.</div>'; return; }
+      box.innerHTML = data.length ? `<div class="ns-list">${data.map((e) => `<div class="ns" style="display:block">
+          <b>${esc(e.profiles?.full_name || "—")}</b> <span class="muted">${esc(classLabel(e.profiles?.class_name || ""))} · ${formatDate(e.created_at)} · ${esc(e.page || "")}</span>
+          <div style="color:var(--bad)">${esc(e.message)}</div>${e.details ? `<div class="muted" style="font-size:.78rem;word-break:break-all">${esc(e.details)}</div>` : ""}</div>`).join("")}</div>`
+        : '<div class="muted">Xəta yoxdur 👍</div>';
+    }
+
     async function loadViolations() {
       const box = document.getElementById("viol-list");
       const onlyActive = document.getElementById("viol-filter").value === "active";
@@ -1378,7 +1390,7 @@ seed"></textarea>
         app.querySelectorAll("[data-panel]").forEach((s) => s.classList.toggle("hidden", s.dataset.panel !== t.dataset.tab));
         if (t.dataset.tab === "ann") loadAnnouncements();
         if (t.dataset.tab === "mat") loadMaterials();
-        if (t.dataset.tab === "viol") { loadViolations(); loadSettings(); }
+        if (t.dataset.tab === "viol") { loadViolations(); loadSettings(); loadErrors(); }
         if (t.dataset.tab === "tests") loadTests();
         if (t.dataset.tab === "live") loadLive();
         if (t.dataset.tab === "words") loadWords();
