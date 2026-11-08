@@ -31,7 +31,10 @@
     .att-grid td.nm { text-align: left; position: sticky; left: 0; background: var(--card); font-weight: 600; }
     .c-present { color: var(--ok); } .c-absent { color: var(--bad); font-weight: 800; } .c-late { color: var(--warn); font-weight: 800; } .c-excused { color: var(--blue); }
     @media (max-width: 560px) { .seg button { min-width: 40px; padding: .45rem .45rem; } .seg .lbl { display: none; } }
-  </style>
+    .att-head { font: 700 1rem var(--display, inherit); margin: 10px 2px 0; color: var(--indigo-text, #3a32b5); }
+  .att-head:first-child { margin-top: 0; }
+  .att-head-row td { background: var(--soft); font-weight: 700; text-align: left !important; padding: 6px 10px; }
+</style>
 </head>
 <body>
   <header class="topbar">
@@ -55,7 +58,9 @@
     async function loadStudents() {
       const { data } = await sb.from("profiles").select("id, full_name, class_name").eq("role", "student").eq("status", "approved").order("full_name");
       students = data || [];
-      if (!cls) cls = [...new Set(students.map((s) => s.class_name))].sort()[0] || CLASSES[0];
+      // son seçilən sinif yadda qalır; ilk dəfə — hamısı
+      if (!cls) { try { cls = localStorage.getItem("wd_att_cls") || "*"; } catch { cls = "*"; } }
+      if (cls !== "*" && !students.some((s) => s.class_name === cls)) cls = "*";
     }
 
     function shell() {
@@ -64,26 +69,41 @@
         <h1 style="font-size:1.6rem">✅ Davamiyyət</h1>
         <div class="tabs"><button class="tab ${view === "day" ? "active" : ""}" data-v="day">📅 Gün</button><button class="tab ${view === "month" ? "active" : ""}" data-v="month">🗓 Ay</button></div>
         <div class="att-bar">
-          <select id="cls">${classes.map((c) => `<option value="${esc(c)}" ${c === cls ? "selected" : ""}>${esc(classLabel(c))}</option>`).join("")}</select>
+          <select id="cls"><option value="*" ${cls === "*" ? "selected" : ""}>Bütün şagirdlər (${students.length})</option>${classes.map((c) => `<option value="${esc(c)}" ${c === cls ? "selected" : ""}>${esc(classLabel(c))} (${students.filter((s) => s.class_name === c).length})</option>`).join("")}</select>
           ${view === "day" ? `<input type="date" id="date" value="${date}">` : `<input type="month" id="month" value="${month}"><button class="btn btn-ghost btn-sm" id="xlsx">⬇ Excel</button>`}
         </div>
         <div id="stage"><div class="spinner"></div></div>`;
       app.querySelectorAll("[data-v]").forEach((b) => b.onclick = () => { if (dirty && !confirm("Yadda saxlanmamış dəyişikliklər itəcək. Davam?")) return; view = b.dataset.v; dirty = false; shell(); load(); });
-      document.getElementById("cls").onchange = (e) => { if (dirty && !confirm("Yadda saxlanmamış dəyişikliklər itəcək. Davam?")) { e.target.value = cls; return; } cls = e.target.value; dirty = false; load(); };
+      document.getElementById("cls").onchange = (e) => { if (dirty && !confirm("Yadda saxlanmamış dəyişikliklər itəcək. Davam?")) { e.target.value = cls; return; } cls = e.target.value; try { localStorage.setItem("wd_att_cls", cls); } catch {} dirty = false; load(); };
       document.getElementById("date")?.addEventListener("change", (e) => { if (dirty && !confirm("Yadda saxlanmamış dəyişikliklər itəcək. Davam?")) { e.target.value = date; return; } date = e.target.value || today(); dirty = false; load(); });
       document.getElementById("month")?.addEventListener("change", (e) => { month = e.target.value || month; load(); });
       document.getElementById("xlsx")?.addEventListener("click", exportMonth);
     }
 
-    const classStudents = () => students.filter((s) => s.class_name === cls);
+    const classOrder = (c) => (Number(c) || 99);
+    const classStudents = () => cls === "*"
+      ? [...students].sort((a, b) => classOrder(a.class_name) - classOrder(b.class_name) || String(a.class_name).localeCompare(String(b.class_name)) || a.full_name.localeCompare(b.full_name, "az"))
+      : students.filter((s) => s.class_name === cls);
+    const clsName = () => (cls === "*" ? "Bütün şagirdlər" : classLabel(cls));
+    // "Hamısı" görünüşündə sinif başlıqları
+    const withHeads = (list, rowFn, headFn) => {
+      let last = null;
+      return list.map((s) => {
+        const h = cls === "*" && s.class_name !== last ? headFn(s.class_name, list.filter((x) => x.class_name === s.class_name).length) : "";
+        last = s.class_name;
+        return h + rowFn(s);
+      }).join("");
+    };
 
     async function load() { view === "day" ? loadDay() : loadMonth(); }
 
     async function loadDay() {
       const list = classStudents();
-      const { data, error } = await sb.from("attendance").select("user_id, status").eq("att_date", date).in("user_id", list.map((s) => s.id).concat(["00000000-0000-0000-0000-000000000000"]));
+      let q = sb.from("attendance").select("user_id, status").eq("att_date", date);
+      if (cls !== "*") q = q.in("user_id", list.map((s) => s.id).concat(["00000000-0000-0000-0000-000000000000"]));
+      const { data, error } = await q;
       if (error) { document.getElementById("stage").innerHTML = `<div class="card empty">${esc(translateError(error))}<br><span class="small">10-attendance-messages-parent.sql işə salınıb?</span></div>`; return; }
-      saved = data.length > 0;
+      saved = data.some((r) => list.some((s) => s.id === r.user_id));
       marks = Object.fromEntries(list.map((s) => [s.id, "present"]));
       for (const r of data) marks[r.user_id] = r.status;
       renderDay();
@@ -92,14 +112,15 @@
     function renderDay() {
       const list = classStudents();
       const st = document.getElementById("stage");
-      if (!list.length) { st.innerHTML = '<div class="card empty">Bu sinifdə təsdiqlənmiş şagird yoxdur.</div>'; return; }
+      if (!list.length) { st.innerHTML = `<div class="card empty">${cls === "*" ? "Hələ təsdiqlənmiş şagird yoxdur." : "Bu sinifdə təsdiqlənmiş şagird yoxdur."}</div>`; return; }
       const cnt = (k) => list.filter((s) => marks[s.id] === k).length;
       st.innerHTML = `
         <div class="att-sum"><span class="c-present">✓ ${cnt("present")} gəlib</span><span class="c-late">⏰ ${cnt("late")} gecikib</span><span class="c-absent">✕ ${cnt("absent")} gəlməyib</span><span class="c-excused">📄 ${cnt("excused")} üzrlü</span>
-          <span class="muted">${saved && !dirty ? "· yadda saxlanılıb ✓" : dirty ? "· dəyişiklik var" : "· hələ yazılmayıb"}</span></div>
-        <div class="grid" style="gap:8px">${list.map((s) => `
+          <span class="muted">· cəmi ${list.length} şagird ${saved && !dirty ? "· yadda saxlanılıb ✓" : dirty ? "· dəyişiklik var" : "· hələ yazılmayıb"}</span></div>
+        <div class="grid" style="gap:8px">${withHeads(list, (s) => `
           <div class="att-row"><span class="nm">${esc(s.full_name)}</span>
-            <span class="seg">${Object.entries(ST).map(([k, [ic, lb]]) => `<button data-u="${s.id}" data-s="${k}" class="${marks[s.id] === k ? "on" : ""}" title="${lb}">${ic} <span class="lbl">${lb}</span></button>`).join("")}</span></div>`).join("")}
+            <span class="seg">${Object.entries(ST).map(([k, [ic, lb]]) => `<button data-u="${s.id}" data-s="${k}" class="${marks[s.id] === k ? "on" : ""}" title="${lb}">${ic} <span class="lbl">${lb}</span></button>`).join("")}</span></div>`,
+          (c, n) => `<div class="att-head">${esc(classLabel(c))} <span class="muted">(${n})</span></div>`)}
         </div>
         <div class="card savebar" style="margin-top:14px"><button class="btn btn-ghost btn-sm" id="all">Hamısı gəlib</button><button class="btn btn-primary" id="save">Yadda saxla</button></div>`;
       st.querySelectorAll(".seg button").forEach((b) => b.onclick = () => { marks[b.dataset.u] = b.dataset.s; dirty = true; renderDay(); });
@@ -112,7 +133,7 @@
       const { error } = await sb.from("attendance").upsert(rows);
       if (error) return toast(translateError(error), "err");
       saved = true; dirty = false;
-      toast(`${classLabel(cls)} — ${date} yadda saxlandı ✓`, "ok");
+      toast(`${clsName()} — ${date} yadda saxlandı ✓`, "ok");
       renderDay();
     }
 
@@ -122,8 +143,11 @@
       const [y, m] = month.split("-").map(Number);
       const days = new Date(y, m, 0).getDate();
       const from = `${month}-01`, to = `${month}-${String(days).padStart(2, "0")}`;
-      const { data, error } = await sb.from("attendance").select("user_id, att_date, status").gte("att_date", from).lte("att_date", to)
-        .in("user_id", list.map((s) => s.id).concat(["00000000-0000-0000-0000-000000000000"]));
+      let q = sb.from("attendance").select("user_id, att_date, status").gte("att_date", from).lte("att_date", to);
+      if (cls !== "*") q = q.in("user_id", list.map((s) => s.id).concat(["00000000-0000-0000-0000-000000000000"]));
+      const { data: raw, error } = await q;
+      const ids = new Set(list.map((s) => s.id));
+      const data = (raw || []).filter((r) => ids.has(r.user_id));
       if (error) { document.getElementById("stage").innerHTML = `<div class="card empty">${esc(translateError(error))}</div>`; return; }
       const map = {};
       for (const r of data) (map[r.user_id] ||= {})[Number(r.att_date.slice(8, 10))] = r.status;
@@ -134,11 +158,11 @@
       const count = (u, k) => Object.values(map[u] || {}).filter((v) => v === k).length;
       st.innerHTML = `<div class="card grid-wrap"><table class="att-grid">
         <tr><th style="text-align:left">Şagird</th>${usedDays.map((d) => `<th>${d}</th>`).join("")}<th>✓</th><th>⏰</th><th>✕</th><th>📄</th><th>%</th></tr>
-        ${list.map((s) => {
+        ${withHeads(list, (s) => {
           const p = count(s.id, "present") + count(s.id, "late"), all = Object.keys(map[s.id] || {}).length;
           return `<tr><td class="nm">${esc(s.full_name)}</td>${usedDays.map((d) => { const v = map[s.id]?.[d]; return `<td class="c-${v || ""}">${v ? ST[v][0] : ""}</td>`; }).join("")}
             <td>${count(s.id, "present")}</td><td>${count(s.id, "late")}</td><td>${count(s.id, "absent")}</td><td>${count(s.id, "excused")}</td><td><b>${all ? Math.round(p / all * 100) : "—"}</b></td></tr>`;
-        }).join("")}</table></div>
+        }, (c, n) => `<tr class="att-head-row"><td colspan="${usedDays.length + 6}">${esc(classLabel(c))} <span class="muted">(${n})</span></td></tr>`)}</table></div>
         <p class="muted small">% — gəlib + gecikib / yazılmış günlər.</p>`;
     }
 
@@ -147,11 +171,11 @@
       const { list, map, usedDays, y, m } = monthData;
       const L = { present: "+", late: "G", absent: "Q", excused: "Ü" };
       const count = (u, k) => Object.values(map[u] || {}).filter((v) => v === k).length;
-      downloadXlsx(`davamiyyet_${classLabel(cls).replace(/\s+/g, "_")}_${y}_${String(m).padStart(2, "0")}.xlsx`, [{
-        name: `${classLabel(cls)} ${m}.${y}`, widths: [28, ...usedDays.map(() => 4), 8, 8, 8, 8, 7],
-        rows: [["Şagird", ...usedDays.map(String), "Gəlib", "Gecikib", "Qayıb", "Üzrlü", "%"],
+      downloadXlsx(`davamiyyet_${clsName().replace(/\s+/g, "_")}_${y}_${String(m).padStart(2, "0")}.xlsx`, [{
+        name: `${cls === "*" ? "Hamısı" : classLabel(cls)} ${m}.${y}`, widths: [28, 14, ...usedDays.map(() => 4), 8, 8, 8, 8, 7],
+        rows: [["Şagird", "Sinif", ...usedDays.map(String), "Gəlib", "Gecikib", "Qayıb", "Üzrlü", "%"],
           ...list.map((s) => { const p = count(s.id, "present") + count(s.id, "late"), all = Object.keys(map[s.id] || {}).length;
-            return [s.full_name, ...usedDays.map((d) => L[map[s.id]?.[d]] || ""), count(s.id, "present"), count(s.id, "late"), count(s.id, "absent"), count(s.id, "excused"), all ? Math.round(p / all * 100) : ""]; }),
+            return [s.full_name, classLabel(s.class_name), ...usedDays.map((d) => L[map[s.id]?.[d]] || ""), count(s.id, "present"), count(s.id, "late"), count(s.id, "absent"), count(s.id, "excused"), all ? Math.round(p / all * 100) : ""]; }),
           [], ["İşarələr: + gəlib, G gecikib, Q qayıb (gəlməyib), Ü üzrlü"]],
       }]);
     }
