@@ -30,7 +30,8 @@ declare
   v_tables text[] := array['profiles', 'announcements', 'materials', 'material_views', 'violations', 'tests', 'test_keys',
     'test_online', 'attempts', 'attempts_archive', 'test_retakes', 'test_variant_assign', 'paper_entries',
     'live_quizzes', 'live_sessions', 'live_players', 'live_answers', 'words', 'attendance', 'messages',
-    'question_bank', 'homework', 'hw_submissions', 'quick_comments', 'app_settings', 'client_errors'];
+    'question_bank', 'homework', 'hw_submissions', 'quick_comments', 'app_settings', 'client_errors',
+    'study_groups', 'study_group_members'];
 begin
   select decrypted_secret into v_secret from vault.decrypted_secrets where name = 'backup_secret';
   if v_secret is null or p_secret is distinct from v_secret then
