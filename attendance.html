@@ -127,6 +127,8 @@
       if (nav.cls !== "*" && !students.some((s) => s.class_name === nav.cls)) nav.cls = "*";
     }
     let groupsReady = true;
+    let tgOn = true;
+    try { tgOn = localStorage.getItem("wd_att_tg") !== "0"; } catch {}
 
     // Hazırkı siyahı
     function currentList() {
@@ -317,10 +319,13 @@
             <span class="seg">${Object.entries(ST).map(([k, [ic, lb]]) => `<button data-u="${s.id}" data-s="${k}" class="${marks[s.id] === k ? "on" : ""}" title="${lb}">${ic} <span class="lbl">${lb}</span></button>`).join("")}</span></div>`,
           (c, n) => `<div class="att-head">${esc(classLabel(c))} <span class="muted">(${n})</span></div>`)}
         </div>
-        <div class="card savebar" style="margin-top:14px"><button class="btn btn-ghost btn-sm" id="all">Hamısı gəlib</button><button class="btn btn-primary" id="save">Yadda saxla</button></div>`;
+        <div class="card savebar" style="margin-top:14px;flex-wrap:wrap;gap:8px"><button class="btn btn-ghost btn-sm" id="all">Hamısı gəlib</button>
+          <label class="chk" style="width:auto;margin-left:auto" title="Yadda saxlayanda gəlməyənlərin siyahısı Telegram-a gedir"><input type="checkbox" id="tg" ${tgOn ? "checked" : ""}> 📨 Telegram</label>
+          <button class="btn btn-primary" id="save">Yadda saxla</button></div>`;
       st.querySelectorAll(".seg button").forEach((b) => b.onclick = () => { marks[b.dataset.u] = b.dataset.s; dirty = true; renderDay(); });
       document.getElementById("all").onclick = () => { list.forEach((s) => (marks[s.id] = "present")); dirty = true; renderDay(); };
       document.getElementById("save").onclick = saveDay;
+      document.getElementById("tg").onchange = (e) => { tgOn = e.target.checked; try { localStorage.setItem("wd_att_tg", tgOn ? "1" : "0"); } catch {} };
     }
 
     async function saveDay() {
@@ -328,7 +333,12 @@
       const { error } = await sb.from("attendance").upsert(rows);
       if (error) return toast(translateError(error), "err");
       saved = true; dirty = false;
-      toast(`${listName()} — ${date.slice(8, 10)}.${date.slice(5, 7)} yadda saxlandı ✓`, "ok");
+      let tgMsg = "";
+      if (tgOn) {
+        const { error: tErr } = await sb.rpc("admin_attendance_notify", { p_title: listName(), p_date: date, p_users: rows.map((r) => r.user_id) });
+        tgMsg = tErr ? (/function|schema cache/i.test(tErr.message || "") ? " (Telegram üçün 21-attendance-telegram.sql işə sal)" : " (Telegram-a getmədi)") : " · Telegram-a göndərildi";
+      }
+      toast(`${listName()} — ${date.slice(8, 10)}.${date.slice(5, 7)} yadda saxlandı ✓${tgMsg}`, "ok");
       renderDay();
     }
 

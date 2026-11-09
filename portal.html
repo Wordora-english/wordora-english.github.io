@@ -130,6 +130,18 @@
     }
 
     // ---------- Qısa keçidlər: mesajlar, davamiyyət, valideyn kodu ----------
+    // Şagirdin dərs qrupu(ları): "2-ci və 4-cü gün · Saat 15:00"
+    const ORD = { 1: "1-ci", 2: "2-ci", 3: "3-cü", 4: "4-cü", 5: "5-ci", 6: "6-cı", 7: "7-ci" };
+    const DAYNAME = { 1: "bazar ertəsi", 2: "çərşənbə axşamı", 3: "çərşənbə", 4: "cümə axşamı", 5: "cümə", 6: "şənbə", 7: "bazar" };
+    async function loadGroups() {
+      const { data, error } = await sb.rpc("get_my_groups");
+      if (error || !data?.length) return;
+      const lbl = (sch) => { const d = [...sch].map(Number); return `${d.map((x) => ORD[x]).join(" və ")} gün`; };
+      const days = (sch) => [...sch].map((x) => DAYNAME[x]).join(", ");
+      document.getElementById("my-groups").innerHTML = data.map((g) =>
+        `<span class="grp-chip" title="${esc(days(g.schedule))}">📅 Sənin qrupun: <b>${esc(lbl(g.schedule))}</b> · ${esc(g.name)}</span>`).join("");
+    }
+
     async function loadQuick() {
       const [{ data: msgs }, { data: att }, { data: hw }, { data: hws }] = await Promise.all([
         sb.from("messages").select("sender, read_by_student").eq("user_id", me.id),
@@ -352,6 +364,7 @@
           ${me.class_name === "Magistratura" ? '<span class="mag-chip">🎓 Magistratura bölməsi</span>' : ""}
           <h1>Salam, ${esc(firstName)}!</h1>
           <p>${me.class_name === "Magistratura" ? "Magistrant" : esc(classLabel(me.class_name))} · @${esc(me.username)}${me.warnings > 0 ? ` · ⚠️ ${me.warnings} xəbərdarlıq` : ""}</p>
+          <div id="my-groups"></div>
         </section>
 
         <div id="install-box" style="margin-bottom:12px"></div>
@@ -398,7 +411,7 @@
       });
       renderInstall();
       loadWotd();
-      loadQuick();
+      loadQuick(); loadGroups();
       if (me.class_name !== "Magistratura") loadRank();   // magistrantlar üçün reytinq yoxdur
       addEventListener("wd-installable", renderInstall);
       loadTests();

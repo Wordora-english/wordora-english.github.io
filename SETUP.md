@@ -82,6 +82,7 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 17. `supabase/18-weekly-report.sql`
 18. `supabase/19-backup-errors.sql` — sonda göstərilən **açarı** GitHub-a `BACKUP_SECRET` kimi yaz (aşağıya bax)
 19. `supabase/20-study-groups.sql`
+20. `supabase/21-attendance-telegram.sql`
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 
@@ -153,3 +154,4 @@ select public.remove_telegram_chat('ID');   -- sil
 - **Həftəlik ehtiyat nüsxə** → hər bazar 20:30 bütün baza `.json.gz` faylı kimi Telegram-a gəlir. Quraşdırma (bir dəfə): 19-backup-errors.sql işə salınanda nəticədə uzun açar çıxır → GitHub → repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret** → Name: `BACKUP_SECRET`, Secret: həmin açar → **Add secret** → **Actions** tabı → **Həftəlik ehtiyat nüsxə** → **Run workflow** (yoxlama). Fayl itəndə bərpa üçün Claude-a göndər
 - **Xəta bildirişi** → şagirddə sayt xəta verəndə (məs. sınaqda cavablar yadda saxlanmır, PDF açılmır) Telegram-a dərhal xəbər gəlir; siyahı: **Pozuntular** → **🚨 Saytda xətalar**
 - **Davamiyyət qrupları** → **✅ Davamiyyət** → yuxarıda cədvəl seç (1-ci və 3-cü gün, 3-cü və 5-ci gün, 2-ci və 4-cü gün, 6-cı və 7-ci gün) → **+ Yeni qrup** (ad: məs. "Saat 15:00") → **👥 Şagirdləri seç** (axtarış, sinif filtri; şagirdin başqa qrupları da görünür) → **Yadda saxla**. Sonra qrupu seç → son dərs günlərindən birinə toxun → davamiyyəti yaz. **🏫 Siniflər** — köhnə sinif üzrə görünüş
+- **Davamiyyət → Telegram** → "Yadda saxla" yanında **📨 Telegram** işarəlidirsə, gəlməyən/gecikən/üzrlü şagirdlərin siyahısı Telegram-a gedir. Şagird portalda öz qrupunu görür ("Sənin qrupun: 2-ci və 4-cü gün · Saat 15:00")
