@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Chat — Wordora</title>
+  <meta name="theme-color" content="#3a32b5">
+  <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
+  <style>
+    body { overflow: hidden; }
+    .chat-wrap { display: grid; grid-template-columns: 260px 1fr; grid-template-rows: minmax(0, 1fr); gap: 14px; max-width: 1100px; width: 100%; margin: 0 auto; padding: 14px 16px; min-height: 0; height: calc(100dvh - 58px); }
+    .rooms { display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+    .room { display: block; text-align: left; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 14px; padding: 10px 12px; cursor: pointer; font: inherit; }
+    .room b { display: block; font-size: .95rem; }
+    .room span { font-size: .78rem; color: var(--muted); }
+    .room.on { border-color: var(--violet); background: #ece9ff; }
+    :root[data-theme=dark] .room.on { background: #2a2552; }
+    .room .dot { float: right; width: 9px; height: 9px; border-radius: 50%; background: var(--bad); margin-top: 6px; display: none; }
+    .room.new .dot { display: block; }
+    .pane { display: flex; flex-direction: column; min-height: 0; background: var(--card); border: 1px solid var(--line); border-radius: 18px; overflow: hidden; }
+    .pane-head { padding: 10px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .pane-head h2 { font-size: 1.05rem; margin: 0; }
+    .pane-head .tools { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+    .note { font-size: .78rem; color: var(--muted); padding: 6px 14px; background: var(--soft); border-bottom: 1px solid var(--line); }
+    .msgs { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; background: var(--soft); }
+    .msg { max-width: 78%; align-self: flex-start; background: var(--card); border: 1px solid var(--line); border-radius: 16px 16px 16px 4px; padding: 7px 11px; position: relative; -webkit-user-select: text; user-select: text; }
+    .msg.me { align-self: flex-end; background: #e9e5ff; border-color: #d6cffc; border-radius: 16px 16px 4px 16px; }
+    :root[data-theme=dark] .msg.me { background: #2c2760; border-color: #3d3680; }
+    .msg.teacher { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }
+    .msg .who { font-size: .76rem; font-weight: 700; color: var(--indigo-text, #3a32b5); margin-bottom: 2px; }
+    .msg .who .cls { font-weight: 500; color: var(--muted); }
+    .msg .who .tch { background: var(--gold); color: #3a2a00; border-radius: 6px; padding: 0 5px; margin-left: 4px; font-size: .7rem; }
+    .msg .txt { white-space: pre-wrap; word-break: break-word; }
+    .msg .meta { font-size: .68rem; color: var(--muted); text-align: right; margin-top: 2px; }
+    .msg img { display: block; max-width: 260px; max-height: 260px; width: 100%; object-fit: cover; border-radius: 10px; margin: 3px 0; cursor: zoom-in; background: var(--soft); min-height: 60px; }
+    .msg .pdf { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .7rem; border-radius: 10px; background: var(--soft); border: 1px solid var(--line); color: var(--text); text-decoration: none; font-weight: 600; font-size: .88rem; margin: 3px 0; }
+    .msg .act { position: absolute; top: 4px; right: 6px; display: none; gap: 2px; }
+    .msg:hover .act, .msg.show-act .act { display: flex; }
+    .msg .act button { border: 0; background: var(--card); border-radius: 6px; cursor: pointer; font-size: .8rem; padding: 1px 5px; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+    .day-sep { align-self: center; font-size: .72rem; color: var(--muted); }
+    .empty-chat { margin: auto; text-align: center; color: var(--muted); }
+    .composer { border-top: 1px solid var(--line); padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); display: flex; gap: 6px; align-items: flex-end; background: var(--card); }
+    .composer textarea { flex: 1; resize: none; min-height: 42px; max-height: 140px; border-radius: 14px; padding: .55rem .8rem; font: inherit; }
+    .composer .icon-btn { flex: 0 0 auto; width: 42px; height: 42px; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); cursor: pointer; font-size: 1.1rem; display: grid; place-items: center; }
+    .composer .send { background: linear-gradient(135deg, var(--indigo, #3a32b5), var(--violet, #7b4fe0)); color: #fff; border: 0; }
+    .attach-prev { padding: 6px 12px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 8px; font-size: .85rem; background: var(--soft); }
+    .attach-prev img { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
+    .muted-bar { padding: 10px 14px; text-align: center; font-size: .88rem; color: var(--bad); border-top: 1px solid var(--line); }
+    @media (max-width: 760px) {
+      .chat-wrap { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); padding: 8px 10px; gap: 8px; height: calc(100dvh - 58px); }
+      .rooms { flex-direction: row; overflow-x: auto; padding-bottom: 2px; }
+      .room { flex: 0 0 auto; padding: 7px 11px; }
+      .room span { display: none; }
+      .msg { max-width: 88%; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" id="back" href="portal.html">← Portal</a></nav>
+    </div>
+  </header>
+  <div class="chat-wrap" id="app"><div class="spinner"></div></div>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, toast, translateError, classLabel } from "./assets/js/app.js";
+    import { startGuard } from "./assets/js/guard.js";
+
+    const LIFE = 40 * 60 * 1000;     // mesajın ömrü: 40 dəqiqə
+    const SCHED = { 13: "1-ci və 3-cü gün", 35: "3-cü və 5-ci gün", 24: "2-ci və 4-cü gün", 67: "6-cı və 7-ci gün" };
+    const app = document.getElementById("app");
+    let me, isAdmin = false, rooms = [], room = "", msgs = [], people = {}, urls = {}, lastId = 0, mutedUntil = null, attach = null;
+    let channel = null, pollT = null, chatOn = true;
+    const seen = {};   // room -> son görülən id (oxunmamış nöqtə üçün)
+    try { Object.assign(seen, JSON.parse(localStorage.getItem("wd_chat_seen") || "{}")); } catch {}
+    const saveSeen = () => { try { localStorage.setItem("wd_chat_seen", JSON.stringify(seen)); } catch {} };
+    const hhmm = (iso) => new Date(iso).toLocaleTimeString("az-AZ", { hour: "2-digit", minute: "2-digit" });
+    const alive = (m) => Date.now() - new Date(m.created_at).getTime() < LIFE;
+
+    // ---------- şəkli kiçilt ----------
+    async function compress(file) {
+      if (file.type === "application/pdf") {
+        if (file.size > 10 * 1048576) throw new Error("PDF 10 MB-dan böyük ola bilməz");
+        return { blob: file, ext: "pdf", type: "pdf", name: file.name.slice(0, 110) };
+      }
+      if (!file.type.startsWith("image/")) throw new Error("Yalnız şəkil və ya PDF göndərmək olar");
+      const img = await createImageBitmap(file).catch(() => null);
+      if (!img) throw new Error("Şəkil açılmadı (HEIC isə, telefonda JPEG kimi saxla)");
+      const k = Math.min(1, 1280 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(img, 0, 0, c.width, c.height);
+      const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.8));
+      return { blob, ext: "jpg", type: "image", name: "şəkil.jpg", preview: URL.createObjectURL(blob) };
+    }
+
+    // ---------- görünüş ----------
+    function shell() {
+      const r = rooms.find((x) => x.room === room);
+      app.innerHTML = `
+        <aside class="rooms" id="rooms">${rooms.map((x) => `
+          <button class="room ${x.room === room ? "on" : ""}" data-room="${x.room}"><i class="dot"></i>
+            <b>${x.room === "school" ? "🌍 " : x.room === "mag" ? "🎓 " : "👥 "}${esc(x.title)}</b>
+            <span>${esc(SCHED[x.subtitle] || x.subtitle || "")}</span></button>`).join("")}
+        </aside>
+        <section class="pane">
+          <div class="pane-head"><h2>${r ? esc(r.title) : ""}</h2>
+            ${isAdmin ? `<div class="tools">
+              <button class="btn btn-ghost btn-sm" id="archive">📜 Arxiv (7 gün)</button>
+              <button class="btn btn-ghost btn-sm" id="toggle">${chatOn ? "⏸ Chatı bağla" : "▶ Chatı aç"}</button></div>` : ""}
+          </div>
+          <div class="note">💨 Mesajlar, şəkillər və PDF-lər <b>40 dəqiqədən sonra</b> silinir. ${isAdmin ? "Mətnlərin arxivi 7 gün yalnız səndə qalır." : "Hörmətli ol — müəllim chatı görür."}</div>
+          <div class="msgs" id="msgs"><div class="spinner"></div></div>
+          <div id="foot"></div>
+        </section>`;
+      app.querySelectorAll("[data-room]").forEach((b) => b.onclick = () => openRoom(b.dataset.room));
+      document.getElementById("archive")?.addEventListener("click", showArchive);
+      document.getElementById("toggle")?.addEventListener("click", toggleChat);
+      renderFoot();
+    }
+
+    function renderFoot() {
+      const f = document.getElementById("foot"); if (!f) return;
+      if (mutedUntil && new Date(mutedUntil) > Date.now()) {
+        f.innerHTML = `<div class="muted-bar">🔇 Chatda yazmaq sənin üçün <b>${hhmm(mutedUntil)}</b>-dək bağlanıb.</div>`; return;
+      }
+      f.innerHTML = `
+        ${attach ? `<div class="attach-prev">${attach.type === "image" ? `<img src="${attach.preview}" alt="">` : "📄"} <span>${esc(attach.name)}</span>
+          <button class="btn btn-ghost btn-sm" id="att-x" style="margin-left:auto">✕</button></div>` : ""}
+        <div class="composer">
+          <label class="icon-btn" title="Şəkil və ya PDF">📎<input type="file" id="file" accept="image/*,application/pdf" hidden></label>
+          <textarea id="text" rows="1" maxlength="1000" placeholder="Mesaj yaz…"></textarea>
+          <button class="icon-btn send" id="send" title="Göndər">➤</button>
+        </div>`;
+      const ta = document.getElementById("text");
+      ta.oninput = () => { ta.style.height = "auto"; ta.style.height = Math.min(140, ta.scrollHeight) + "px"; };
+      ta.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer: coarse)").matches) { e.preventDefault(); send(); } };
+      document.getElementById("send").onclick = send;
+      document.getElementById("att-x")?.addEventListener("click", () => { attach = null; renderFoot(); });
+      document.getElementById("file").onchange = async (e) => {
+        const file = e.target.files[0]; e.target.value = "";
+        if (!file) return;
+        try { attach = await compress(file); const keep = ta.value; renderFoot(); document.getElementById("text").value = keep; }
+        catch (err) { toast(err.message, "err"); }
+      };
+    }
+
+    function renderMsgs(stick = true) {
+      const box = document.getElementById("msgs"); if (!box) return;
+      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+      const list = msgs.filter(alive);
+      if (!list.length) { box.innerHTML = `<div class="empty-chat">💬<br>Hələ mesaj yoxdur.<br><span class="small">İlk yazan sən ol!</span></div>`; return; }
+      box.innerHTML = list.map((m) => {
+        const p = people[m.user_id] || {}; const mine = m.user_id === me.id;
+        const canDel = isAdmin || mine;
+        return `<div class="msg ${mine ? "me" : ""} ${p.is_teacher ? "teacher" : ""}" data-id="${m.id}">
+          ${!mine ? `<div class="who">${esc(p.full_name || "…")}${p.is_teacher ? '<span class="tch">Müəllim</span>' : p.class_name ? ` <span class="cls">· ${esc(p.class_name === "Magistratura" ? "magistrant" : classLabel(p.class_name))}</span>` : ""}</div>` : ""}
+          ${m.file_type === "image" ? `<img data-path="${esc(m.file_path)}" src="${urls[m.file_path] || ""}" alt="şəkil" loading="lazy">` : ""}
+          ${m.file_type === "pdf" ? `<a class="pdf" data-path="${esc(m.file_path)}" href="${urls[m.file_path] || "#"}" target="_blank" rel="noopener">📄 ${esc(m.file_name || "PDF")}</a>` : ""}
+          ${m.body ? `<div class="txt">${esc(m.body)}</div>` : ""}
+          <div class="meta">${hhmm(m.created_at)}</div>
+          ${canDel ? `<div class="act"><button data-del="${m.id}" title="Sil">🗑</button>${isAdmin && !mine && !p.is_teacher ? `<button data-mute="${m.user_id}" title="Susdur">🔇</button>` : ""}</div>` : ""}
+        </div>`;
+      }).join("");
+      const keepBottom = stick || atBottom;
+      if (keepBottom) box.scrollTop = box.scrollHeight;
+      box.querySelectorAll("img[data-path]").forEach((im) => {
+        im.onclick = () => window.open(urls[im.dataset.path], "_blank");
+        im.onload = () => { if (keepBottom) box.scrollTop = box.scrollHeight; };   // şəkil yüklənəndən sonra aşağı
+      });
+      box.querySelectorAll("[data-del]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); delMsg(Number(b.dataset.del)); });
+      box.querySelectorAll("[data-mute]").forEach((b) => b.onclick = (e) => { e.stopPropagation(); muteUser(b.dataset.mute); });
+      box.querySelectorAll(".msg").forEach((el) => el.onclick = () => { box.querySelectorAll(".show-act").forEach((x) => x !== el && x.classList.remove("show-act")); el.classList.toggle("show-act"); });
+      fillUrls();
+    }
+
+    async function fillUrls() {
+      const need = msgs.filter((m) => m.file_path && !urls[m.file_path]).map((m) => m.file_path);
+      if (!need.length) return;
+      const { data } = await sb.storage.from("chat").createSignedUrls(need, 3600);
+      for (const f of data || []) if (f.signedUrl) urls[f.path] = f.signedUrl;
+      document.querySelectorAll("[data-path]").forEach((el) => {
+        const u = urls[el.dataset.path]; if (!u) return;
+        if (el.tagName === "IMG" && !el.getAttribute("src")) el.src = u;
+        if (el.tagName === "A") el.href = u;
+      });
+    }
+
+    async function loadPeople(force = false) {
+      const missing = msgs.some((m) => !people[m.user_id]);
+      if (!missing && !force) return;
+      const { data } = await sb.rpc("chat_people", { p_room: room });
+      for (const p of data || []) people[p.id] = p;
+    }
+
+    // ---------- otaq ----------
+    async function openRoom(r) {
+      room = r; msgs = []; lastId = 0;
+      try { localStorage.setItem("wd_chat_room", r); } catch {}
+      shell();
+      const { data, error } = await sb.from("chat_messages").select("*").eq("room", room).order("id", { ascending: false }).limit(200);
+      if (error) { document.getElementById("msgs").innerHTML = `<div class="empty-chat">${esc(translateError(error))}</div>`; return; }
+      msgs = (data || []).sort((a, b) => a.id - b.id);
+      lastId = msgs.at(-1)?.id || 0;
+      seen[room] = lastId; saveSeen();
+      await loadPeople(true);
+      renderMsgs(true);
+      subscribe();
+    }
+
+    function subscribe() {
+      if (channel) { try { sb.removeChannel(channel); } catch {} channel = null; }
+      if (typeof sb.channel === "function") {
+        try {
+          channel = sb.channel(`chat-${room}`)
+            .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_messages", filter: `room=eq.${room}` }, (p) => addMsgs([p.new]))
+            .subscribe();
+        } catch { channel = null; }
+      }
+      clearInterval(pollT);
+      pollT = setInterval(poll, channel ? 12000 : 3000);   // canlı əlaqə yoxdursa — tez-tez yoxla
+    }
+
+    async function addMsgs(list) {
+      const fresh = list.filter((m) => m.room === room && !msgs.some((x) => x.id === m.id));
+      if (!fresh.length) return;
+      msgs.push(...fresh); msgs.sort((a, b) => a.id - b.id);
+      lastId = Math.max(lastId, ...fresh.map((m) => m.id));
+      if (!document.hidden) { seen[room] = lastId; saveSeen(); }
+      await loadPeople();
+      renderMsgs(false);
+    }
+
+    let polling = false;
+    async function poll() {
+      if (polling || document.hidden) return;
+      polling = true;
+      try {
+        const { data } = await sb.from("chat_messages").select("*").eq("room", room).gt("id", lastId).order("id").limit(100);
+        if (data?.length) await addMsgs(data);
+        // silinmiş/vaxtı keçmiş mesajları təmizlə
+        const before = msgs.length; msgs = msgs.filter(alive);
+        if (msgs.length !== before) renderMsgs(false);
+        markRooms();
+      } finally { polling = false; }
+    }
+
+    // digər otaqlarda yeni mesaj nöqtəsi
+    let lastMark = 0;
+    async function markRooms() {
+      if (Date.now() - lastMark < 15000) return; lastMark = Date.now();
+      for (const r of rooms) {
+        if (r.room === room) continue;
+        const { data } = await sb.from("chat_messages").select("id").eq("room", r.room).order("id", { ascending: false }).limit(1);
+        const top = data?.[0]?.id || 0;
+        document.querySelector(`[data-room="${r.room}"]`)?.classList.toggle("new", top > (seen[r.room] || 0));
+      }
+    }
+
+    // ---------- göndərmək ----------
+    let sending = false;
+    async function send() {
+      if (sending) return;
+      const ta = document.getElementById("text");
+      const body = ta.value.trim();
+      if (!body && !attach) return;
+      sending = true; document.getElementById("send").disabled = true;
+      try {
+        let file = {};
+        if (attach) {
+          const path = `${room}/${me.id}/${crypto.randomUUID()}.${attach.ext}`;
+          const { error } = await sb.storage.from("chat").upload(path, attach.blob, { contentType: attach.type === "pdf" ? "application/pdf" : "image/jpeg" });
+          if (error) throw error;
+          file = { file_path: path, file_type: attach.type, file_name: attach.name };
+        }
+        const { data, error } = await sb.from("chat_messages").insert({ room, user_id: me.id, body: body || null, ...file }).select().single();
+        if (error) {
+          if (file.file_path) sb.storage.from("chat").remove([file.file_path]);
+          throw error;
+        }
+        ta.value = ""; ta.style.height = "auto"; attach = null; renderFoot();
+        await addMsgs([data]);
+        document.getElementById("msgs").scrollTop = 1e9;
+      } catch (err) {
+        toast(/row-level security/i.test(err.message || "") ? "Göndərmək olmadı — chat bağlı ola bilər" : translateError(err), "err");
+      } finally {
+        sending = false; const b = document.getElementById("send"); if (b) b.disabled = false;
+        document.getElementById("text")?.focus();
+      }
+    }
+
+    async function delMsg(id) {
+      if (!confirm("Mesaj silinsin?")) return;
+      const m = msgs.find((x) => x.id === id);
+      const { error } = await sb.from("chat_messages").delete().eq("id", id);
+      if (error) return toast(translateError(error), "err");
+      if (m?.file_path) sb.storage.from("chat").remove([m.file_path]);
+      msgs = msgs.filter((x) => x.id !== id); renderMsgs(false);
+    }
+
+    async function muteUser(uid) {
+      const p = people[uid] || {};
+      const h = prompt(`${p.full_name || "Şagird"} neçə saat chatda yaza bilməsin? (0 — susdurmanı götür)`, "1");
+      if (h === null) return;
+      const hours = Math.max(0, Math.min(720, Number(h) || 0));
+      const { error } = hours
+        ? await sb.from("chat_mutes").upsert({ user_id: uid, until: new Date(Date.now() + hours * 3600e3).toISOString(), reason: "müəllim" })
+        : await sb.from("chat_mutes").delete().eq("user_id", uid);
+      if (error) return toast(translateError(error), "err");
+      toast(hours ? `${p.full_name || "Şagird"} ${hours} saat yaza bilməyəcək` : "Susdurma götürüldü", "ok");
+    }
+
+    async function toggleChat() {
+      const { error } = await sb.rpc("admin_set_chat", { p_on: !chatOn });
+      if (error) return toast(translateError(error), "err");
+      chatOn = !chatOn;
+      toast(chatOn ? "Chat açıldı — şagirdlər yaza bilər" : "Chat bağlandı — şagirdlər görmür və yaza bilmir", "ok");
+      document.getElementById("toggle").textContent = chatOn ? "⏸ Chatı bağla" : "▶ Chatı aç";
+    }
+
+    async function showArchive() {
+      const r = rooms.find((x) => x.room === room);
+      const { data, error } = await sb.from("chat_log").select("*").eq("room", room).order("created_at", { ascending: false }).limit(500);
+      if (error) return toast(translateError(error), "err");
+      const box = document.createElement("div");
+      box.className = "wd-modal";
+      box.innerHTML = `<div class="wd-modal-box" style="text-align:left;max-width:640px;width:100%;max-height:88vh;display:flex;flex-direction:column">
+        <h2 style="font-size:1.15rem;margin-bottom:6px">📜 Arxiv — ${esc(r?.title || "")}</h2>
+        <input id="ar-q" placeholder="🔍 Söz və ya ad ilə axtar…" style="margin-bottom:8px">
+        <div id="ar-list" style="overflow:auto;flex:1;font-size:.88rem"></div>
+        <button class="btn btn-ghost" id="ar-x" style="margin-top:10px">Bağla</button></div>`;
+      document.body.appendChild(box);
+      const draw = (q = "") => {
+        const list = (data || []).filter((m) => !q || `${m.user_name} ${m.body} ${m.file_name}`.toLocaleLowerCase("az").includes(q));
+        box.querySelector("#ar-list").innerHTML = list.length ? list.map((m) => `<div style="padding:6px 0;border-bottom:1px solid var(--line)">
+          <span class="muted small">${new Date(m.created_at).toLocaleString("az-AZ", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span> · <b>${esc(m.user_name || "")}</b><br>
+          ${m.body ? esc(m.body) : ""}${m.file_name ? ` <span class="muted">📎 ${esc(m.file_name)}</span>` : ""}</div>`).join("") : '<div class="muted">Heç nə yoxdur.</div>';
+      };
+      draw();
+      box.querySelector("#ar-q").oninput = (e) => draw(e.target.value.trim().toLocaleLowerCase("az"));
+      box.querySelector("#ar-x").onclick = () => box.remove();
+      box.addEventListener("click", (e) => { if (e.target === box) box.remove(); });
+    }
+
+    // Vaxtı keçmiş faylları sil (yer tutmasın)
+    async function sweep() {
+      try {
+        const { data } = await sb.rpc("chat_expired_files");
+        for (let i = 0; i < (data || []).length; i += 100) await sb.storage.from("chat").remove(data.slice(i, i + 100));
+      } catch {}
+    }
+
+    async function start() {
+      if (!configured) return;
+      me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      isAdmin = me.role === "admin";
+      if (isAdmin) document.getElementById("back").href = "admin.html";
+      if (!isAdmin && me.status !== "approved") { location.href = "portal.html"; return; }
+      if (!isAdmin) startGuard({ me, page: "chat" });
+      const [{ data: rs, error }, { data: mu }, st] = await Promise.all([
+        sb.rpc("chat_my_rooms"),
+        sb.from("chat_mutes").select("until").eq("user_id", me.id).maybeSingle(),
+        isAdmin ? sb.from("app_settings").select("value").eq("key", "chat").maybeSingle() : Promise.resolve({ data: null }),
+      ]);
+      if (error) { app.innerHTML = `<div class="card empty" style="grid-column:1/-1">${esc(translateError(error))}<br><span class="small">22-chat.sql işə salınıb?</span></div>`; return; }
+      rooms = rs || [];
+      mutedUntil = mu?.until || null;
+      chatOn = (st?.data?.value || "on") === "on";
+      if (!rooms.length) { app.innerHTML = '<div class="card empty" style="grid-column:1/-1">💬 Chat hazırda bağlıdır.</div>'; return; }
+      let want = ""; try { want = localStorage.getItem("wd_chat_room") || ""; } catch {}
+      await openRoom(rooms.some((r) => r.room === want) ? want : rooms[0].room);
+      setInterval(() => { const n = msgs.length; msgs = msgs.filter(alive); if (n !== msgs.length) renderMsgs(false); }, 30000);
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) { seen[room] = lastId; saveSeen(); poll(); } });
+      sweep();
+    }
+    start().catch((e) => { app.innerHTML = `<div class="card empty">${esc(translateError(e))}</div>`; });
+  </script>
+</body>
+</html>

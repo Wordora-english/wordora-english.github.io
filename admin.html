@@ -36,6 +36,7 @@
         <a class="btn btn-ghost btn-sm" href="report.html">📊 Aylıq hesabat</a>
         <button class="btn btn-ghost btn-sm" id="backup-btn">💾 Ehtiyat nüsxə</button>
         <button class="btn btn-ghost btn-sm" id="storage-btn">🧹 Yaddaş</button>
+        <a class="btn btn-ghost btn-sm" href="chat.html">🗨️ Chat</a>
       </div>
     </div>
     <div style="height:12px"></div>
@@ -438,7 +439,7 @@ seed"></textarea>
     const BACKUP_TABLES = ["profiles", "announcements", "materials", "material_views", "violations", "tests", "test_keys",
                            "attempts", "live_quizzes", "live_sessions", "live_players", "live_answers", "words", "attendance",
                            "messages", "test_online", "question_bank", "homework", "hw_submissions", "quick_comments",
-                           "paper_entries", "attempts_archive", "study_groups", "study_group_members"];
+                           "paper_entries", "attempts_archive", "study_groups", "study_group_members", "chat_log"];
 
     async function fetchAll(table) {
       const out = [];
