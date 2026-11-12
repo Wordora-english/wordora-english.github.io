@@ -1,6 +1,6 @@
 // =========================================================
 //  WORDORA — sınaq faylları
-//  • esse şəkli: kiçiltmə, yükləmə, böyüdüb baxmaq
+//  • esse şəkli: saytın içində kamera, yükləmə, böyüdüb baxmaq
 //  • sınağı (PDF) şagirdin adı yazılmış şəkildə yükləmək
 //  • sınağın fayllarını silmək (ballar qalır)
 // =========================================================
@@ -8,22 +8,100 @@ import { sb, esc, toast } from "./app.js";
 
 export const MAX_ESSAY_PHOTOS = 6;
 
-// Şəkli kiçilt (telefon şəkli 3–8 MB olur → ~300 KB). Alınmasa, orijinalı qaytarır.
-export async function compressImage(file, maxSide = 1800, quality = 0.82) {
-  try {
-    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
-    const c = document.createElement("canvas");
-    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
-    const ctx = c.getContext("2d");
-    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
-    ctx.drawImage(bmp, 0, 0, c.width, c.height);
-    bmp.close?.();
-    const blob = await new Promise((r) => c.toBlob(r, "image/jpeg", quality));
-    if (blob && blob.size > 0) return blob;
-  } catch {}
-  if (/^image\/(jpeg|png|webp)$/.test(file.type) && file.size <= 5 * 1024 * 1024) return file;
-  throw new Error("Bu şəkli açmaq olmadı. Kameradan yenidən çək (JPG).");
+// =========================================================
+//  Kamera — saytın İÇİNDƏ açılır (qalereya, fayl seçmək, başqa proqram yoxdur).
+//  Sınaq tam ekranda qalır, qoruma işləməyə davam edir.
+// =========================================================
+const CAM_CONSTRAINTS = { audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1440 } } };
+
+export function cameraError(err) {
+  const n = err?.name || "";
+  if (n === "NotAllowedError" || n === "SecurityError")
+    return "Kameraya icazə verilməyib. Ünvan sətrindəki 🔒 (və ya ⓘ) işarəsinə toxun → Kamera → İcazə ver. Sonra yenidən bas.";
+  if (n === "NotFoundError" || n === "OverconstrainedError") return "Bu cihazda kamera tapılmadı.";
+  if (n === "NotReadableError") return "Kamera başqa proqramda açıqdır. O proqramı bağla və yenidən bas.";
+  if (!navigator.mediaDevices?.getUserMedia) return "Bu brauzer kameranı açmağı dəstəkləmir. Chrome və ya Safari-də aç.";
+  return "Kamera açılmadı: " + (err?.message || n || "naməlum xəta");
+}
+
+// Sınaqdan əvvəl: kameraya icazə al (icazə pəncərəsi sınaq zamanı çıxmasın deyə)
+export async function checkCamera() {
+  const st = await navigator.mediaDevices.getUserMedia(CAM_CONSTRAINTS);
+  st.getTracks().forEach((t) => t.stop());
+  return true;
+}
+
+/**
+ * Kameranı aç, şəkil çək. Qaytarır: JPEG Blob və ya null (bağladısa).
+ * @param {{beforeAsk?:()=>void, afterAsk?:()=>void, title?:string}} o
+ */
+export function openCamera(o = {}) {
+  return new Promise((resolve) => {
+    const el = document.createElement("div");
+    el.className = "cam";
+    el.innerHTML = `<div class="cam-top">${esc(o.title || "📷 Esseni çək")}<span class="small">Dəftəri düz tut, işıqlı yerdə çək. Yazı aydın oxunsun.</span></div>
+      <div class="cam-view"><video playsinline muted autoplay></video><img alt="" class="hidden"><div class="cam-msg hidden"></div></div>
+      <div class="cam-bar">
+        <button type="button" class="cam-btn" data-c="close">✕ Bağla</button>
+        <button type="button" class="cam-shot" data-c="shot" aria-label="Çək" disabled></button>
+        <button type="button" class="cam-btn hidden" data-c="again">↺ Yenidən</button>
+        <button type="button" class="cam-btn cam-ok hidden" data-c="use">✓ Göndər</button>
+        <span class="cam-sp"></span>
+      </div>`;
+    document.body.appendChild(el);
+    const video = el.querySelector("video"), img = el.querySelector("img"), msg = el.querySelector(".cam-msg");
+    const btn = (c) => el.querySelector(`[data-c="${c}"]`);
+    let stream = null, blob = null, done = false;
+
+    const finish = (val) => {
+      if (done) return; done = true;
+      stream?.getTracks().forEach((t) => t.stop());
+      if (img.src) URL.revokeObjectURL(img.src);
+      el.remove();
+      resolve(val);
+    };
+    const mode = (shot) => {
+      video.classList.toggle("hidden", shot); img.classList.toggle("hidden", !shot);
+      btn("shot").classList.toggle("hidden", shot); btn("close").classList.toggle("hidden", shot);
+      btn("again").classList.toggle("hidden", !shot); btn("use").classList.toggle("hidden", !shot);
+      el.querySelector(".cam-sp").classList.toggle("hidden", shot);
+    };
+
+    (async () => {
+      o.beforeAsk?.();
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(CAM_CONSTRAINTS);
+      } catch (err) {
+        msg.textContent = cameraError(err); msg.classList.remove("hidden"); video.classList.add("hidden");
+        return;
+      } finally { o.afterAsk?.(); }
+      if (done) { stream.getTracks().forEach((t) => t.stop()); return; }
+      video.srcObject = stream;
+      try { await video.play(); } catch {}
+      btn("shot").disabled = false;
+    })();
+
+    el.querySelector(".cam-bar").addEventListener("click", async (e) => {
+      const c = e.target.closest("[data-c]")?.dataset.c;
+      if (!c) return;
+      if (c === "close") return finish(null);
+      if (c === "use") return finish(blob);
+      if (c === "again") { blob = null; mode(false); return; }
+      if (c === "shot") {
+        const w = video.videoWidth, h = video.videoHeight;
+        if (!w || !h) return;
+        const k = Math.min(1, 1800 / Math.max(w, h));
+        const cv = document.createElement("canvas");
+        cv.width = Math.round(w * k); cv.height = Math.round(h * k);
+        cv.getContext("2d").drawImage(video, 0, 0, cv.width, cv.height);
+        blob = await new Promise((r) => cv.toBlob(r, "image/jpeg", 0.85));
+        if (!blob) return;
+        if (img.src) URL.revokeObjectURL(img.src);
+        img.src = URL.createObjectURL(blob);
+        mode(true);
+      }
+    });
+  });
 }
 
 export async function signedUrls(bucket, names, seconds = 3600) {

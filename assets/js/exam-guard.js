@@ -34,7 +34,7 @@ export function exitFullscreen() {
  * @param {{report: (kind:string, details?:string, label?:string) => void}} guard
  */
 export function startExamGuard(guard) {
-  let stopped = false, wasFs = isFs(), lastReport = 0;
+  let stopped = false, wasFs = isFs(), lastReport = 0, pausedUntil = 0;
   const timers = {};
   const shield = document.createElement("div");
   shield.className = "exam-shield hidden";
@@ -69,6 +69,12 @@ export function startExamGuard(guard) {
 
   function update() {
     if (stopped) return;
+    if (Date.now() < pausedUntil) {   // kamera icazəsi pəncərəsi açıqdır — qısa müddət yoxlamırıq
+      Object.keys(timers).forEach(disarm);
+      document.body.classList.remove("exam-shielded");
+      shield.classList.add("hidden");
+      return;
+    }
     const visible = document.visibilityState === "visible";
     state.focus = visible && !document.hasFocus();
     state.split = visible && splitNow();
@@ -113,6 +119,9 @@ export function startExamGuard(guard) {
   update();
 
   return {
+    // Kameraya icazə soruşulanda brauzer öz pəncərəsini açır — bu vaxt pozuntu sayılmasın (ən çox 20 san.)
+    pause(ms = 20000) { pausedUntil = Date.now() + Math.min(ms, 20000); update(); },
+    resume() { pausedUntil = 0; update(); },
     stop() {
       stopped = true;
       clearInterval(poll);

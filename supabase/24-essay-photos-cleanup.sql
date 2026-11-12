@@ -1,5 +1,6 @@
 -- =====================================================================
---  WORDORA — A) Esse dəftərdə: şagird şəklini çəkib yükləyir, müəllim yoxlayır
+--  WORDORA — A) Esse dəftərdə: şagird SINAQ ZAMANI şəklini çəkib göndərir
+--               (kamera saytın içində açılır — qalereya və başqa proqram yox)
 --            B) Nəticələr açılandan sonra şagird sınağı (PDF) yükləyə bilir
 --            C) Sınağın faylları (PDF, dinləmə, esse şəkilləri) silinir — yer
 --               tutmasın; ballar, cavablar, şərhlər QALIR
@@ -72,8 +73,8 @@ grant  execute on function public.can_read_test_file(text) to authenticated;
 -- =====================================================================
 -- A) ESSE ŞƏKİLLƏRİ — gizli "essays" bucket
 --    Yol: <sınaq id>/<şagird id>/<cəhd id>/<fayl>.jpg
---    Şagird yalnız sınağı TƏHVİL VERƏNDƏN SONRA, müəllimin seçdiyi dəqiqə
---    ərzində yükləyə bilir (sınaq zamanı başqa proqram açmaq olmasın deyə).
+--    Şagird yalnız SINAQ GEDƏRKƏN (təhvil verənə qədər) göndərə bilir —
+--    təhvildən sonra şəkil göndərmək olmur (süni intellektdən köçürməsin deyə).
 -- =====================================================================
 create or replace function public.essay_photo_window(p_name text)
 returns boolean
@@ -86,8 +87,7 @@ as $$
        and split_part(p_name, '/', 2) = auth.uid()::text
        and a.user_id = auth.uid()
        and t.essay_photo and t.files_cleaned_at is null
-       and a.status <> 'in_progress' and a.submitted_at is not null
-       and now() <= a.submitted_at + make_interval(mins => t.essay_photo_min) + interval '1 minute');
+       and a.status = 'in_progress' and now() <= a.deadline + interval '30 seconds');
 $$;
 
 create or replace function public.essay_photo_can_add(p_name text)
@@ -121,17 +121,14 @@ drop policy if exists "essays_admin" on storage.objects;
 create policy "essays_admin" on storage.objects for all to authenticated
   using (bucket_id = 'essays' and public.is_admin()) with check (bucket_id = 'essays' and public.is_admin());
 
--- Şagird: şəkil yükləmə vaxtı (təhvil verəndən sonra)
+-- Şagird: öz cəhdi və şəkil göndərmək olarmı (yalnız sınaq gedərkən)
 create or replace function public.my_essay_upload(p_test uuid)
 returns json
 language sql stable security definer set search_path = ''
 as $$
   select json_build_object(
     'attempt_id', a.id, 'user_id', a.user_id,
-    'until', a.submitted_at + make_interval(mins => t.essay_photo_min),
-    'server_now', now(),
-    'open', t.essay_photo and t.files_cleaned_at is null and a.status <> 'in_progress' and a.submitted_at is not null
-            and now() <= a.submitted_at + make_interval(mins => t.essay_photo_min),
+    'open', t.essay_photo and t.files_cleaned_at is null and a.status = 'in_progress' and now() <= a.deadline + interval '30 seconds',
     'cleaned', t.files_cleaned_at is not null)
     from public.attempts a join public.tests t on t.id = a.test_id
    where a.test_id = p_test and a.user_id = auth.uid();
