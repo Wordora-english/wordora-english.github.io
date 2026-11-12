@@ -132,6 +132,24 @@ Write about your favourite hobby.
         <button type="button" class="btn btn-ghost btn-sm" id="add-variant" style="margin-top:12px">+ Variant əlavə et</button>
       </section>
 
+      <section class="card" style="margin-bottom:16px" id="files-box">
+        <h2 style="font-size:1.15rem">4. Esse şəkli, yükləmə və fayllar</h2>
+        <div id="cleaned-note" class="hidden small" style="background:var(--soft);padding:.5rem .7rem;border-radius:10px;margin-bottom:10px"></div>
+        <label class="chk" style="width:max-content;max-width:100%"><input type="checkbox" id="essay-photo"> 📷 Esse <b>dəftərdə</b> yazılır — şagird şəklini çəkib yükləyir</label>
+        <div class="field hidden" id="essay-photo-opts" style="margin:.6rem 0 0">
+          <label for="essay-photo-min">Şəkil yükləmək üçün vaxt (təhvil verdikdən sonra)</label>
+          <select id="essay-photo-min"><option value="3">3 dəqiqə</option><option value="5" selected>5 dəqiqə</option><option value="10">10 dəqiqə</option><option value="15">15 dəqiqə</option></select>
+          <div class="hint">Şagird sınağı təhvil verir, sonra dəftərdəki esseni çəkib yükləyir (6 şəklə qədər). Sınaq vaxtı kamera açılmır — başqa proqrama keçmək olmasın deyə. Sınaqda esse yazmaq üçün yer olmur, yalnız "dəftərə yaz" qeydi görünür.</div>
+        </div>
+        <label class="chk" style="width:max-content;max-width:100%;margin-top:12px"><input type="checkbox" id="allow-download"> 📥 Nəticələr açılandan sonra şagirdlər sınağı (PDF) yükləyə bilsin</label>
+        <div class="hint">Yalnız sınağı yazan şagirdlər, öz variantını yükləyir. Hər səhifəyə şagirdin adı və kodu yazılır.</div>
+        <div class="field" style="margin-top:12px">
+          <label for="auto-clean">Faylları avtomatik sil (yer tutmasın)</label>
+          <select id="auto-clean"><option value="3">Nəticələr açılandan 3 gün sonra</option><option value="7" selected>Nəticələr açılandan 7 gün sonra</option><option value="14">Nəticələr açılandan 14 gün sonra</option><option value="30">Nəticələr açılandan 30 gün sonra</option><option value="">Silmə</option></select>
+          <div class="hint">Silinən: sınağın PDF-i, dinləmə faylı və esse şəkilləri. <b>Qalan:</b> ballar, cavablar, şərhlər, PDF hesabatlar — hamısı yerində qalır.</div>
+        </div>
+      </section>
+
       <section class="card savebar">
         <label class="chk"><input type="checkbox" id="published"> Şagirdlər görsün (paylaş)</label>
         <button class="btn btn-primary" type="submit" id="save">Yadda saxla</button>
@@ -297,6 +315,14 @@ Write about your favourite hobby.
       $("ends").value = toLocalInput(t.ends_at);
       document.querySelectorAll("#classes input").forEach((i) => (i.checked = (t.target_classes || []).includes(i.value)));
       document.querySelectorAll("#sgroups input").forEach((i) => (i.checked = (t.target_groups || []).includes(i.value)));
+      $("essay-photo").checked = !!t.essay_photo;
+      $("essay-photo-min").value = String(t.essay_photo_min || 5);
+      $("allow-download").checked = !!t.allow_download;
+      $("auto-clean").value = "auto_clean_days" in t ? (t.auto_clean_days ? String(t.auto_clean_days) : "") : "7";
+      if (![...$("auto-clean").options].some((o) => o.value === $("auto-clean").value)) $("auto-clean").value = "7";
+      $("essay-photo-opts").classList.toggle("hidden", !t.essay_photo);
+      $("cleaned-note").classList.toggle("hidden", !t.files_cleaned_at);
+      if (t.files_cleaned_at) $("cleaned-note").innerHTML = `🧹 Bu sınağın faylları <b>${esc(new Date(t.files_cleaned_at).toLocaleDateString("az-AZ"))}</b> tarixində silinib (PDF, dinləmə, esse şəkilləri). Ballar və cavablar yerindədir.`;
       document.querySelector(`input[name=rmode][value=${t.results_mode}]`).checked = true;
       $("published").checked = t.is_published;
       $("pdf-current").innerHTML = t.pdf_path ? "✓ PDF yüklənib. Dəyişmək istəsən, yeni fayl seç." : "PDF hələ yüklənməyib.";
@@ -431,6 +457,14 @@ Write about your favourite hobby.
           audio_path, audio_max_plays: Number($("audio-max").value),
           title, description: $("desc").value.trim() || null, pdf_path, questions, duration_min, starts_at, ends_at,
           target_classes: (() => { const c = [...document.querySelectorAll("#classes input:checked")].map((i) => i.value); return c.length ? c : null; })(),
+          ...(() => {   // esse şəkli, yükləmə, avtomatik silmə (24-cü SQL işə salınmayıbsa və dəyişilməyibsə — göndərmirik)
+            const x = {
+              essay_photo: $("essay-photo").checked, essay_photo_min: Number($("essay-photo-min").value) || 5,
+              allow_download: $("allow-download").checked, auto_clean_days: $("auto-clean").value ? Number($("auto-clean").value) : null,
+            };
+            const dflt = !x.essay_photo && x.essay_photo_min === 5 && !x.allow_download && x.auto_clean_days === 7;
+            return (current && "essay_photo" in current) || !dflt ? x : {};
+          })(),
           ...(() => {   // dərs qrupları (23-test-groups.sql işə salınmayıbsa və qrup seçilməyibsə — sahəni göndərmirik)
             const g = [...document.querySelectorAll("#sgroups input:checked")].map((i) => i.value);
             return g.length || (current && "target_groups" in current) ? { target_groups: g.length ? g : null } : {};
@@ -466,7 +500,9 @@ Write about your favourite hobby.
         toast(published ? "Yadda saxlandı və paylaşıldı ✓" : "Yadda saxlandı ✓ (hələ paylaşılmayıb)", "ok");
         await load();
       } catch (err) {
-        toast(/target_groups/.test(err?.message || "") ? "Qruplar üçün əvvəlcə 23-test-groups.sql faylını Supabase-də işə sal" : translateError(err), "err");
+        const m = err?.message || "";
+        toast(/target_groups/.test(m) ? "Qruplar üçün əvvəlcə 23-test-groups.sql faylını Supabase-də işə sal"
+          : /essay_photo|allow_download|auto_clean/.test(m) ? "Bu ayarlar üçün əvvəlcə 24-essay-photos-cleanup.sql faylını Supabase-də işə sal" : translateError(err), "err");
       } finally {
         btn.disabled = false; btn.textContent = "Yadda saxla";
       }
@@ -480,6 +516,7 @@ Write about your favourite hobby.
       app.innerHTML = $("tpl").innerHTML;
 
       $("classes").innerHTML = CLASSES.map((c) => `<label class="chk"><input type="checkbox" value="${esc(c)}"> ${esc(classLabel(c))}</label>`).join("");
+      $("essay-photo").addEventListener("change", () => $("essay-photo-opts").classList.toggle("hidden", !$("essay-photo").checked));
       const { groups: sg, members: sgm } = await loadStudyGroups(true);
       $("sgroups").innerHTML = sg.length
         ? sg.map((g) => `<label class="chk"><input type="checkbox" value="${g.id}"> ${esc(studyGroupLabel(g))} <span class="muted small">(${sgm[g.id]?.size || 0})</span></label>`).join("")

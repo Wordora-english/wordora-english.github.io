@@ -31,6 +31,7 @@
     import { reportError, sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
     import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
     import { startExamGuard, enterFullscreen } from "./assets/js/exam-guard.js";
+    import { compressImage, signedUrls, photoViewer, thumbsHtml, downloadTestFile, MAX_ESSAY_PHOTOS } from "./assets/js/test-files.js";
     import { wordCount, fmtNum, fmtDuration, testState, seededRandom, shuffleWith, sectionScores } from "./assets/js/tests-common.js";
 
     const app = document.getElementById("app");
@@ -100,6 +101,7 @@
           <li>📱 <b>Üzən pəncərə, yan panel (Edge panel), ekranı bölmək</b>, Gemini və digər köməkçilər — hamısı pozuntudur. Başqa proqrama toxunan kimi suallar ekrandan silinir.</li>
           <li>🔔 Sınaqdan əvvəl bildirişləri sustur və ekranı kilidləmə.</li>
           <li>1️⃣ Sınağı yalnız <b>bir dəfə</b> yaza bilərsən.</li>
+          ${hasPhotoEssay() ? `<li>✍️ <b>Esse dəftərdə yazılır.</b> Təhvil verəndən sonra onun şəklini çəkib yükləmək üçün <b>${test.essay_photo_min || 5} dəqiqən</b> olacaq — dəftər və qələm hazır olsun.</li>` : ""}
         </ul>
         <button class="btn btn-primary btn-block" id="go">${resume ? "Davam et" : "Başla"}</button>`);
       $("go").addEventListener("click", begin);
@@ -354,6 +356,7 @@
             return pre + `<div class="oq" data-q="${q.n}">${head}<input class="open" data-n="${q.n}" value="${esc(v)}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Cavabını yaz"></div>`;
           }
           if (q.type === "essay") {
+            if (test.essay_photo) return pre + `<div class="oq q-essay" data-q="${q.n}">${head}<div class="ess-upload" style="margin-top:8px">✍️ <b>Esseni dəftərinə yaz.</b><br><span class="small muted">Sınağı təhvil verəndən sonra onun şəklini çəkib yükləmək üçün <b>${test.essay_photo_min || 5} dəqiqən</b> olacaq.</span></div></div>`;
             return pre + `<div class="oq q-essay" data-q="${q.n}">${head}<textarea class="essay" data-n="${q.n}" spellcheck="false" placeholder="Esseni burada yaz…">${esc(v)}</textarea><div class="wc" id="wc-${q.n}"></div></div>`;
           }
         }
@@ -369,6 +372,7 @@
         if (q.type === "open") {
           return `<div class="q" data-q="${q.n}"><span class="qn">${q.n}</span><input class="open" data-n="${q.n}" value="${esc(v)}" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Cavabını yaz">${pts}</div>`;
         }
+        if (test.essay_photo) return `<div class="q q-essay" data-q="${q.n}"><div class="essay-head"><span class="qn">${q.n}</span> <b>Esse</b> ${pts}</div><div class="ess-upload" style="margin-top:8px">✍️ <b>Esseni dəftərinə yaz.</b><br><span class="small muted">Sınağı təhvil verəndən sonra onun şəklini çəkib yükləmək üçün <b>${test.essay_photo_min || 5} dəqiqən</b> olacaq.</span></div></div>`;
         return `<div class="q q-essay" data-q="${q.n}"><div class="essay-head"><span class="qn">${q.n}</span> <b>Esse</b> ${pts}</div>
           <textarea class="essay" data-n="${q.n}" spellcheck="false" placeholder="Esseni burada yaz…">${esc(v)}</textarea>
           <div class="wc" id="wc-${q.n}"></div></div>`;
@@ -417,6 +421,7 @@
 
     function answeredCount() {
       return test.questions.filter((q) => {
+        if (q.type === "essay" && test.essay_photo) return true;   // esse dəftərdə — şəkli sonra yüklənir
         const v = answers[q.n];
         if (!v) return false;
         if (q.type === "multi") return !String(v).includes("-") && String(v).length >= (q.parts || 4);
@@ -492,8 +497,9 @@
       if (submitted) return;
       if (!auto) {
         const missing = test.questions.length - answeredCount();
-        const essayShort = test.questions.filter((q) => q.type === "essay" && q.min_words && wordCount(answers[q.n]) < q.min_words);
+        const essayShort = test.essay_photo ? [] : test.questions.filter((q) => q.type === "essay" && q.min_words && wordCount(answers[q.n]) < q.min_words);
         let msg = "Sınağı təhvil vermək istəyirsən? Bundan sonra cavabları dəyişmək olmayacaq.";
+        if (hasPhotoEssay()) msg += `\n\n📷 Təhvil verəndən sonra dəftərdəki esseni çəkib yükləmək üçün ${test.essay_photo_min || 5} dəqiqən olacaq.`;
         if (missing) msg += `\n\n${missing} sual cavabsızdır.`;
         if (essayShort.length) msg += `\nEsse minimum söz sayına çatmayıb.`;
         if (!(await askConfirm(msg))) return;
@@ -536,8 +542,115 @@
         <div style="display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap;margin-top:1rem">
           ${my.released ? '<button class="btn btn-primary" id="review">Cavablarıma bax</button>' : ""}
           <a class="btn btn-ghost" href="portal.html">Portala qayıt</a>
-        </div>`);
+        </div>
+        ${my.released ? downloadHtml() : ""}
+        <div id="ess-up"></div>`);
       $("review")?.addEventListener("click", showReview);
+      bindDownload();
+      if (hasPhotoEssay() && !my.paper && !test.is_paper) essayUploadPanel($("ess-up"));
+    }
+
+    // ================= Esse şəkli (təhvildən sonra) =================
+    const hasPhotoEssay = () => !!test?.essay_photo && (test.questions || []).some((q) => q.type === "essay");
+    let essTimer = null, essUploading = false;
+    async function essayUploadPanel(box, readOnly = false) {
+      if (!box) return;
+      const { data: up, error } = await sb.rpc("my_essay_upload", { p_test: testId });
+      if (error || !up) return;
+      const folder = `${testId}/${up.user_id}/${up.attempt_id}`;
+      const off = new Date(up.server_now).getTime() - Date.now();
+      const until = new Date(up.until).getTime();
+      let names = [], urls = {};
+      async function refresh() {
+        const { data: list } = await sb.storage.from("essays").list(folder, { limit: 50, sortBy: { column: "created_at", order: "asc" } });
+        names = (list || []).filter((f) => f.id).map((f) => `${folder}/${f.name}`);
+        urls = await signedUrls("essays", names);
+        draw();
+      }
+      const left = () => Math.max(0, Math.floor((until - (Date.now() + off)) / 1000));
+      function draw() {
+        const open = !readOnly && up.open && left() > 0;
+        if (!open && !names.length) {
+          box.innerHTML = readOnly ? "" : `<div class="ess-upload">📷 ${up.cleaned ? "Esse şəkilləri silinib." : "Esse şəkli yüklənməyib."}</div>`;
+          return;
+        }
+        const s = left();
+        box.innerHTML = `<div class="ess-upload">
+          <div style="display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap;align-items:center">
+            <b>📷 Dəftərdəki esse${names.length ? ` (${names.length} şəkil)` : ""}</b>
+            ${open ? `<span class="ess-timer ${s <= 60 ? "crit" : ""}">⏱ ${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}</span>` : ""}
+          </div>
+          ${open ? `<p class="small muted" style="margin:.3rem 0 .6rem">Esseni dəftərdə aydın işıqda, düz tutaraq çək. Bir neçə səhifədirsə, hər səhifəni ayrıca çək (${MAX_ESSAY_PHOTOS}-ə qədər). Vaxt bitəndən sonra şəkil əlavə etmək olmayacaq.</p>` : ""}
+          <div class="ess-photos">${thumbsHtml(names, urls, { removable: open })}</div>
+          ${open && names.length < MAX_ESSAY_PHOTOS ? `<label class="btn btn-primary btn-block" style="margin-top:.4rem">${essUploading ? "Yüklənir…" : names.length ? "📷 Daha bir şəkil əlavə et" : "📷 Esseni çək / şəkil seç"}
+              <input type="file" accept="image/*" id="ess-file" multiple hidden ${essUploading ? "disabled" : ""}></label>` : ""}
+          ${open && names.length ? '<p class="small" style="margin:.5rem 0 0;color:var(--ok)">✓ Şəkil müəllimə çatdı. Hamısını yükləmisənsə, səhifəni bağlaya bilərsən.</p>' : ""}
+          ${!open && names.length ? '<p class="small muted" style="margin:.4rem 0 0">Müəllim bu şəkillərə baxıb esseni qiymətləndirəcək.</p>' : ""}
+        </div>`;
+        box.querySelectorAll("[data-pv]").forEach((im) => im.onclick = () => photoViewer(names.map((n) => urls[n]), Number(im.dataset.pv)));
+        box.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
+          const { error: e } = await sb.storage.from("essays").remove([b.dataset.del]);
+          if (e) return toast(translateError(e), "err");
+          refresh();
+        });
+        box.querySelector("#ess-file")?.addEventListener("change", async (e) => {
+          const files = [...e.target.files].slice(0, MAX_ESSAY_PHOTOS - names.length);
+          if (!files.length) return;
+          essUploading = true; draw();
+          let ok = 0;
+          for (const f of files) {
+            try {
+              const blob = await compressImage(f);
+              const ext = blob.type === "image/png" ? "png" : blob.type === "image/webp" ? "webp" : "jpg";
+              const name = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+              const { error: ue } = await sb.storage.from("essays").upload(name, blob, { contentType: blob.type || "image/jpeg" });
+              if (ue) throw ue;
+              ok++;
+            } catch (err) {
+              toast(/row-level|security|policy/i.test(err?.message || "") ? "Şəkil yükləmə vaxtı bitib" : translateError(err), "err");
+              break;
+            }
+          }
+          essUploading = false;
+          if (ok) toast(`✓ ${ok} şəkil yükləndi`, "ok");
+          refresh();
+        });
+      }
+      clearInterval(essTimer);
+      if (!readOnly && up.open) essTimer = setInterval(() => {
+        if (essUploading) return;
+        const t = box.querySelector(".ess-timer");
+        const s = left();
+        if (t) { t.textContent = `⏱ ${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; t.classList.toggle("crit", s <= 60); }
+        if (s <= 0) { clearInterval(essTimer); draw(); }
+      }, 1000);
+      window.addEventListener("beforeunload", (e) => { if (essUploading) { e.preventDefault(); e.returnValue = ""; } });
+      await refresh();
+    }
+
+    // ================= Sınağı yükləmək (nəticələr açılandan sonra) =================
+    const canDownload = () => test?.allow_download && !test.files_cleaned_at && (test.pdf_path || test.audio_path || (test.variants || []).some((v) => v.pdf_path));
+    function downloadHtml() {
+      if (!canDownload()) return "";
+      return `<div style="display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap;margin-top:.8rem">
+        ${test.pdf_path || (test.variants || []).some((v) => v.pdf_path) ? '<button class="btn btn-ghost btn-sm" data-dl="pdf">📥 Sınağı yüklə (PDF)</button>' : ""}
+        ${test.audio_path ? '<button class="btn btn-ghost btn-sm" data-dl="audio">🎧 Dinləməni yüklə</button>' : ""}</div>`;
+    }
+    let myVariant = null;
+    function bindDownload() {
+      app.querySelectorAll("[data-dl]").forEach((b) => b.onclick = async () => {
+        const label = b.textContent;
+        b.disabled = true; b.textContent = "Hazırlanır…";
+        try {
+          if (myVariant === null) {
+            const { data } = await sb.rpc("get_my_review", { p_test: testId });
+            myVariant = data?.variant || "A";
+          }
+          await downloadTestFile(test, myVariant, me, b.dataset.dl);
+          if (b.dataset.dl === "pdf") toast("Yükləndi. Faylda adın və kodun yazılıb.", "ok");
+        } catch (err) { toast(translateError(err), "err"); }
+        finally { b.disabled = false; b.textContent = label; }
+      });
     }
 
     async function showReview() {
@@ -557,7 +670,7 @@
         if (q.type === "essay") {
           const crit = Object.entries(rev.c || {});
           return `<div class="rv essay"><div><b>${q.n}. Esse</b> <span class="muted small">${d.words || 0} söz</span> — <b>${data.essay_score !== null ? fmtNum(data.essay_score) : "yoxlanılır"}</b> / ${fmtNum(q.points)}</div>${qText}
-            <div class="rv-essay">${esc(mine) || "<i>boş</i>"}</div>
+            ${test.essay_photo ? '<div class="rv-photos"></div>' : `<div class="rv-essay">${esc(mine) || "<i>boş</i>"}</div>`}
             ${crit.length ? `<div class="rv-crit">${crit.map(([k, v]) => `<span>${esc(k)}: <b>${fmtNum(v)}</b></span>`).join("")}</div>` : ""}
             ${rev.comment ? `<div class="rv-comment">💬 ${esc(rev.comment)}</div>` : ""}</div>`;
         }
@@ -569,13 +682,18 @@
           <span>Düzgün: <code>${esc(keyT ?? (key[q.n] || ""))}</code></span>
           <span class="rv-p">${fmtNum(d.points ?? 0)} / ${fmtNum(q.points)}</span></div>`;
       }).join("");
+      myVariant = data.variant || "A";
       const secs = sectionScores(data.sections, data.questions, det, data.essay_score);
       app.innerHTML = `<div class="container" style="max-width:760px">
         <div class="card" style="margin-bottom:12px"><h1 style="font-size:1.35rem">${esc(data.title)}${data.variant ? ` <span class="var-pill">${esc(data.variant)}</span>` : ""}</h1>
         <div class="big-score" style="text-align:left">${fmtNum(data.score)}<span>/ ${fmtNum(data.total)}</span></div>
-        ${secs.length ? `<div class="sec-bars">${secs.map(secBar).join("")}</div>` : ""}</div>
+        ${secs.length ? `<div class="sec-bars">${secs.map(secBar).join("")}</div>` : ""}
+        ${downloadHtml()}</div>
         <div class="card review">${rows}</div>
         <p class="center" style="margin-top:16px"><a class="btn btn-ghost" href="portal.html">Portala qayıt</a></p></div>`;
+      bindDownload();
+      const ph = app.querySelector(".rv-photos");
+      if (ph) essayUploadPanel(ph, true).then(() => { if (!ph.innerHTML.trim()) ph.innerHTML = `<div class="rv-essay"><i>${test.files_cleaned_at ? "Esse şəkilləri silinib (yer boşaltmaq üçün)" : "şəkil yüklənməyib"}</i></div>`; });
     }
 
     function secBar(x) {

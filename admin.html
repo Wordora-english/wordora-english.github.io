@@ -272,6 +272,7 @@ seed"></textarea>
 
   <script type="module">
     import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, CLASSES, showConfigWarning, MAG_CLASS, SCHOOL_CLASSES, isMag, loadStudyGroups, testAudience } from "./assets/js/app.js";
+    import { testFilesInfo, autoCleanTests } from "./assets/js/test-files.js";
 
     // ---- Bölmə: məktəb və ya magistratura (şagirdlər, materiallar, elanlar, tapşırıqlar ayrıdır) ----
     let group = "school";
@@ -454,7 +455,7 @@ seed"></textarea>
 
     // ================= Yaddaş (pulsuz plan: fayllar 1 GB, baza 500 MB) =================
     const LIMIT_FILES = 1024 ** 3, LIMIT_DB = 500 * 1024 ** 2;
-    const BUCKET_LABELS = { materials: "Materiallar", tests: "Sınaq PDF / audio", homework: "Ev tapşırıqları" };
+    const BUCKET_LABELS = { materials: "Materiallar", tests: "Sınaq PDF / audio", homework: "Ev tapşırıqları", essays: "Esse şəkilləri", chat: "Chat faylları" };
     const mb = (b) => (b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(2)} GB` : `${(b / 1024 ** 2).toFixed(b < 10 * 1024 ** 2 ? 1 : 0)} MB`);
     function usageBar(label, used, limit) {
       const pct = Math.min(100, Math.round((used / limit) * 100));
@@ -973,7 +974,7 @@ seed"></textarea>
             <div style="min-width:0">
               <h3>${esc(t.title)} ${pill} ${t.results_released ? '<span class="pill on">Nəticələr açıq</span>' : ""}</h3>
               <div class="test-meta">
-                <span>${esc(classes)}</span><span>${t.duration_min} dəq</span>${t.audio_path ? "<span>🎧 dinləmə</span>" : ""}${t.variants?.length ? `<span>🅰 ${["A", ...t.variants.map((v) => v.code)].join(", ")} variantları</span>` : ""}${t.is_paper ? "<span>📝 kağız sınaq</span>" : ""}
+                <span>${esc(classes)}</span><span>${t.duration_min} dəq</span>${t.audio_path ? "<span>🎧 dinləmə</span>" : ""}${t.variants?.length ? `<span>🅰 ${["A", ...t.variants.map((v) => v.code)].join(", ")} variantları</span>` : ""}${t.is_paper ? "<span>📝 kağız sınaq</span>" : ""}${t.essay_photo ? "<span>📷 esse dəftərdə</span>" : ""}${t.files_cleaned_at ? "<span>🧹 fayllar silinib</span>" : ""}
                 <span>${(t.questions || []).length} sual · ${Math.round(total * 100) / 100} bal</span>
                 ${t.starts_at ? `<span>Başlama: ${formatDate(t.starts_at)}</span>` : ""}
                 ${t.ends_at ? `<span>Son: ${formatDate(t.ends_at)}</span>` : ""}
@@ -1004,7 +1005,8 @@ seed"></textarea>
         const { data: k } = await sb.from("test_keys").select("answers, variants").eq("test_id", id).maybeSingle();
         const { id: _, created_at, ...rest } = t;
         const { data: n, error } = await sb.from("tests")
-          .insert({ ...rest, title: `${t.title} (kopya)`, is_published: false, results_released: false, starts_at: null, ends_at: null })
+          .insert({ ...rest, title: `${t.title} (kopya)`, is_published: false, results_released: false, starts_at: null, ends_at: null,
+                    ...("files_cleaned_at" in t ? { files_cleaned_at: null, results_released_at: null } : {}) })
           .select("id").single();
         if (error) return toast(translateError(error), "err");
         await sb.from("test_keys").insert({ test_id: n.id, answers: k?.answers || {}, ...(k?.variants ? { variants: k.variants } : {}) });
@@ -1018,8 +1020,11 @@ seed"></textarea>
       }
       if (action === "delete") {
         if (!confirm(`"${t.title}" və bütün nəticələri silinsin? Bunu geri qaytarmaq olmur.`)) return;
+        let essays = [];
+        try { essays = ((await testFilesInfo(id)).essays || []).map((e) => e.name); } catch {}
         const { error } = await sb.from("tests").delete().eq("id", id);
         if (error) return toast(translateError(error), "err");
+        for (let k = 0; k < essays.length; k += 100) { try { await sb.storage.from("essays").remove(essays.slice(k, k + 100)); } catch {} }
         if (t.pdf_path) {
           const { count } = await sb.from("tests").select("id", { count: "exact", head: true }).eq("pdf_path", t.pdf_path);
           if (!count) await sb.storage.from("tests").remove([t.pdf_path]);
@@ -1379,6 +1384,7 @@ seed"></textarea>
 
       app.innerHTML = document.getElementById("tpl-admin").innerHTML;
       document.getElementById("hello").textContent = `Xoş gəldin, ${me.full_name}.`;
+      setTimeout(autoCleanTests, 4000);   // bitmiş sınaqların köhnə faylları (vaxtı çatıbsa)
 
       setupGroup();
       document.getElementById("mat-file").addEventListener("change", (e) => {

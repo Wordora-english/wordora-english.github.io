@@ -52,6 +52,7 @@
 
   <script type="module">
     import { sb, configured, getMyProfile, esc, formatDate, toast, translateError, classLabel, loadStudyGroups, testAudience, inTestAudience } from "./assets/js/app.js";
+    import { testFilesInfo, cleanTestFiles, signedUrls, thumbsHtml, photoViewer, fmtMB } from "./assets/js/test-files.js";
     import { fmtNum, wordCount, sectionScores } from "./assets/js/tests-common.js";
     import { downloadXlsx, safeName } from "./assets/js/xlsx-lite.js";
     import { CERT_MIN_PERCENT, RUBRIC } from "./assets/js/config.js";
@@ -61,6 +62,7 @@
     let test, key, attempts = [], notStarted = [], violCount = {}, qcs = [], retakes = {}, archive = {};
     let vkeys = {}, assigns = {}, anVar = "A";
     let sGroups = [], sMembers = {}, sgLoaded = false;   // dərs qrupları
+    let fileInfo = null, essByAttempt = {}, essUrls = {};   // sınaq faylları və esse şəkilləri
     let allStudents = [], pf = { edit: null, user: "", name: "", cls: "", variant: "A", text: "" };   // kağız forması
     const isPaper = () => !!test?.is_paper;
     const hasVar = () => (test.variants || []).length > 0;
@@ -108,6 +110,15 @@
       if (t.target_groups?.length && !sgLoaded) { ({ groups: sGroups, members: sMembers } = await loadStudyGroups(true)); sgLoaded = true; }
       notStarted = (studs || []).filter((s) => !took.has(s.id) && inTestAudience(t, s, sMembers));
 
+      // fayllar: esse şəkilləri (şagird → cəhd) və silmə üçün ölçü
+      fileInfo = null; essByAttempt = {};
+      try { fileInfo = await testFilesInfo(testId); } catch {}
+      if (fileInfo) {
+        for (const e of fileInfo.essays || []) (essByAttempt[e.name.split("/")[2]] ||= []).push(e.name);
+        const need = (fileInfo.essays || []).map((e) => e.name).filter((n) => !essUrls[n]);
+        if (need.length) Object.assign(essUrls, await signedUrls("essays", need));
+      }
+
       // Sınaq zamanı pozuntular
       violCount = {};
       if (attempts.length && !t.is_paper) {
@@ -142,6 +153,7 @@
               <button class="btn btn-ghost btn-sm" id="csv">⬇ Excel</button>
               <button class="btn btn-ghost btn-sm" id="pdf-all" title="Hər şagird üçün bir səhifə — çap etmək və ya göndərmək üçün">📄 PDF hesabatlar</button>
               <button class="btn btn-ghost btn-sm" id="regrade" title="Cavab açarını dəyişmisənsə">Yenidən hesabla</button>
+              ${fileInfo && !test.files_cleaned_at && (fileInfo.tests?.length || fileInfo.essays?.length) ? `<button class="btn btn-ghost btn-sm" id="clean-files" title="PDF, dinləmə və esse şəkilləri silinir — ballar qalır">🧹 Faylları sil (${fmtMB(fileInfo.bytes)})</button>` : ""}
               <a class="btn btn-ghost btn-sm" href="test-edit.html?id=${test.id}">Redaktə</a>
               <button class="btn btn-ghost btn-sm" id="refresh">↻</button>
             </div>
@@ -149,7 +161,9 @@
           <p class="small muted" style="margin:.6rem 0 0">${test.results_released
             ? "✅ Nəticələr açıqdır — şagirdlər balını, öz cavablarını və düzgün cavabları görür."
             : test.results_mode === "instant" ? "Şagirdlər təhvil verən kimi balını görür; düzgün cavablar nəticələri açanda görünəcək."
-            : "🔒 Nəticələr bağlıdır — şagirdlər hələ heç nə görmür."}</p>
+            : "🔒 Nəticələr bağlıdır — şagirdlər hələ heç nə görmür."}
+            ${test.results_released && test.allow_download && !test.files_cleaned_at ? " 📥 Sınağı (PDF) yükləyə bilirlər." : ""}</p>
+          ${filesNote()}
         </div>
 
         ${isPaper() ? paperForm() : ""}
@@ -181,7 +195,7 @@
             <span class="ns-act">${hasVar() && !isPaper() ? `<select class="var-assign" data-assign="${s.id}" title="Variant">${["", ...varCodes()].map((c) => `<option value="${c}" ${(assigns[s.id] || "") === c ? "selected" : ""}>${c ? `${c} variantı` : "Variant: avto"}</option>`).join("")}</select>` : ""}
             ${isPaper() ? `<button class="btn btn-ghost btn-sm" data-pf-pick="${s.id}">✏️ Daxil et</button>` : retakes[s.id] ? `<span class="ns-act"><span class="pill wait">🔄 ${formatDate(retakes[s.id])} tarixinə qədər yaza bilər</span> <button class="btn btn-ghost btn-sm" data-retake-cancel="${s.id}">Ləğv et</button></span>`
               : closed ? `<button class="btn btn-ghost btn-sm" data-retake="${s.id}">🔄 Yazmağa icazə ver</button>` : ""}</span>
-          </div>`).join("")}</div>${closed ? "" : '<div class="muted" style="margin-top:6px">${isPaper() ? "Saytda qeydiyyatı olan şagirdlər. Siyahıda olmayanları formada adı ilə daxil edə bilərsən." : "Sınaq hələ açıqdır — yazmayanlar özləri girib yaza bilər."}</div>'}` : "Hamı yazıb 👍"}</div>
+          </div>`).join("")}</div>${closed ? "" : `<div class="muted" style="margin-top:6px">${isPaper() ? "Saytda qeydiyyatı olan şagirdlər. Siyahıda olmayanları formada adı ilə daxil edə bilərsən." : "Sınaq hələ açıqdır — yazmayanlar özləri girib yaza bilər."}</div>`}` : "Hamı yazıb 👍"}</div>
       `;
       bind();
       rendered = true;
@@ -201,6 +215,14 @@
       const essays = a.paper ? "" : essayQs().map((q) => {
         const txt = a.answers?.[q.n] || "";
         const w = wordCount(txt);
+        if (test.essay_photo) {
+          const ph = essByAttempt[a.id] || [];
+          return `<div class="essay-box">
+          <b>Esse (${q.n})</b> <span class="muted small">📷 dəftərdən · ${ph.length} şəkil${q.min_words ? ` · minimum ${q.min_words} söz` : ""}</span>
+          ${ph.length ? `<div class="ess-photos" data-ph="${a.id}">${thumbsHtml(ph, essUrls)}</div><div class="small muted">Şəkilə toxun — böyüt, çevir.</div>`
+            : `<div class="txt"><i>${test.files_cleaned_at ? "Şəkillər silinib (yer boşaltmaq üçün)" : "Şəkil yüklənməyib"}</i></div>`}
+        </div>`;
+        }
         return `<div class="essay-box">
           <b>Esse (${q.n})</b> <span class="muted small">${w} söz${q.min_words ? ` · minimum ${q.min_words}` : ""}${q.min_words && w < q.min_words ? ' — <span style="color:var(--bad)">azdır</span>' : ""}</span>
           <div class="txt">${esc(txt) || "<i>boşdur</i>"}</div>
@@ -459,7 +481,33 @@
       }).join("");
     }
 
+    function filesNote() {
+      if (!("files_cleaned_at" in test)) return "";
+      if (test.files_cleaned_at) return `<p class="small muted" style="margin:.3rem 0 0">🧹 Faylları <b>${formatDate(test.files_cleaned_at)}</b> silinib (PDF, dinləmə, esse şəkilləri). Ballar, cavablar və şərhlər yerindədir.</p>`;
+      if (!test.auto_clean_days) return "";
+      if (test.results_released && test.results_released_at) {
+        const when = new Date(new Date(test.results_released_at).getTime() + test.auto_clean_days * 864e5);
+        const end = test.ends_at && new Date(test.ends_at) > when ? new Date(test.ends_at) : when;
+        return `<p class="small muted" style="margin:.3rem 0 0">🧹 Fayllar <b>${formatDate(end.toISOString())}</b> tarixindən sonra avtomatik silinəcək (ballar qalır).</p>`;
+      }
+      return `<p class="small muted" style="margin:.3rem 0 0">🧹 Nəticələri açandan ${test.auto_clean_days} gün sonra fayllar avtomatik silinəcək (ballar qalır).</p>`;
+    }
+
     function bind() {
+      const cleanBtn = document.getElementById("clean-files");
+      if (cleanBtn) cleanBtn.onclick = async () => {
+        const n = fileInfo.essays?.length || 0;
+        if (!confirm(`Bu sınağın faylları silinsin?\n\n• Sınağın PDF-i və dinləmə faylı\n${n ? `• ${n} esse şəkli\n` : ""}\nBallar, cavablar, şərhlər və PDF hesabatlar QALIR.\nŞagirdlər daha sınağı yükləyə bilməyəcək. Faylları geri qaytarmaq olmur.`)) return;
+        try {
+          const info = await cleanTestFiles(testId, fileInfo);
+          toast(`🧹 Silindi — ${fmtMB(info.bytes)} yer boşaldı`, "ok");
+        } catch (err) { return toast(translateError(err), "err"); }
+        if (await load()) render();
+      };
+      app.querySelectorAll("[data-ph]").forEach((box) => {
+        const names = essByAttempt[box.dataset.ph] || [];
+        box.querySelectorAll("[data-pv]").forEach((im) => im.onclick = () => photoViewer(names.map((x) => essUrls[x]), Number(im.dataset.pv)));
+      });
       document.getElementById("refresh").onclick = async () => { if (await load()) render(); };
       document.getElementById("release").onclick = async () => {
         const open = !test.results_released;
