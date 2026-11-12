@@ -51,7 +51,7 @@
   <main class="container" id="app"><div class="spinner"></div></main>
 
   <script type="module">
-    import { sb, configured, getMyProfile, esc, formatDate, toast, translateError, classLabel } from "./assets/js/app.js";
+    import { sb, configured, getMyProfile, esc, formatDate, toast, translateError, classLabel, loadStudyGroups, testAudience, inTestAudience } from "./assets/js/app.js";
     import { fmtNum, wordCount, sectionScores } from "./assets/js/tests-common.js";
     import { downloadXlsx, safeName } from "./assets/js/xlsx-lite.js";
     import { CERT_MIN_PERCENT, RUBRIC } from "./assets/js/config.js";
@@ -60,6 +60,7 @@
     const testId = new URLSearchParams(location.search).get("id");
     let test, key, attempts = [], notStarted = [], violCount = {}, qcs = [], retakes = {}, archive = {};
     let vkeys = {}, assigns = {}, anVar = "A";
+    let sGroups = [], sMembers = {}, sgLoaded = false;   // dərs qrupları
     let allStudents = [], pf = { edit: null, user: "", name: "", cls: "", variant: "A", text: "" };   // kağız forması
     const isPaper = () => !!test?.is_paper;
     const hasVar = () => (test.variants || []).length > 0;
@@ -104,8 +105,8 @@
       assigns = Object.fromEntries((va || []).map((x) => [x.user_id, x.variant]));
       if (!varCodes().includes(anVar)) anVar = "A";
       const took = new Set(attempts.map((a) => a.user_id));
-      const cls = t.target_classes || [];
-      notStarted = (studs || []).filter((s) => !took.has(s.id) && (!cls.length || cls.includes(s.class_name)));
+      if (t.target_groups?.length && !sgLoaded) { ({ groups: sGroups, members: sMembers } = await loadStudyGroups(true)); sgLoaded = true; }
+      notStarted = (studs || []).filter((s) => !took.has(s.id) && inTestAudience(t, s, sMembers));
 
       // Sınaq zamanı pozuntular
       violCount = {};
@@ -134,7 +135,7 @@
         <div class="card" style="margin-bottom:16px">
           <div class="res-head">
             <div><h1 style="font-size:1.45rem;margin-bottom:.2rem">${esc(test.title)}${isPaper() ? ' <span class="pill done">📝 Kağız sınaq</span>' : ""}</h1>
-              <div class="muted small">${test.target_classes?.length ? test.target_classes.map(classLabel).join(", ") : "Bütün siniflər"} · ${test.duration_min} dəq · ${(test.questions || []).length} sual · ${fmtNum(T)} bal
+              <div class="muted small">${esc(testAudience(test, sGroups))} · ${test.duration_min} dəq · ${(test.questions || []).length} sual · ${fmtNum(T)} bal
               ${test.ends_at ? ` · son: ${formatDate(test.ends_at)}` : ""}</div></div>
             <div class="res-actions">
               <button class="btn ${test.results_released ? "btn-warn" : "btn-ok"} btn-sm" id="release">${test.results_released ? "Nəticələri bağla" : "Nəticələri şagirdlərə aç"}</button>
@@ -307,9 +308,8 @@
       return `<div class="ans ${cls === "empty" ? "" : cls}"><b>${q.n}</b> ${esc(a || "—")}${cls !== "ok" && a ? ` <span style="opacity:.6">→ ${esc(k)}</span>` : ""}</div>`;
     }
     function pfStudents() {
-      const cls = test.target_classes || [];
       const entered = new Set(attempts.map((a) => a.user_id).filter(Boolean));
-      return allStudents.filter((s) => (!cls.length || cls.includes(s.class_name)) && (!entered.has(s.id) || s.id === pf.user))
+      return allStudents.filter((s) => inTestAudience(test, s, sMembers) && (!entered.has(s.id) || s.id === pf.user))
         .sort((a, b) => (Number(a.class_name) || 99) - (Number(b.class_name) || 99) || String(a.class_name).localeCompare(String(b.class_name)) || a.full_name.localeCompare(b.full_name, "az"));
     }
     function paperForm() {

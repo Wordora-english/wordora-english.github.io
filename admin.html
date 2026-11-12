@@ -271,7 +271,7 @@ seed"></textarea>
   </template>
 
   <script type="module">
-    import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, CLASSES, showConfigWarning, MAG_CLASS, SCHOOL_CLASSES, isMag } from "./assets/js/app.js";
+    import { sb, configured, getMyProfile, logout, esc, formatDate, classLabel, toast, translateError, CLASSES, showConfigWarning, MAG_CLASS, SCHOOL_CLASSES, isMag, loadStudyGroups, testAudience } from "./assets/js/app.js";
 
     // ---- Bölmə: məktəb və ya magistratura (şagirdlər, materiallar, elanlar, tapşırıqlar ayrıdır) ----
     let group = "school";
@@ -945,9 +945,10 @@ seed"></textarea>
     let tests = [];
     async function loadTests() {
       const box = document.getElementById("tests-list");
-      const [{ data, error }, { data: att }] = await Promise.all([
+      const [{ data, error }, { data: att }, { groups: sGroups }] = await Promise.all([
         sb.from("tests").select("*").order("created_at", { ascending: false }),
         sb.from("attempts").select("test_id, status"),
+        loadStudyGroups(),
       ]);
       if (error) { box.innerHTML = `<div class="card empty">${esc(translateError(error))}<br><span class="small">04-tests.sql işə salınıb?</span></div>`; return; }
       tests = data;
@@ -966,7 +967,7 @@ seed"></textarea>
         else if (t.starts_at && now < new Date(t.starts_at)) pill = '<span class="pill wait">Gözləyir</span>';
         else if (t.ends_at && now >= new Date(t.ends_at)) pill = '<span class="pill done">Bitib</span>';
         else pill = '<span class="pill live">Açıqdır</span>';
-        const classes = t.target_classes?.length ? t.target_classes.map(classLabel).join(", ") : "Bütün siniflər";
+        const classes = testAudience(t, sGroups);
         return `
           <article class="card test-card">
             <div style="min-width:0">

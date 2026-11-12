@@ -57,7 +57,9 @@
           <div class="field"><label for="starts">Başlama (istəyə görə)</label><input id="starts" type="datetime-local"></div>
           <div class="field"><label for="ends">Son tarix (istəyə görə)</label><input id="ends" type="datetime-local"></div>
         </div>
-        <div class="field"><label>Kimlər yaza bilər</label><div class="chk-row" id="classes"></div><div class="hint">Heç biri seçilməsə — bütün siniflər.</div></div>
+        <div class="field"><label>Kimlər yaza bilər — siniflər</label><div class="chk-row" id="classes"></div></div>
+        <div class="field" id="groups-field"><label>Kimlər yaza bilər — dərs qrupları</label><div class="chk-row" id="sgroups"></div>
+          <div class="hint">Sinif və ya qrup seçə bilərsən (hər ikisini də). Sınağı yalnız seçilən siniflərin və seçilən qrupların şagirdləri görür — başqa qrup görmür. Heç nə seçilməsə — bütün şagirdlər görür.</div></div>
         <div class="field">
           <label>Nəticə nə vaxt görünsün</label>
           <div class="chk-row">
@@ -138,7 +140,7 @@ Write about your favourite hobby.
   </template>
 
   <script type="module">
-    import { sb, configured, getMyProfile, esc, toast, translateError, CLASSES, classLabel } from "./assets/js/app.js";
+    import { sb, configured, getMyProfile, esc, toast, translateError, CLASSES, classLabel, loadStudyGroups, studyGroupLabel } from "./assets/js/app.js";
     import { parseKey, distributePoints, totalPoints, TYPE_LABELS, OPTION_SETS, toLocalInput, fromLocalInput, fmtNum, parseSections, formatSections } from "./assets/js/tests-common.js";
 
     const app = document.getElementById("app");
@@ -294,6 +296,7 @@ Write about your favourite hobby.
       $("starts").value = toLocalInput(t.starts_at);
       $("ends").value = toLocalInput(t.ends_at);
       document.querySelectorAll("#classes input").forEach((i) => (i.checked = (t.target_classes || []).includes(i.value)));
+      document.querySelectorAll("#sgroups input").forEach((i) => (i.checked = (t.target_groups || []).includes(i.value)));
       document.querySelector(`input[name=rmode][value=${t.results_mode}]`).checked = true;
       $("published").checked = t.is_published;
       $("pdf-current").innerHTML = t.pdf_path ? "✓ PDF yüklənib. Dəyişmək istəsən, yeni fayl seç." : "PDF hələ yüklənməyib.";
@@ -428,6 +431,10 @@ Write about your favourite hobby.
           audio_path, audio_max_plays: Number($("audio-max").value),
           title, description: $("desc").value.trim() || null, pdf_path, questions, duration_min, starts_at, ends_at,
           target_classes: (() => { const c = [...document.querySelectorAll("#classes input:checked")].map((i) => i.value); return c.length ? c : null; })(),
+          ...(() => {   // dərs qrupları (23-test-groups.sql işə salınmayıbsa və qrup seçilməyibsə — sahəni göndərmirik)
+            const g = [...document.querySelectorAll("#sgroups input:checked")].map((i) => i.value);
+            return g.length || (current && "target_groups" in current) ? { target_groups: g.length ? g : null } : {};
+          })(),
           results_mode: document.querySelector("input[name=rmode]:checked").value,
           is_published: published,
           content: { ...(mode === "online" ? { mode: "online", shuffle: $("shuffle").checked } : {}), ...(sec.sections.length ? { sections: sec.sections } : {}) },
@@ -459,7 +466,7 @@ Write about your favourite hobby.
         toast(published ? "Yadda saxlandı və paylaşıldı ✓" : "Yadda saxlandı ✓ (hələ paylaşılmayıb)", "ok");
         await load();
       } catch (err) {
-        toast(translateError(err), "err");
+        toast(/target_groups/.test(err?.message || "") ? "Qruplar üçün əvvəlcə 23-test-groups.sql faylını Supabase-də işə sal" : translateError(err), "err");
       } finally {
         btn.disabled = false; btn.textContent = "Yadda saxla";
       }
@@ -473,6 +480,10 @@ Write about your favourite hobby.
       app.innerHTML = $("tpl").innerHTML;
 
       $("classes").innerHTML = CLASSES.map((c) => `<label class="chk"><input type="checkbox" value="${esc(c)}"> ${esc(classLabel(c))}</label>`).join("");
+      const { groups: sg, members: sgm } = await loadStudyGroups(true);
+      $("sgroups").innerHTML = sg.length
+        ? sg.map((g) => `<label class="chk"><input type="checkbox" value="${g.id}"> ${esc(studyGroupLabel(g))} <span class="muted small">(${sgm[g.id]?.size || 0})</span></label>`).join("")
+        : '<span class="muted small">Hələ dərs qrupu yoxdur — Davamiyyət bölməsində yarada bilərsən.</span>';
 
       // Rejim: PDF + cavab kartı / tam onlayn
       window.setMode = setMode;

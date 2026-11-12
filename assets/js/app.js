@@ -224,3 +224,28 @@ export async function logout() {
 // Ulduz ikonu (loqodakı qızılı ulduz)
 export const STAR_SVG =
   '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 0c.6 6.2 5.8 11.4 12 12-6.2.6-11.4 5.8-12 12-.6-6.2-5.8-11.4-12-12C6.2 11.4 11.4 6.2 12 0z"/></svg>';
+
+// Dərs qrupları (davamiyyət cədvəlləri): "24" → "2-ci və 4-cü gün"
+export const SCHEDULE_NAMES = { "13": "1-ci və 3-cü gün", "35": "3-cü və 5-ci gün", "24": "2-ci və 4-cü gün", "67": "6-cı və 7-ci gün" };
+export const studyGroupLabel = (g) => `${SCHEDULE_NAMES[g.schedule] || g.schedule} · ${g.name}`;
+// Sınağın kimə açıq olduğu: siniflər + dərs qrupları (heç biri yoxdursa — hamı)
+export async function loadStudyGroups(withMembers = false) {
+  const { data, error } = await sb.from("study_groups").select("id, schedule, name, sort, created_at").order("schedule").order("sort").order("created_at");
+  if (error) return { groups: [], members: {} };
+  const members = {};
+  if (withMembers && data.length) {
+    const { data: m } = await sb.from("study_group_members").select("group_id, user_id");
+    for (const x of m || []) (members[x.group_id] ||= new Set()).add(x.user_id);
+  }
+  return { groups: data, members };
+}
+export function testAudience(t, groups = []) {
+  const cls = (t.target_classes || []).map(classLabel);
+  const grp = (t.target_groups || []).map((id) => { const g = groups.find((x) => x.id === id); return g ? studyGroupLabel(g) : "silinmiş qrup"; });
+  return cls.length || grp.length ? [...cls, ...grp].join(", ") : "Bütün siniflər";
+}
+export function inTestAudience(t, student, members = {}) {
+  const cls = t.target_classes || [], grp = t.target_groups || [];
+  if (!cls.length && !grp.length) return true;
+  return cls.includes(student.class_name) || grp.some((g) => members[g]?.has(student.id));
+}
