@@ -171,3 +171,91 @@ export function parseGrades(text, rubric, perCrit, maxPoints) {
   }
   return { ok, bad };
 }
+
+// =========================================================
+//  Claude ilə AVTOMATİK yoxlama (Anthropic API, müəllimin açarı ilə)
+// =========================================================
+export const AI_MODEL = "claude-sonnet-5-5";
+
+async function toBase64(url) {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error("Esse şəkli açılmadı");
+  const blob = await res.blob();
+  return await new Promise((ok, bad) => {
+    const r = new FileReader();
+    r.onload = () => ok({ data: String(r.result).split(",")[1], type: /png|webp|jpeg/.test(blob.type) ? blob.type : "image/jpeg" });
+    r.onerror = () => bad(new Error("Şəkil oxunmadı"));
+    r.readAsDataURL(blob);
+  });
+}
+
+function aiError(status, body) {
+  const msg = body?.error?.message || "";
+  if (status === 401) return "API açarı yanlışdır və ya silinib. Açarı yenidən yaz.";
+  if (status === 400 && /credit|balance|billing/i.test(msg)) return "Anthropic hesabında pul bitib. console.anthropic.com → Billing-dən balans artır.";
+  if (status === 404 || /model/i.test(msg)) return "Model tapılmadı: " + msg;
+  if (status === 403) return "Bu açara icazə yoxdur: " + msg;
+  return `Claude xətası (${status}): ${msg || "naməlum"}`;
+}
+
+/**
+ * Bir esseni yoxla. Qaytarır: { crit: {Məzmun: n, ...}, total, comment }
+ */
+export async function aiGradeEssay({ key, task, minWords, rubric, perCrit, maxPoints, text, photoUrls = [] }) {
+  const crits = Object.fromEntries(rubric.map((c) => [c, { type: "number", minimum: 0, maximum: perCrit }]));
+  const tool = {
+    name: "grade",
+    description: "Esse üçün balları və şərhi qeyd et",
+    input_schema: {
+      type: "object",
+      properties: {
+        criteria: { type: "object", properties: crits, required: rubric },
+        comment: { type: "string", description: "Azerbaijani, 1-2 sentences, to the student" },
+        words: { type: "integer", description: "approximate number of English words in the essay" },
+      },
+      required: ["criteria", "comment"],
+    },
+  };
+  const system = `You are an experienced English teacher in Azerbaijan grading school students' English essays. Be fair, consistent and not too harsh for the school level.
+Score 4 criteria, each from 0 to ${perCrit} in steps of 0.5:
+- Məzmun (content): answers the task/topic, ideas developed, enough length.
+- Qrammatika (grammar): tenses, agreement, word order, articles.
+- Lüğət (vocabulary): range, correct word choice, spelling.
+- Quruluş (organization): logical order, paragraphs/linking words, coherent.
+Rules: ${minWords ? `Minimum length is ${minWords} words — if the essay is shorter, clearly lower Məzmun and Quruluş in proportion.` : ""} If it is off-topic, Məzmun is at most 1. If the essay is empty, unreadable, copied task text only, or not in English, give 0 for every criterion and say why.
+If the essay is given as photos of a notebook, read the handwriting carefully and ignore crossed-out words.
+The comment must be in Azerbaijani (use ə, ğ, ı, ö, ü, ç, ş correctly), 1–2 sentences, addressed to the student with "sən": one strength and the main mistakes with 1–2 short concrete examples from the essay (e.g. "we was" → "we were").`;
+  const content = [];
+  for (const u of photoUrls.slice(0, 6)) {
+    const img = await toBase64(u);
+    content.push({ type: "image", source: { type: "base64", media_type: img.type, data: img.data } });
+  }
+  content.push({ type: "text", text: `Task / topic: ${task || "(not given — judge from the essay itself)"}\n\n${photoUrls.length ? `The student's essay is in the ${photoUrls.length} photo(s) above.` : `Student's essay:\n"""\n${text}\n"""`}\n\nGrade it with the "grade" tool.` });
+
+  let res, body;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({ model: AI_MODEL, max_tokens: 800, system, tools: [tool], tool_choice: { type: "tool", name: "grade" }, messages: [{ role: "user", content }] }),
+    });
+    body = await res.json().catch(() => ({}));
+    if (res.ok) break;
+    if (![429, 500, 502, 503, 529].includes(res.status)) throw new Error(aiError(res.status, body));
+    await new Promise((r) => setTimeout(r, 4000 * (attempt + 1)));   // çox yüklənib — gözlə, yenidən cəhd et
+  }
+  if (!res.ok) throw new Error(aiError(res.status, body));
+  const out = (body.content || []).find((c) => c.type === "tool_use")?.input;
+  if (!out?.criteria) throw new Error("Claude cavabı oxunmadı");
+  const crit = Object.fromEntries(rubric.map((c) => {
+    const v = Math.max(0, Math.min(perCrit, Number(out.criteria[c]) || 0));
+    return [c, Math.round(v * 2) / 2];
+  }));
+  const total = Math.min(maxPoints, Math.round(Object.values(crit).reduce((s, v) => s + v, 0) * 100) / 100);
+  return { crit, total, comment: String(out.comment || "").slice(0, 1500), words: out.words };
+}

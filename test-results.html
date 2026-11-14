@@ -160,7 +160,8 @@
               <button class="btn btn-ghost btn-sm" id="csv">⬇ Excel</button>
               <button class="btn btn-ghost btn-sm" id="pdf-all" title="Hər şagird üçün bir səhifə — çap etmək və ya göndərmək üçün">📄 PDF hesabatlar</button>
               <button class="btn btn-ghost btn-sm" id="regrade" title="Cavab açarını dəyişmisənsə">Yenidən hesabla</button>
-              ${essayQs().length && !isPaper() ? `<button class="btn btn-ghost btn-sm" id="ess-export" title="Bütün esseləri bir PDF-də yüklə və Claude-a göndər">🤖 Esseləri Claude üçün yüklə</button>
+              ${essayQs().length && !isPaper() ? `<button class="btn btn-primary btn-sm" id="ess-ai" title="Bütün esseləri Claude avtomatik yoxlasın">✨ Claude esseləri yoxlasın</button>
+              <button class="btn btn-ghost btn-sm" id="ess-export" title="Bütün esseləri bir PDF-də yüklə və Claude-a göndər">🤖 Esseləri Claude üçün yüklə</button>
               <button class="btn btn-ghost btn-sm" id="ess-import" title="Claude-un yazdığı balları sayta köçür">📋 Claude-un ballarını yapışdır</button>` : ""}
               ${fileInfo && !test.files_cleaned_at && (fileInfo.tests?.length || fileInfo.essays?.length) ? `<button class="btn btn-ghost btn-sm" id="clean-files" title="PDF, dinləmə və esse şəkilləri silinir — ballar qalır">🧹 Faylları sil (${fmtMB(fileInfo.bytes)})</button>` : ""}
               <a class="btn btn-ghost btn-sm" href="test-edit.html?id=${test.id}">Redaktə</a>
@@ -242,7 +243,7 @@
       const rev = a.essay_review || {};
       const essayGrade = essayQs().length ? `
         <div class="essay-box" style="width:100%">
-          <b>Qiymətləndirmə</b> <span class="muted small">— hər meyar maksimum ${fmtNum(perCrit())} bal</span>
+          <b>Qiymətləndirmə</b> <span class="muted small">— hər meyar maksimum ${fmtNum(perCrit())} bal</span>${rev.ai ? ' <span class="pill" style="background:var(--soft)">✨ Claude yoxlayıb — bax, lazım olsa dəyiş</span>' : ""}
           <div class="rubric">${RUBRIC.map((c) => `<div><label>${esc(c)}</label><input type="number" min="0" max="${perCrit()}" step="0.5" data-rub="${a.id}" data-c="${esc(c)}" value="${rev.c?.[c] ?? ""}"></div>`).join("")}</div>
           <div class="essay-grade">
             <label class="small">Esse balı (max ${fmtNum(essayMax())}):</label>
@@ -625,6 +626,136 @@
       };
     }
 
+    // ---- Bir düymə: Claude bütün esseləri özü yoxlayır, esse yazmayana 0 bal
+    async function essayAi() {
+      const { data: key, error: kErr } = await sb.rpc("admin_ai_key");
+      if (kErr) return toast(/admin_ai_key/.test(kErr.message || "") ? "Əvvəlcə 26-ai-essay.sql faylını Supabase-də işə sal" : translateError(kErr), "err");
+      if (!key) return aiKeySetup();
+      let task = "";
+      try {
+        const { data: on } = await sb.from("test_online").select("questions").eq("test_id", testId).maybeSingle();
+        task = essayQs().map((q) => (on?.questions || []).find((x) => String(x.n) === String(q.n))?.text || "").filter(Boolean).join("\n");
+      } catch {}
+      const minW = essayQs().map((q) => q.min_words).filter(Boolean)[0] || "";
+      const m = smallModal(`
+        <h2 style="font-size:1.2rem;margin-bottom:.4rem">✨ Claude esseləri yoxlasın</h2>
+        <p class="small muted" style="margin:.2rem 0 .8rem">Claude hər esseni (yazılmış mətn və ya dəftər şəkli) oxuyub 4 meyar üzrə bal və qısa şərh yazır. Esse yazmayan / şəkil göndərməyən şagirdə <b>0 bal</b> yazılır. Sonra istənilən balı əl ilə dəyişə bilərsən.</p>
+        <label class="small" for="ai-task">Esse mövzusu / tapşırıq</label>
+        <textarea id="ai-task" style="min-height:70px;width:100%" placeholder="Məs.: Write an essay about your favourite holiday">${esc(task)}</textarea>
+        <label class="chk" style="margin-top:.6rem;width:max-content;max-width:100%"><input type="checkbox" id="ai-all"> Artıq yoxlanılmışları da yenidən yoxla</label>
+        <div class="small" id="ai-info" style="margin-top:.5rem"></div>
+        <div id="ai-log" class="small" style="margin-top:.6rem;display:grid;gap:3px;max-height:260px;overflow:auto"></div>
+        <div style="display:flex;gap:.5rem;justify-content:space-between;align-items:center;margin-top:1rem;flex-wrap:wrap">
+          <a href="#" id="ai-key" class="small muted">🔑 API açarını dəyiş</a>
+          <span style="display:flex;gap:.5rem"><button type="button" class="btn btn-ghost" id="ai-no">Bağla</button>
+          <button type="button" class="btn btn-primary" id="ai-go">✨ Başla</button></span>
+        </div>`);
+      const pick = () => {
+        const all = m.querySelector("#ai-all").checked;
+        const list = attempts.filter((a) => !a.paper && a.status !== "in_progress" && (all || a.status === "submitted"));
+        const withEss = essayStudents(!all).filter((x) => list.includes(x.a));
+        const empty = list.filter((a) => !withEss.some((x) => x.a === a));
+        return { withEss, empty };
+      };
+      const info = () => {
+        const { withEss, empty } = pick();
+        m.querySelector("#ai-info").innerHTML = `Yoxlanılacaq: <b>${withEss.length}</b> esse${empty.length ? ` · esse yazmayan: <b>${empty.length}</b> şagird → 0 bal` : ""}`;
+        m.querySelector("#ai-go").disabled = !withEss.length && !empty.length;
+      };
+      info();
+      m.querySelector("#ai-all").onchange = info;
+      let stop = false, running = false;
+      m.querySelector("#ai-no").onclick = async () => { if (running) { stop = true; m.querySelector("#ai-no").textContent = "Dayandırılır…"; return; } m.remove(); };
+      m.querySelector("#ai-key").onclick = (e) => { e.preventDefault(); m.remove(); aiKeySetup(); };
+      m.querySelector("#ai-go").onclick = async () => {
+        const go = m.querySelector("#ai-go"), log = m.querySelector("#ai-log");
+        go.disabled = true; running = true;
+        m.querySelector("#ai-no").textContent = "Dayandır";
+        m.querySelector("#ai-all").disabled = true;
+        const { withEss, empty } = pick();
+        const add = (html) => { const d = document.createElement("div"); d.innerHTML = html; log.appendChild(d); log.scrollTop = log.scrollHeight; return d; };
+        let ok = 0, fail = 0, firstErr = "";
+        // esse yazmayanlar → 0
+        for (const a of empty) {
+          if (stop) break;
+          const { error } = await sb.rpc("admin_save_essay", { p_attempt: a.id, p_points: 0, p_review: { comment: "Esse yazılmayıb.", ai: true } });
+          add(`${error ? "✕" : "0️⃣"} ${esc(a.profiles?.full_name || "")} — esse yoxdur → 0 bal`);
+          error ? fail++ : ok++;
+        }
+        // şəkil linklərini təzələ
+        const allPh = Object.values(essByAttempt).flat();
+        if (allPh.length) Object.assign(essUrls, await signedUrls("essays", allPh));
+        const { aiGradeEssay } = await import("./assets/js/essay-export.js");
+        const taskTxt = m.querySelector("#ai-task").value.trim();
+        const queue = [...withEss];
+        let done = 0;
+        go.textContent = `0/${queue.length}`;
+        const worker = async () => {
+          while (queue.length && !stop) {
+            const s = queue.shift();
+            const line = add(`⏳ ${esc(s.name)} …`);
+            try {
+              const r = await aiGradeEssay({ key, task: taskTxt, minWords: minW, rubric: RUBRIC, perCrit: perCrit(), maxPoints: essayMax(), text: s.text,
+                photoUrls: (essByAttempt[s.a.id] || []).map((n) => essUrls[n]).filter(Boolean) });
+              const { error } = await sb.rpc("admin_save_essay", { p_attempt: s.a.id, p_points: r.total, p_review: { c: r.crit, comment: r.comment, ai: true } });
+              if (error) throw error;
+              line.innerHTML = `✓ <b>${esc(s.name)}</b> — ${fmtNum(r.total)} / ${fmtNum(essayMax())} <span class="muted">· ${esc(r.comment)}</span>`;
+              ok++;
+            } catch (err) {
+              fail++;
+              firstErr ||= err?.message || String(err);
+              line.innerHTML = `<span style="color:var(--bad)">✕ ${esc(s.name)} — ${esc(err?.message || err)}</span>`;
+              if (/açar|pul bitib|Model tapılmadı|icazə yoxdur/.test(err?.message || "")) stop = true;   // hamısında eyni xəta olacaq
+            }
+            go.textContent = `${++done}/${withEss.length}`;
+          }
+        };
+        await Promise.all([worker(), worker()]);   // eyni anda 2 esse
+        running = false;
+        go.textContent = "✓ Hazırdır";
+        m.querySelector("#ai-no").textContent = "Bağla";
+        m.querySelector("#ai-no").onclick = () => m.remove();
+        add(`<b style="margin-top:.4rem;display:block">${stop && queue.length ? "Dayandırıldı. " : ""}Yazıldı: ${ok}${fail ? ` · alınmadı: ${fail}` : ""}</b>`);
+        if (firstErr && fail) toast(firstErr, "err");
+        if (await load()) render();
+      };
+    }
+
+    function aiKeySetup() {
+      const m = smallModal(`
+        <h2 style="font-size:1.2rem;margin-bottom:.4rem">🔑 Claude API açarı</h2>
+        <p class="small" style="margin:.2rem 0 .6rem">Bir dəfə lazımdır. Açar gizli saxlanır — yalnız sən (admin) istifadə edə bilərsən, şagirdlər görmür.</p>
+        <ol class="small" style="margin:0 0 .8rem 1.1rem;line-height:1.6">
+          <li><a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> saytına gir və qeydiyyatdan keç.</li>
+          <li><b>Billing</b> bölməsində kartla balans artır (məs. 5 $). Orada aylıq <b>limit</b> də qoy ki, artıq pul çıxmasın.</li>
+          <li><b>API Keys → Create Key</b> bas, açarı kopyala (<code>sk-ant-…</code> ilə başlayır).</li>
+          <li>Açarı aşağıya yapışdır. <b>Heç kimə göndərmə — Claude-a da.</b></li>
+        </ol>
+        <input id="ak-val" type="password" autocomplete="off" placeholder="sk-ant-..." style="width:100%;font-family:ui-monospace,Menlo,monospace">
+        <div style="display:flex;gap:.5rem;justify-content:space-between;align-items:center;margin-top:1rem;flex-wrap:wrap">
+          <a href="#" id="ak-del" class="small" style="color:var(--bad)">Açarı sil</a>
+          <span style="display:flex;gap:.5rem"><button type="button" class="btn btn-ghost" id="ak-no">Bağla</button>
+          <button type="button" class="btn btn-primary" id="ak-ok">Yadda saxla</button></span>
+        </div>`);
+      m.querySelector("#ak-no").onclick = () => m.remove();
+      m.querySelector("#ak-del").onclick = async (e) => {
+        e.preventDefault();
+        if (!confirm("API açarı silinsin? Claude daha avtomatik yoxlamayacaq.")) return;
+        const { error } = await sb.rpc("admin_set_ai_key", { p_key: "" });
+        if (error) return toast(translateError(error), "err");
+        toast("Açar silindi", "ok"); m.remove();
+      };
+      m.querySelector("#ak-ok").onclick = async () => {
+        const v = m.querySelector("#ak-val").value.trim();
+        if (!/^sk-ant-/.test(v)) return toast("Açar sk-ant- ilə başlamalıdır", "err");
+        const { error } = await sb.rpc("admin_set_ai_key", { p_key: v });
+        if (error) return toast(/admin_set_ai_key/.test(error.message || "") ? "Əvvəlcə 26-ai-essay.sql faylını Supabase-də işə sal" : translateError(error), "err");
+        toast("✓ Açar yadda saxlandı", "ok");
+        m.remove();
+        essayAi();
+      };
+    }
+
     function essayImport() {
       const m = smallModal(`
         <h2 style="font-size:1.2rem;margin-bottom:.4rem">📋 Claude-un ballarını yapışdır</h2>
@@ -669,7 +800,8 @@
     }
 
     function bind() {
-      const exB = document.getElementById("ess-export"), imB = document.getElementById("ess-import");
+      const exB = document.getElementById("ess-export"), imB = document.getElementById("ess-import"), aiB = document.getElementById("ess-ai");
+      if (aiB) aiB.onclick = essayAi;
       if (exB) exB.onclick = essayExport;
       if (imB) imB.onclick = essayImport;
       app.querySelectorAll("[data-fix]").forEach((el) => (el.onclick = () => fixAnswer(el.dataset.fix, el.dataset.n)));
