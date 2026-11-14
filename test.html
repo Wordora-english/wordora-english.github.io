@@ -39,7 +39,7 @@
     const testId = new URLSearchParams(location.search).get("id");
 
     let me, test, attempt, answers = {}, guard = null, examGuard = null, viewer = null, retakeUntil = null;
-    let offset = 0, deadline = 0, tick = null, dirty = false, saving = false, submitted = false;
+    let offset = 0, deadline = 0, tick = null, pingTimer = null, dirty = false, saving = false, submitted = false;
     let wakeLock = null;
 
     const card = (html) => `<div class="card narrow" style="margin:24px auto;max-width:620px">${html}</div>`;
@@ -154,6 +154,19 @@
       window.addEventListener("beforeunload", (e) => { if (!submitted) { e.preventDefault(); e.returnValue = ""; } });
       tick = setInterval(updateTimer, 1000);
       setInterval(() => { if (dirty) save(); }, 15000);
+      // "Buradayam" siqnalı — server əlaqənin kəsildiyi vaxtları özü qeyd edir
+      if (me.role !== "admin") {
+        const ping = () => { if (!submitted) sb.rpc("exam_ping", { p_attempt: attempt.attempt_id }).then(() => {}, () => {}); };
+        ping();
+        pingTimer = setInterval(ping, 15000);
+        const offBar = document.createElement("div");
+        offBar.className = "exam-offline hidden";
+        offBar.innerHTML = "📵 <b>İnternet kəsildi.</b> Cavabların telefonda saxlanılır. Sınaqdan çıxsan, internet qayıdanda vaxtı ilə birlikdə müəllimə xəbər gedəcək.";
+        document.body.appendChild(offBar);
+        const onNet = () => { offBar.classList.toggle("hidden", navigator.onLine !== false); if (navigator.onLine !== false) { ping(); guard?.flush?.(); if (dirty) save(); } };
+        window.addEventListener("online", onNet); window.addEventListener("offline", onNet);
+        onNet();
+      }
       updateTimer();
       if (dirty) save();
     }
@@ -525,8 +538,11 @@
         if (essayShort.length) msg += `\nEsse minimum söz sayına çatmayıb.`;
         if (!(await askConfirm(msg))) return;
       }
+      // təhvildən əvvəl: serverə son siqnal və saxlanmış pozuntuları göndər
+      try { await Promise.race([Promise.all([sb.rpc("exam_ping", { p_attempt: attempt.attempt_id }), guard?.flush?.()]), new Promise((r) => setTimeout(r, 6000))]); } catch {}
       submitted = true;
-      clearInterval(tick);
+      clearInterval(tick); clearInterval(pingTimer);
+      document.querySelector(".exam-offline")?.remove();
       guard?.stop();
       examGuard?.stop();
       document.querySelector(".exam-wm")?.remove();

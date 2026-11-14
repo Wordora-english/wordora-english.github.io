@@ -106,7 +106,7 @@
 
         <div class="section-title"><h2>Pozuntular <span class="muted small">(${activeViol.length} aktiv)</span></h2></div>
         <div class="card">${(viol || []).length ? `<table class="res-table"><tr><th>Nə</th><th>Harada</th><th>Vaxt</th></tr>
-          ${viol.map((v) => `<tr style="${v.cancelled ? "opacity:.45" : ""}"><td>${esc(VIOLATION_LABELS[v.kind] || v.kind)}${(() => { const vd = exitVerdict(v), d = exitDetails(v); return (d.length ? `<div class="small muted">${esc(d.join(" · "))}</div>` : "") + (vd ? `<div class="small"><b>${vd.icon} ${vd.label}</b></div>` : ""); })()}${v.cancelled ? " (ləğv)" : ""}</td><td class="muted">${esc(v.page || "")}</td><td class="muted">${formatDate(v.created_at)}</td></tr>`).join("")}</table>`
+          ${viol.map((v) => `<tr style="${v.cancelled ? "opacity:.45" : ""}"><td>${esc(VIOLATION_LABELS[v.kind] || v.kind)}${(() => { const vd = exitVerdict(v), d = exitDetails(v); return (d.length ? `<div class="small muted">${esc(d.join(" · "))}</div>` : "") + (vd ? `<div class="small"><b>${vd.icon} ${vd.label}</b></div>` : ""); })()}${v.cancelled ? " (ləğv)" : ""}</td><td class="muted">${esc(v.page || "")}</td><td class="muted">${formatDate(v.happened_at || v.created_at)}</td></tr>`).join("")}</table>`
           : '<div class="empty small">Pozuntu yoxdur 👍</div>'}</div>
 
         <div class="section-title"><h2>Materiallar <span class="muted small">(son 200)</span></h2></div>

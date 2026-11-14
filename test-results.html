@@ -65,7 +65,7 @@
 
     const app = document.getElementById("app");
     const testId = new URLSearchParams(location.search).get("id");
-    let test, key, attempts = [], notStarted = [], violCount = {}, violList = {}, qcs = [], retakes = {}, archive = {};
+    let test, key, attempts = [], notStarted = [], violCount = {}, violList = {}, gapList = {}, qcs = [], retakes = {}, archive = {};
     let vkeys = {}, assigns = {}, anVar = "A";
     let sGroups = [], sMembers = {}, sgLoaded = false;   // dərs qrupları
     let fileInfo = null, essByAttempt = {}, essUrls = {};   // sınaq faylları və esse şəkilləri
@@ -126,15 +126,22 @@
       }
 
       // Sınaq zamanı pozuntular
-      violCount = {}; violList = {};
+      violCount = {}; violList = {}; gapList = {};
       if (attempts.length && !t.is_paper) {
         const { data: v } = await sb.from("violations").select("*")
           .in("user_id", attempts.map((a) => a.user_id)).eq("cancelled", false);
         for (const a of attempts) {
           const from = new Date(a.started_at).getTime(), to = new Date(a.submitted_at || a.deadline).getTime() + 60000;
-          violList[a.id] = (v || []).filter((x) => x.user_id === a.user_id && new Date(x.created_at) >= from && new Date(x.created_at) <= to)
-            .sort((x, y) => new Date(x.created_at) - new Date(y.created_at));
+          const at = (x) => new Date(x.happened_at || x.created_at).getTime();   // telefonda baş verdiyi vaxt
+          violList[a.id] = (v || []).filter((x) => x.user_id === a.user_id && at(x) >= from && at(x) <= to)
+            .sort((x, y) => at(x) - at(y));
           violCount[a.id] = violList[a.id].length;
+        }
+        // Serverin qeyd etdiyi əlaqə boşluqları (internet söndürülüb / telefon bağlanıb)
+        const online = attempts.filter((a) => !a.paper).map((a) => a.id);
+        if (online.length) {
+          const { data: gp } = await sb.from("attempt_gaps").select("*").in("attempt_id", online);
+          for (const g of gp || []) (gapList[g.attempt_id] ||= []).push(g);
         }
       }
       return true;
@@ -276,8 +283,10 @@
           <details data-a="${a.id}" ${openIds.has(a.id) || (!rendered && a.status === "submitted") ? "open" : ""}>
             <summary>Cavablar${essayQs().length ? " və esse" : ""}</summary>
             ${cells ? `<div class="ans-grid">${cells}</div>${a.paper ? "" : '<div class="small muted" style="margin-top:4px">Şagird düzgün cavabı səhv formada yazıbsa (məs. "2 4"), cavaba toxun və düzəlt. ✏️ — müəllim düzəldib.</div>'}` : ""}
+            ${gapList[a.id]?.length ? `<div class="viol-list" style="background:var(--warn-bg, #fff4d6)"><b>📵 Sayta əlaqə olmayıb</b>${gapList[a.id].map((g) => `<div>${new Date(g.gap_from).toLocaleTimeString("az-AZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} → ${new Date(g.gap_to).toLocaleTimeString("az-AZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} · <b class="${g.seconds >= 60 ? "v-red" : ""}">${awayText(g.seconds)}</b></div>`).join("")}
+              <div class="small muted" style="margin-top:3px">Bu vaxt telefonun interneti kəsilib və ya söndürülüb (server özü qeyd edib). Eyni vaxtda "çıxış" da varsa — çox güman ki, qəsdəndir.</div></div>` : ""}
             ${violList[a.id]?.length ? `<div class="viol-list"><b>⚠️ Sınaq zamanı pozuntular</b>${violList[a.id].map((x) => { const vd = exitVerdict(x); const det = exitDetails(x);
-                return `<div class="viol-row">${vd ? `<span class="${vd.cls}">${vd.icon} ${vd.label}</span> · ` : ""}<span class="muted">${new Date(x.created_at).toLocaleTimeString("az-AZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span> — ${esc(det.length ? det.join(" · ") : (x.details || VIOLATION_LABELS[x.kind] || x.kind))}${x.cancelled ? " (ləğv)" : ""}</div>`; }).join("")}
+                return `<div class="viol-row">${vd ? `<span class="${vd.cls}">${vd.icon} ${vd.label}</span> · ` : ""}<span class="muted">${new Date(x.happened_at || x.created_at).toLocaleTimeString("az-AZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span> — ${esc(det.length ? det.join(" · ") : (x.details || VIOLATION_LABELS[x.kind] || x.kind))}${x.cancelled ? " (ləğv)" : ""}</div>`; }).join("")}
               ${(() => { const tot = violList[a.id].reduce((s, x) => s + (x.away_seconds || 0), 0); return tot ? `<div class="small" style="margin-top:3px"><b>Cəmi kənarda: ${awayText(tot)}</b></div>` : ""; })()}
               <div class="small muted" style="margin-top:3px">🟢 1–3 san., cavab yazmayıb — çox vaxt bildiriş və ya səhv toxunma. 🔴 30+ san., və ya qayıdan kimi tez-tez cavab yazıb — çox güman ki, başqa yerdən baxıb. Hara girdiyini brauzer görə bilmir.</div></div>` : ""}
             ${essays}

@@ -89,6 +89,7 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 24. `supabase/25-answer-fix-away.sql` — "2 4" = "24", müəllim cavabı düzəldir, kənarda keçən vaxt
 25. `supabase/26-ai-essay.sql` — esseləri bir düymə ilə Claude yoxlayır (Anthropic API açarı lazımdır)
 26. `supabase/27-exit-analysis.sql` — sınaqdan çıxışın təhlili (təsadüf / şübhəli / qəsdən, şagirdin səbəbi)
+27. `supabase/28-offline-guard.sql` — interneti söndürüb çıxmaq açığı bağlanır (növbə + server əlaqə boşluqları)
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 

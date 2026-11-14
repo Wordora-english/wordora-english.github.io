@@ -153,5 +153,7 @@ body.exam-shielded #app, body.exam-shielded .exam-bar { filter: blur(24px); visi
 @media print { body * { visibility: hidden !important; } }
 
 /* Qayıdanda: "niyə çıxdın?" */
-.exam-why { position: fixed; inset: 0; z-index: 950; background: rgba(14, 31, 61, .45); display: grid; place-items: center; padding: 16px; }
+.exam-why { position: fixed; inset: 0; z-index: 1100; background: rgba(14, 31, 61, .45); display: grid; place-items: center; padding: 16px; }
 .exam-why-box { background: var(--card); border-radius: 16px; padding: 18px 16px; width: min(360px, 100%); display: grid; gap: 6px; box-shadow: 0 10px 40px rgba(0, 0, 0, .25); }
+/* İnternet kəsiləndə xəbərdarlıq zolağı */
+.exam-offline { position: fixed; left: 0; right: 0; bottom: 0; z-index: 960; background: #b42318; color: #fff; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); font-size: .88rem; line-height: 1.4; }

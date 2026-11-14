@@ -49,17 +49,57 @@ export function startGuard({ me, page = location.pathname.split("/").pop(), tabS
   let stopped = false;
   const timers = [];
 
+  // ---------- Növbə: internet yoxdursa, siqnallar telefonda saxlanır, internet gələndə göndərilir ----------
+  const QKEY = `wd_q_${me.id}`;
+  const qLoad = () => { try { return JSON.parse(localStorage.getItem(QKEY) || "[]"); } catch { return []; } };
+  const qSave = (q) => { try { localStorage.setItem(QKEY, JSON.stringify(q.slice(-60))); } catch {} };
+  const enqueue = (fn, args) => { const q = qLoad(); q.push({ fn, args, at: new Date().toISOString() }); qSave(q); };
+  let flushing = null;
+  async function flush() {
+    if (flushing) return flushing;
+    flushing = (async () => {
+      let q = qLoad();
+      while (q.length && navigator.onLine !== false) {
+        const it = q[0];
+        try {
+          const { data, error } = await sb.rpc(it.fn, it.args);
+          if (error && /fetch|network|Failed|timeout/i.test(error.message || "")) break;   // hələ internet yoxdur
+          if (it.fn === "report_violation" && data?.blocked) { q.shift(); qSave(q); afterResult(data, it.args.p_kind, ""); return; }
+        } catch { break; }
+        q.shift(); qSave(q);
+      }
+    })().finally(() => { flushing = null; });
+    return flushing;
+  }
+  // köhnə və ya bu sınaqdan qalmış siqnallar — dərhal göndər
+  setTimeout(flush, 1500);
+  const flushTimer = setInterval(flush, 10000);
+  window.addEventListener("online", flush);
+  // RPC: internet varsa dərhal, yoxdursa növbəyə
+  async function call(fn, args) {
+    if (navigator.onLine === false || qLoad().length) { enqueue(fn, args); flush(); return null; }
+    try {
+      const { data, error } = await sb.rpc(fn, args);
+      if (error) throw error;
+      return data;
+    } catch { enqueue(fn, args); return null; }
+  }
+
   async function report(kind, details = "", label = "") {
     if (stopped) return;
     const now = Date.now();
     if (kind !== "second_device" && now - lastReport < 4000) return;   // eyni anda təkrar siqnal
     lastReport = now;
-    let res;
-    try {
-      const { data, error } = await sb.rpc("report_violation", { p_kind: kind, p_details: details, p_page: page });
-      if (error) throw error;
-      res = data;
-    } catch { return; }
+    const offline = navigator.onLine === false;
+    const res = await call("report_violation", { p_kind: kind, p_details: details, p_page: page, p_happened_at: new Date().toISOString(), p_offline: offline });
+    if (!res) {
+      // internet yoxdur — siqnal saxlanıldı, internet gələn kimi müəllimə gedəcək
+      modal({ icon: "📵", title: "Qeyd olundu", text: `<b>${esc(label || VIOLATION_LABELS[kind] || kind)}.</b><br>İnternet yoxdur, amma bu hərəkət yaddaşa yazıldı və internet qayıdan kimi vaxtı ilə birlikdə müəllimə göndəriləcək.` });
+      return;
+    }
+    afterResult(res, kind, label);
+  }
+  function afterResult(res, kind, label) {
     if (!res || res.ignored) return;
 
     if (res.blocked) {
@@ -148,15 +188,14 @@ export function startGuard({ me, page = location.pathname.split("/").pop(), tabS
 
   // Şagird sınağa qayıdanda: son pozuntuya "neçə saniyə kənarda qaldı" yazılır
   async function reportAway(seconds, kind = null) {
-    if (stopped) return;
-    try { await sb.rpc("report_away", { p_seconds: Math.round(seconds), p_kind: kind }); } catch {}
+    await call("report_away", { p_seconds: Math.round(seconds), p_kind: kind });
   }
   // Şagirdin dediyi səbəb və qayıdandan sonra 60 saniyədə yazdığı cavab sayı
   async function reportAwayMore(reason = null, answers = null) {
-    try { await sb.rpc("report_away_more", { p_reason: reason, p_answers: answers }); } catch {}
+    await call("report_away_more", { p_reason: reason, p_answers: answers });
   }
 
-  return { stop, report, reportAway, reportAwayMore };
+  return { stop, report, reportAway, reportAwayMore, flush, pending: () => qLoad().length };
 }
 
 // Tor xətası gələndə göstərilən ekran
@@ -183,8 +222,9 @@ const fmtAway = (s) => (s >= 60 ? `${Math.floor(s / 60)} dəq ${s % 60} san` : `
 // 🟢 təsadüf ola bilər · 🟡 şübhəli · 🔴 çox güman qəsdən
 export function exitVerdict(v) {
   const s = v.away_seconds;
-  if (s == null) return null;
+  if (s == null) return v.offline ? { icon: "🔴", label: "interneti söndürüb çıxıb", cls: "v-red" } : null;
   const a = v.answers_after || 0;
+  if (v.offline) return { icon: "🔴", label: "interneti söndürüb çıxıb", cls: "v-red" };
   if (s >= 30 || (s >= 10 && a >= 2) || (v.away_kind === "split" && s >= 5)) return { icon: "🔴", label: "çox güman qəsdən", cls: "v-red" };
   if (s <= 3 && a <= 1) return { icon: "🟢", label: "təsadüf ola bilər", cls: "v-green" };
   return { icon: "🟡", label: "şübhəli", cls: "v-yellow" };
