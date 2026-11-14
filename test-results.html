@@ -689,27 +689,14 @@
       const qs = test.questions || [];
       const done = attempts.filter((a) => a.status !== "in_progress").sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
       const n = (x) => (x === null || x === undefined ? "" : Math.round(Number(x) * 100) / 100);
-      const head = ["№", "Ad Soyad", "Sinif", "Kod", ...(hasVar() ? ["Variant"] : []), "Test balı", "Esse balı", "Yekun bal", "Maksimum", "%", "Təhvil", "Dəqiqə", "Pozuntu",
-                    ...qs.map((x) => (x.type === "essay" ? `S${x.n} (esse, söz)` : `S${x.n}`))];
-      const pad = hasVar() ? 13 : 12;
-      const keyRows = (hasVar() ? varCodes() : ["A"]).map((c) => {
-        const K = keyOf({ variant: c });
-        return ["", hasVar() ? `DÜZGÜN CAVAB (${c})` : "DÜZGÜN CAVAB", ...Array(pad - 2).fill(""), ...qs.map((x) => (x.type === "essay" ? "" : K[x.n] || ""))];
-      });
+      // Yalnız nəticələr (şagirdlərin cavabları Excel-ə yazılmır)
+      const ess = essayQs().length > 0;
+      const head = ["№", "Ad Soyad", "Sinif", ...(hasVar() ? ["Variant"] : []), ...(ess ? ["Test balı", "Esse balı"] : []), "Yekun bal", "Maksimum", "%"];
       const rows = done.map((a, i) => {
         const p = a.profiles || {};
-        const used = a.submitted_at ? Math.round((new Date(a.submitted_at) - new Date(a.started_at)) / 60000) : "";
-        return [i + 1, p.full_name, classLabel(p.class_name), p.student_code, ...(hasVar() ? [a.variant || "A"] : []), n(a.auto_score), n(a.essay_score), n(a.score), n(total()),
-          total() ? Math.round((Number(a.score) || 0) / total() * 100) : "", formatDate(a.submitted_at), used, violCount[a.id] || 0,
-          ...qs.map((x) => (x.type === "essay" ? wordCount(a.answers?.[x.n]) : a.answers?.[x.n] || ""))];
-      });
-      const analysisRows = (hasVar() ? varCodes() : ["A"]).flatMap((c) => {
-        const dd = hasVar() ? done.filter((a) => (a.variant || "A") === c) : done;
-        const K = keyOf({ variant: c });
-        return qs.filter((x) => x.type !== "essay").map((x) => {
-          const fr = dd.map((a) => Number(a.details?.[x.n]?.frac) || 0);
-          return [...(hasVar() ? [c] : []), x.n, K[x.n] || "", fr.length ? Math.round(fr.reduce((s, v) => s + v, 0) / fr.length * 100) : ""];
-        });
+        return [i + 1, p.full_name || a.student_name || "", classLabel(p.class_name || a.class_name), ...(hasVar() ? [a.variant || "A"] : []),
+          ...(ess ? [n(a.auto_score), n(a.essay_score)] : []), n(a.score), n(total()),
+          total() ? Math.round((Number(a.score) || 0) / total() * 100) : ""];
       });
       const secSheet = secs().length ? [{ name: "Bölmələr", widths: [5, 26, 12, ...secs().flatMap(() => [10, 8])],
         rows: [["№", "Ad Soyad", "Sinif", ...secs().flatMap((x) => [`${x.name} (bal)`, `${x.name} %`])],
@@ -717,10 +704,8 @@
           ...done.map((a, i) => [i + 1, a.profiles?.full_name, classLabel(a.profiles?.class_name),
             ...secOf(a).flatMap((x) => (x.pending ? ["", ""] : [n(x.got), x.pct]))])] }] : [];
       downloadXlsx(`${safeName(test.title)}_neticeler.xlsx`, [
-        { name: "Nəticələr", widths: [5, 26, 12, 11, ...(hasVar() ? [8] : []), 9, 9, 9, 9, 6, 17, 7, 8], rows: [head, ...keyRows, ...rows] },
+        { name: "Nəticələr", widths: [5, 28, 12, ...(hasVar() ? [8] : []), ...(ess ? [10, 10] : []), 10, 10, 6], rows: [head, ...rows] },
         ...secSheet,
-        { name: "Sual analizi", widths: [...(hasVar() ? [8] : []), 8, 18, 14], rows: [[...(hasVar() ? ["Variant"] : []), "Sual", "Düzgün cavab", "Düzgün %"], ...analysisRows] },
-        { name: "Yazmayanlar", widths: [28, 14, 12], rows: [["Ad Soyad", "Sinif", "Kod"], ...notStarted.map((s) => [s.full_name, classLabel(s.class_name), s.student_code])] },
       ]);
     }
 
