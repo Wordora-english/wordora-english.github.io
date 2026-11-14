@@ -58,6 +58,7 @@
     import { testFilesInfo, cleanTestFiles, signedUrls, thumbsHtml, photoViewer, fmtMB } from "./assets/js/test-files.js";
     import { fmtNum, wordCount, sectionScores } from "./assets/js/tests-common.js";
     import { VIOLATION_LABELS } from "./assets/js/guard.js";
+
     import { downloadXlsx, safeName } from "./assets/js/xlsx-lite.js";
     import { CERT_MIN_PERCENT, RUBRIC } from "./assets/js/config.js";
 
@@ -159,6 +160,8 @@
               <button class="btn btn-ghost btn-sm" id="csv">⬇ Excel</button>
               <button class="btn btn-ghost btn-sm" id="pdf-all" title="Hər şagird üçün bir səhifə — çap etmək və ya göndərmək üçün">📄 PDF hesabatlar</button>
               <button class="btn btn-ghost btn-sm" id="regrade" title="Cavab açarını dəyişmisənsə">Yenidən hesabla</button>
+              ${essayQs().length && !isPaper() ? `<button class="btn btn-ghost btn-sm" id="ess-export" title="Bütün esseləri bir PDF-də yüklə və Claude-a göndər">🤖 Esseləri Claude üçün yüklə</button>
+              <button class="btn btn-ghost btn-sm" id="ess-import" title="Claude-un yazdığı balları sayta köçür">📋 Claude-un ballarını yapışdır</button>` : ""}
               ${fileInfo && !test.files_cleaned_at && (fileInfo.tests?.length || fileInfo.essays?.length) ? `<button class="btn btn-ghost btn-sm" id="clean-files" title="PDF, dinləmə və esse şəkilləri silinir — ballar qalır">🧹 Faylları sil (${fmtMB(fileInfo.bytes)})</button>` : ""}
               <a class="btn btn-ghost btn-sm" href="test-edit.html?id=${test.id}">Redaktə</a>
               <button class="btn btn-ghost btn-sm" id="refresh">↻</button>
@@ -261,7 +264,7 @@
           <div class="rrow-top">
             <span class="rank">${rank}</span>
             <div class="who">
-              <b>${esc(p.full_name)}</b>${varPill(a)} <span class="muted small">${esc(classLabel(p.class_name))} · ${esc(p.student_code || "")}</span> ${statusPill}
+              <b>${esc(p.full_name)}</b>${varPill(a)} <span class="muted small">${esc(classLabel(p.class_name))} · ${esc(p.student_code || "")}${!a.paper && essayQs().length ? ` · esse kodu <code>${essayCode(a.id)}</code>` : ""}</span> ${statusPill}
               ${chips}
               ${archive[a.user_id] ? `<div class="small" style="color:var(--muted)">🗂 Əvvəlki cəhd: ${archive[a.user_id].map((x) => `<b>${fmtNum(x.score ?? 0)}</b> / ${fmtNum(T)}${hasVar() && x.variant ? ` (${esc(x.variant)} variantı)` : ""} (${formatDate(x.submitted_at || x.archived_at)})`).join(" · ")}</div>` : ""}
               <div class="muted small">${a.paper ? "Daxil edilib" : "Təhvil"}: ${formatDate(a.submitted_at)}${used !== null ? ` · ${used} dəq` : ""}${violCount[a.id] ? ` · <span style="color:var(--bad)">⚠️ ${violCount[a.id]} pozuntu</span>` : ""}${essayQs().length ? ` · test: ${fmtNum(a.auto_score)} + esse: ${a.essay_score === null ? "?" : fmtNum(a.essay_score)}` : ""}</div>
@@ -554,7 +557,121 @@
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); if (e.key === "Escape") close(); });
     }
 
+    // ================= Esseləri Claude ilə yoxlamaq =================
+    const essayCode = (id) => String(id).replace(/-/g, "").slice(0, 6).toUpperCase();   // essay-export.js ilə eyni
+    function essayStudents(onlyUngraded) {
+      return attempts
+        .filter((a) => !a.paper && a.status !== "in_progress" && (!onlyUngraded || a.status === "submitted"))
+        .map((a) => {
+          const text = essayQs().map((q) => a.answers?.[q.n] || "").filter(Boolean).join("\n\n");
+          const photos = (essByAttempt[a.id] || []).map((n) => essUrls[n]).filter(Boolean);
+          return { a, code: essayCode(a.id), name: a.profiles?.full_name || "", cls: classLabel(a.profiles?.class_name), text, words: wordCount(text), photos };
+        })
+        .filter((x) => x.text.trim() || x.photos.length);
+    }
+
+    function smallModal(html) {
+      const m = document.createElement("div");
+      m.className = "wd-modal";
+      m.innerHTML = `<div class="wd-modal-box" style="max-width:640px;text-align:left;max-height:90vh;overflow:auto">${html}</div>`;
+      document.body.appendChild(m);
+      m.addEventListener("click", (e) => { if (e.target === m) m.remove(); });
+      return m;
+    }
+
+    async function essayExport() {
+      let task = "";
+      try {
+        const { data: on } = await sb.from("test_online").select("questions").eq("test_id", testId).maybeSingle();
+        task = essayQs().map((q) => (on?.questions || []).find((x) => String(x.n) === String(q.n))?.text || "").filter(Boolean).join("\n");
+      } catch {}
+      const minW = essayQs().map((q) => q.min_words).filter(Boolean)[0] || "";
+      const m = smallModal(`
+        <h2 style="font-size:1.2rem;margin-bottom:.4rem">🤖 Esseləri Claude üçün yüklə</h2>
+        <p class="small muted" style="margin:.2rem 0 .8rem">Bütün esselər (yazılmış mətn və ya dəftər şəkilləri) bir PDF faylına yığılır. Sonra o faylı Claude-a göndər və "yoxla" yaz.</p>
+        <label class="small" for="ex-task">Esse mövzusu / tapşırıq (Claude bilsin deyə)</label>
+        <textarea id="ex-task" style="min-height:80px;width:100%" placeholder="Məs.: Write an essay about your favourite holiday (min 35 words)">${esc(task)}</textarea>
+        <label class="chk" style="margin-top:.6rem;width:max-content;max-width:100%"><input type="checkbox" id="ex-only" checked> Yalnız hələ yoxlanılmamış esselər</label>
+        <div class="small" id="ex-info" style="margin-top:.5rem"></div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+          <button type="button" class="btn btn-ghost" id="ex-no">Bağla</button>
+          <button type="button" class="btn btn-primary" id="ex-ok">📥 PDF yüklə</button>
+        </div>`);
+      const info = () => { const n = essayStudents(m.querySelector("#ex-only").checked).length; m.querySelector("#ex-info").textContent = `Faylda ${n} şagirdin essesi olacaq.`; m.querySelector("#ex-ok").disabled = !n; };
+      info();
+      m.querySelector("#ex-only").onchange = info;
+      m.querySelector("#ex-no").onclick = () => m.remove();
+      m.querySelector("#ex-ok").onclick = async () => {
+        const b = m.querySelector("#ex-ok");
+        b.disabled = true;
+        try {
+          // şəkil linkləri 1 saatlıqdır — təzələ
+          const all = Object.values(essByAttempt).flat();
+          if (all.length) Object.assign(essUrls, await signedUrls("essays", all));
+          const students = essayStudents(m.querySelector("#ex-only").checked);
+          const { buildEssayPdf } = await import("./assets/js/essay-export.js");
+          const { downloadBlob } = await import("./assets/js/report-pdf.js");
+          const blob = await buildEssayPdf({
+            title: test.title, task: m.querySelector("#ex-task").value.trim(), minWords: minW,
+            maxPoints: essayMax(), rubric: RUBRIC, perCrit: perCrit(), students,
+          }, (k, n) => { b.textContent = `Hazırlanır… ${k}/${n}`; });
+          downloadBlob(blob, `${safeName(test.title)}_esseler.pdf`);
+          m.querySelector("#ex-info").innerHTML = '✓ Yükləndi. İndi bu faylı Claude-a göndər və yaz: <b>"Bu esseləri yoxla"</b>. Claude-un cavabını sonra <b>📋 Claude-un ballarını yapışdır</b> ilə sayta köçür.';
+          b.textContent = "✓ Yükləndi";
+        } catch (err) {
+          toast("PDF hazırlanmadı: " + (err?.message || err), "err");
+          b.disabled = false; b.textContent = "📥 PDF yüklə";
+        }
+      };
+    }
+
+    function essayImport() {
+      const m = smallModal(`
+        <h2 style="font-size:1.2rem;margin-bottom:.4rem">📋 Claude-un ballarını yapışdır</h2>
+        <p class="small muted" style="margin:.2rem 0 .6rem">Claude-un cavabını olduğu kimi kopyala və bura yapışdır. Hər sətir: <code>KOD | ${RUBRIC.join(" | ")} | şərh</code></p>
+        <textarea id="im-text" style="min-height:160px;width:100%;font-family:ui-monospace,Menlo,monospace;font-size:.85rem" placeholder="A3F9C2 | 3 | 2.5 | 3 | 2 | Fikirlər aydındır..."></textarea>
+        <div id="im-prev" style="margin-top:.6rem"></div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+          <button type="button" class="btn btn-ghost" id="im-no">Bağla</button>
+          <button type="button" class="btn btn-ghost" id="im-check">Yoxla</button>
+          <button type="button" class="btn btn-ok" id="im-ok" disabled>Yadda saxla</button>
+        </div>`);
+      let rows = [];
+      const byCode = Object.fromEntries(attempts.filter((a) => !a.paper).map((a) => [essayCode(a.id), a]));
+      const check = async () => {
+        const { parseGrades } = await import("./assets/js/essay-export.js");
+        const { ok, bad } = parseGrades(m.querySelector("#im-text").value, RUBRIC, perCrit(), essayMax());
+        rows = ok.map((r) => ({ ...r, a: byCode[r.code] }));
+        const good = rows.filter((r) => r.a);
+        m.querySelector("#im-prev").innerHTML = rows.length || bad.length ? `<table class="res-table" style="font-size:.85rem"><tr><th>Kod</th><th>Şagird</th><th>Bal</th><th>Şərh</th></tr>
+          ${rows.map((r) => `<tr style="${r.a ? "" : "opacity:.5"}"><td><code>${esc(r.code)}</code></td><td>${r.a ? esc(r.a.profiles?.full_name || "") : '<span style="color:var(--bad)">tapılmadı</span>'}${r.a?.essay_score != null ? ' <span class="muted small">(əvvəl: ' + fmtNum(r.a.essay_score) + ")</span>" : ""}</td><td><b>${fmtNum(r.total)}</b> / ${fmtNum(essayMax())}</td><td class="small">${esc(r.comment)}</td></tr>`).join("")}</table>
+          ${bad.length ? `<p class="small" style="color:var(--bad)">Oxunmayan sətirlər (${bad.length}): ${bad.map((b) => esc(b.slice(0, 60))).join("; ")}</p>` : ""}
+          <p class="small muted">${good.length} şagirdin balı yazılacaq.</p>` : '<p class="small" style="color:var(--bad)">Heç bir sətir tanınmadı. Claude-un cavabını tam yapışdır.</p>';
+        m.querySelector("#im-ok").disabled = !good.length;
+      };
+      m.querySelector("#im-no").onclick = () => m.remove();
+      m.querySelector("#im-check").onclick = check;
+      m.querySelector("#im-text").addEventListener("input", () => { m.querySelector("#im-ok").disabled = true; });
+      m.querySelector("#im-ok").onclick = async () => {
+        const b = m.querySelector("#im-ok");
+        b.disabled = true;
+        let done = 0, fail = 0;
+        for (const r of rows.filter((x) => x.a)) {
+          const review = { ...(r.crit ? { c: r.crit } : {}), ...(r.comment ? { comment: r.comment.slice(0, 1500) } : {}) };
+          const { error } = await sb.rpc("admin_save_essay", { p_attempt: r.a.id, p_points: r.total, p_review: review });
+          if (error) fail++; else done++;
+          b.textContent = `${done + fail}/${rows.length}`;
+        }
+        m.remove();
+        toast(`✓ ${done} şagirdin esse balı yazıldı${fail ? ` · ${fail} alınmadı` : ""}. Hər birini yoxlayıb dəyişə bilərsən.`, fail ? "err" : "ok");
+        if (await load()) render();
+      };
+    }
+
     function bind() {
+      const exB = document.getElementById("ess-export"), imB = document.getElementById("ess-import");
+      if (exB) exB.onclick = essayExport;
+      if (imB) imB.onclick = essayImport;
       app.querySelectorAll("[data-fix]").forEach((el) => (el.onclick = () => fixAnswer(el.dataset.fix, el.dataset.n)));
       const cleanBtn = document.getElementById("clean-files");
       if (cleanBtn) cleanBtn.onclick = async () => {
