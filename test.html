@@ -457,6 +457,7 @@
     let saveTimer = null;
     function changed() {
       dirty = true;
+      examGuard?.noteAnswer?.();
       updateCounts();
       try { localStorage.setItem(`wd_ans_${attempt.attempt_id}`, JSON.stringify(answers)); } catch {}
       $("save-state").textContent = "…";

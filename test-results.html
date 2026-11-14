@@ -32,6 +32,7 @@
     .ans.fixable { cursor: pointer; } .ans.fixable:hover { outline: 2px solid var(--indigo); }
     .viol-list { margin-top: 10px; background: var(--bad-bg); border-radius: 10px; padding: 8px 12px; font-size: .84rem; display: grid; gap: 2px; }
     .viol-list .away-long { color: var(--bad); }
+    .viol-row { padding: 2px 0; } .v-red { color: var(--bad); font-weight: 700; } .v-yellow { color: #b7791f; font-weight: 700; } .v-green { color: var(--ok); font-weight: 700; }
     .ans.ok { background: var(--ok-bg); } .ans.part { background: var(--warn-bg); } .ans.bad { background: var(--bad-bg); }
     .essay-box { margin-top: 10px; background: var(--soft); border-radius: 10px; padding: 10px 12px; }
     .essay-box .txt { white-space: pre-wrap; font-size: .92rem; max-height: 320px; overflow: auto; margin: .4rem 0 .6rem; -webkit-user-select: text; user-select: text; }
@@ -57,7 +58,7 @@
     import { sb, configured, getMyProfile, esc, formatDate, toast, translateError, classLabel, loadStudyGroups, testAudience, inTestAudience } from "./assets/js/app.js";
     import { testFilesInfo, cleanTestFiles, signedUrls, thumbsHtml, photoViewer, fmtMB } from "./assets/js/test-files.js";
     import { fmtNum, wordCount, sectionScores } from "./assets/js/tests-common.js";
-    import { VIOLATION_LABELS } from "./assets/js/guard.js";
+    import { VIOLATION_LABELS, exitVerdict, exitDetails } from "./assets/js/guard.js";
 
     import { downloadXlsx, safeName } from "./assets/js/xlsx-lite.js";
     import { CERT_MIN_PERCENT, RUBRIC } from "./assets/js/config.js";
@@ -275,8 +276,10 @@
           <details data-a="${a.id}" ${openIds.has(a.id) || (!rendered && a.status === "submitted") ? "open" : ""}>
             <summary>Cavablar${essayQs().length ? " və esse" : ""}</summary>
             ${cells ? `<div class="ans-grid">${cells}</div>${a.paper ? "" : '<div class="small muted" style="margin-top:4px">Şagird düzgün cavabı səhv formada yazıbsa (məs. "2 4"), cavaba toxun və düzəlt. ✏️ — müəllim düzəldib.</div>'}` : ""}
-            ${violList[a.id]?.length ? `<div class="viol-list"><b>⚠️ Sınaq zamanı pozuntular</b>${violList[a.id].map((x) => `<div>${new Date(x.created_at).toLocaleTimeString("az-AZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} — ${esc(x.details || VIOLATION_LABELS[x.kind] || x.kind)}${x.away_seconds != null ? ` · <b class="${x.away_seconds >= 10 ? "away-long" : ""}">⏱ ${awayText(x.away_seconds)} kənarda</b>` : ""}${x.cancelled ? " (ləğv)" : ""}</div>`).join("")}
-              <div class="small muted" style="margin-top:3px">1–3 saniyə çox vaxt təsadüfdür (bildiriş, səhv toxunma). 10+ saniyə — çox güman ki, başqa yerə baxıb.</div></div>` : ""}
+            ${violList[a.id]?.length ? `<div class="viol-list"><b>⚠️ Sınaq zamanı pozuntular</b>${violList[a.id].map((x) => { const vd = exitVerdict(x); const det = exitDetails(x);
+                return `<div class="viol-row">${vd ? `<span class="${vd.cls}">${vd.icon} ${vd.label}</span> · ` : ""}<span class="muted">${new Date(x.created_at).toLocaleTimeString("az-AZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span> — ${esc(det.length ? det.join(" · ") : (x.details || VIOLATION_LABELS[x.kind] || x.kind))}${x.cancelled ? " (ləğv)" : ""}</div>`; }).join("")}
+              ${(() => { const tot = violList[a.id].reduce((s, x) => s + (x.away_seconds || 0), 0); return tot ? `<div class="small" style="margin-top:3px"><b>Cəmi kənarda: ${awayText(tot)}</b></div>` : ""; })()}
+              <div class="small muted" style="margin-top:3px">🟢 1–3 san., cavab yazmayıb — çox vaxt bildiriş və ya səhv toxunma. 🔴 30+ san., və ya qayıdan kimi tez-tez cavab yazıb — çox güman ki, başqa yerdən baxıb. Hara girdiyini brauzer görə bilmir.</div></div>` : ""}
             ${essays}
             <div style="display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-top:10px;align-items:center">
               ${essayGrade}

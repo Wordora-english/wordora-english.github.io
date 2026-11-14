@@ -147,12 +147,16 @@ export function startGuard({ me, page = location.pathname.split("/").pop(), tabS
   }
 
   // Şagird sınağa qayıdanda: son pozuntuya "neçə saniyə kənarda qaldı" yazılır
-  async function reportAway(seconds) {
+  async function reportAway(seconds, kind = null) {
     if (stopped) return;
-    try { await sb.rpc("report_away", { p_seconds: Math.round(seconds) }); } catch {}
+    try { await sb.rpc("report_away", { p_seconds: Math.round(seconds), p_kind: kind }); } catch {}
+  }
+  // Şagirdin dediyi səbəb və qayıdandan sonra 60 saniyədə yazdığı cavab sayı
+  async function reportAwayMore(reason = null, answers = null) {
+    try { await sb.rpc("report_away_more", { p_reason: reason, p_answers: answers }); } catch {}
   }
 
-  return { stop, report, reportAway };
+  return { stop, report, reportAway, reportAwayMore };
 }
 
 // Tor xətası gələndə göstərilən ekran
@@ -166,4 +170,30 @@ export function torScreen(container) {
       <h1 style="font-size:1.5rem">Tor ilə giriş qadağandır</h1>
       <p class="muted">Bu sayta Tor Browser və ya Tor şəbəkəsi ilə daxil olmaq olmaz. Adi brauzerdən (Chrome, Safari, Firefox) daxil ol.</p>
     </div>`;
+}
+
+// ---- Sınaqdan çıxışın təhlili (müəllim üçün) ----
+export const AWAY_KIND = {
+  hidden: "başqa proqrama / taba keçdi (səhifə gizləndi)",
+  focus: "üzən pəncərə / yan panel açıldı (səhifə ekranda qaldı)",
+  split: "ekranı böldü (iki proqram birlikdə)",
+  fullscreen: "tam ekrandan çıxdı",
+};
+const fmtAway = (s) => (s >= 60 ? `${Math.floor(s / 60)} dəq ${s % 60} san` : `${s} san`);
+// 🟢 təsadüf ola bilər · 🟡 şübhəli · 🔴 çox güman qəsdən
+export function exitVerdict(v) {
+  const s = v.away_seconds;
+  if (s == null) return null;
+  const a = v.answers_after || 0;
+  if (s >= 30 || (s >= 10 && a >= 2) || (v.away_kind === "split" && s >= 5)) return { icon: "🔴", label: "çox güman qəsdən", cls: "v-red" };
+  if (s <= 3 && a <= 1) return { icon: "🟢", label: "təsadüf ola bilər", cls: "v-green" };
+  return { icon: "🟡", label: "şübhəli", cls: "v-yellow" };
+}
+export function exitDetails(v) {
+  const parts = [];
+  if (v.away_kind && AWAY_KIND[v.away_kind]) parts.push(AWAY_KIND[v.away_kind]);
+  if (v.away_seconds != null) parts.push(`⏱ ${fmtAway(v.away_seconds)} kənarda`);
+  if (v.answers_after != null) parts.push(`qayıdandan sonra 1 dəqiqədə ${v.answers_after} cavab`);
+  if (v.student_reason) parts.push(`🗣 şagird: "${v.student_reason}"`);
+  return parts;
 }

@@ -36,7 +36,8 @@ export function exitFullscreen() {
  * @param {{report: (kind:string, details?:string, label?:string) => void}} guard
  */
 export function startExamGuard(guard) {
-  let stopped = false, wasFs = isFs(), lastReport = 0, pausedUntil = 0, awayStart = 0;
+  let stopped = false, wasFs = isFs(), lastReport = 0, pausedUntil = 0, awayStart = 0, awayKind = null;
+  let afterCount = null, afterTimer = null;   // qayıdandan sonra 60 saniyədə neçə cavab yazıldı
   const timers = {};
   const shield = document.createElement("div");
   shield.className = "exam-shield hidden";
@@ -98,11 +99,17 @@ export function startExamGuard(guard) {
 
     // kənarda keçən vaxt: başqa proqram / tab / bölünmüş ekran / tam ekrandan çıxma
     const awayNow = !visible || state.focus || state.split || (state.fs && wasFs);
-    if (awayNow && !awayStart) awayStart = Date.now();
+    const kindNow = !visible ? "hidden" : state.split ? "split" : state.focus ? "focus" : "fullscreen";
+    if (awayNow && !awayStart) { awayStart = Date.now(); awayKind = kindNow; }
+    else if (awayNow && kindNow === "hidden") awayKind = "hidden";            // ən ciddi növü saxla
     else if (!awayNow && awayStart) {
       const s = Math.round((Date.now() - awayStart) / 1000);
-      awayStart = 0;
-      if (s >= 2) setTimeout(() => guard?.reportAway?.(s), 2500);   // pozuntu əvvəlcə yazılsın
+      const kind = awayKind;
+      awayStart = 0; awayKind = null;
+      if (s >= 2) {
+        setTimeout(() => guard?.reportAway?.(s, kind), 2500);                  // pozuntu əvvəlcə yazılsın
+        if (kind === "hidden" || s >= 3) afterReturn();
+      }
     }
 
     // örtük
@@ -120,6 +127,36 @@ export function startExamGuard(guard) {
     btn.classList.toggle("hidden", !showBtn);
   }
 
+  // Qayıdandan sonra: şagirddən səbəbi soruş, 60 saniyə ərzində cavab dəyişikliklərini say
+  function flushAfter() {
+    if (afterCount === null) return;
+    const n = afterCount;
+    afterCount = null; clearTimeout(afterTimer);
+    guard?.reportAwayMore?.(null, n);
+  }
+  function afterReturn() {
+    flushAfter();
+    afterCount = 0;
+    afterTimer = setTimeout(flushAfter, 60000);
+    askReason();
+  }
+  function askReason() {
+    document.querySelector(".exam-why")?.remove();
+    const box = document.createElement("div");
+    box.className = "exam-why";
+    const opts = ["🔔 Bildiriş gəldi", "📞 Zəng gəldi", "👆 Səhvən toxundum", "📶 Telefon / internet problemi", "🤷 Başqa səbəb"];
+    box.innerHTML = `<div class="exam-why-box"><b>Sınaqdan niyə çıxdın?</b><div class="small muted" style="margin:.2rem 0 .6rem">Cavabın müəllimə göndəriləcək.</div>
+      ${opts.map((o) => `<button type="button" class="btn btn-ghost btn-block btn-sm" data-why="${o}">${o}</button>`).join("")}</div>`;
+    document.body.appendChild(box);
+    const done = (reason) => {
+      clearTimeout(t);
+      box.remove();
+      setTimeout(() => guard?.reportAwayMore?.(reason, null), 3500);   // müddət yazılandan sonra
+    };
+    const t = setTimeout(() => done("— (cavab vermədi)"), 25000);
+    box.addEventListener("click", (e) => { const b = e.target.closest("[data-why]"); if (b) done(b.dataset.why); });
+  }
+
   const evs = [
     [window, "blur"], [window, "focus"], [window, "resize"], [document, "visibilitychange"],
     [document, "fullscreenchange"], [document, "webkitfullscreenchange"], [document, "focusin"], [document, "focusout"],
@@ -132,8 +169,11 @@ export function startExamGuard(guard) {
   return {
     // Kameraya icazə soruşulanda brauzer öz pəncərəsini açır — bu vaxt pozuntu sayılmasın (ən çox 20 san.)
     pause(ms = 20000) { pausedUntil = Date.now() + Math.min(ms, 20000); awayStart = 0; update(); },
+    noteAnswer() { if (afterCount !== null) afterCount++; },
     resume() { pausedUntil = 0; update(); },
     stop() {
+      flushAfter();
+      document.querySelector(".exam-why")?.remove();
       stopped = true;
       clearInterval(poll);
       Object.keys(timers).forEach(disarm);
