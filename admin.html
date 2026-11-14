@@ -1094,7 +1094,7 @@ seed"></textarea>
             <div style="min-width:0">
               <div class="what">${esc(VIOLATION_LABELS[v.kind] || v.kind)} ${tag}</div>
               <div><b>${esc(p.full_name || "—")}</b> <span class="muted small">${esc(classLabel(p.class_name))} · ${esc(p.student_code || "")} · cəmi xəbərdarlıq: ${p.warnings ?? 0}</span></div>
-              <div class="when">${formatDate(v.created_at)}${v.page ? " · " + esc(v.page) : ""}${v.details ? " · " + esc(v.details) : ""}${v.ip ? " · IP " + esc(v.ip) : ""}</div>
+              <div class="when">${formatDate(v.created_at)}${v.page ? " · " + esc(v.page) : ""}${v.details ? " · " + esc(v.details) : ""}${v.away_seconds != null ? ` · ⏱ ${v.away_seconds >= 60 ? `${Math.floor(v.away_seconds / 60)} dəq ${v.away_seconds % 60} san` : `${v.away_seconds} san`} kənarda` : ""}${v.ip ? " · IP " + esc(v.ip) : ""}</div>
             </div>
             <div style="display:flex;gap:.4rem;flex-wrap:wrap">
               ${!v.cancelled && v.counted ? `<button class="btn btn-ghost btn-sm" data-vcancel="${v.id}" title="Səhv siqnal idisə">Ləğv et</button>` : ""}

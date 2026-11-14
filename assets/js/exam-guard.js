@@ -5,6 +5,8 @@
 //     yan panelə (Edge panel), Gemini və s. toxunanda brauzer fokusu itirir —
 //     suallar dərhal gizlənir, 3 saniyədən çox davam edərsə pozuntu sayılır.
 //  3. Ekranın bölünməsi / kiçik pəncərə (telefonda): suallar gizlənir, pozuntu.
+//  4. Kənarda keçən vaxt: şagird qayıdanda pozuntuya "X saniyə kənarda" yazılır —
+//     1-2 saniyə təsadüf ola bilər, 20+ saniyə isə həqiqi keçiddir.
 //  Brauzer ekran şəklini (screenshot) qadağan edə bilməz — amma şagird başqa
 //  proqrama toxunan kimi suallar ekrandan silinir və müəllimə xəbər gedir.
 // =========================================================
@@ -34,7 +36,7 @@ export function exitFullscreen() {
  * @param {{report: (kind:string, details?:string, label?:string) => void}} guard
  */
 export function startExamGuard(guard) {
-  let stopped = false, wasFs = isFs(), lastReport = 0, pausedUntil = 0;
+  let stopped = false, wasFs = isFs(), lastReport = 0, pausedUntil = 0, awayStart = 0;
   const timers = {};
   const shield = document.createElement("div");
   shield.className = "exam-shield hidden";
@@ -94,6 +96,15 @@ export function startExamGuard(guard) {
         report("tab_switch", "Tam ekrandan çıxıb qayıtmadı", "Sınaq zamanı tam ekrandan çıxıldı");
     }); else disarm("fs");
 
+    // kənarda keçən vaxt: başqa proqram / tab / bölünmüş ekran / tam ekrandan çıxma
+    const awayNow = !visible || state.focus || state.split || (state.fs && wasFs);
+    if (awayNow && !awayStart) awayStart = Date.now();
+    else if (!awayNow && awayStart) {
+      const s = Math.round((Date.now() - awayStart) / 1000);
+      awayStart = 0;
+      if (s >= 2) setTimeout(() => guard?.reportAway?.(s), 2500);   // pozuntu əvvəlcə yazılsın
+    }
+
     // örtük
     const on = state.focus || state.split || state.fs;
     document.body.classList.toggle("exam-shielded", on);
@@ -120,7 +131,7 @@ export function startExamGuard(guard) {
 
   return {
     // Kameraya icazə soruşulanda brauzer öz pəncərəsini açır — bu vaxt pozuntu sayılmasın (ən çox 20 san.)
-    pause(ms = 20000) { pausedUntil = Date.now() + Math.min(ms, 20000); update(); },
+    pause(ms = 20000) { pausedUntil = Date.now() + Math.min(ms, 20000); awayStart = 0; update(); },
     resume() { pausedUntil = 0; update(); },
     stop() {
       stopped = true;

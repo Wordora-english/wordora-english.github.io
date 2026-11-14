@@ -146,6 +146,7 @@
       if (hasPhotoEssay()) essRefresh().then(updateCounts).catch(() => {});
       guard = startGuard({ me, page: `sınaq: ${test.title}`.slice(0, 120), tabSwitch: true, onBlocked: () => (location.href = "portal.html") });
       if (me.role !== "admin") examGuard = startExamGuard(guard);
+      if (me.role !== "admin") addWatermark();
       try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
       document.addEventListener("visibilitychange", async () => {
         if (document.visibilityState === "visible" && !submitted) { try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {} }
@@ -527,6 +528,7 @@
       clearInterval(tick);
       guard?.stop();
       examGuard?.stop();
+      document.querySelector(".exam-wm")?.remove();
       try { await wakeLock?.release(); } catch {}
       $("submit").disabled = true;
       app.innerHTML = card('<div class="spinner"></div><p class="center muted">Təhvil verilir…</p>');
@@ -567,6 +569,16 @@
       $("review")?.addEventListener("click", showReview);
       bindDownload();
       if (hasPhotoEssay() && !test.is_paper) essayPhotosReadOnly($("ess-up"));
+    }
+
+    // ================= Ad yazısı (su nişanı) — ekran şəkli başqasına göndərilsə, kimin olduğu bilinsin =================
+    function addWatermark() {
+      const txt = `${me.full_name || ""} · ${me.student_code || me.username || ""}`.replace(/[<>&"]/g, "");
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="360" height="200"><text x="180" y="105" text-anchor="middle" transform="rotate(-24 180 100)" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#7a7a8c">${txt}</text></svg>`;
+      const el = document.createElement("div");
+      el.className = "exam-wm";
+      el.style.backgroundImage = `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
+      document.body.appendChild(el);
     }
 
     // ================= Esse şəkli (SINAQ ZAMANI, saytın içindəki kamera ilə) =================

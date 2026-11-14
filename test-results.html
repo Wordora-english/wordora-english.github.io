@@ -29,6 +29,9 @@
     .rrow summary { cursor: pointer; font-size: .86rem; color: var(--indigo); font-weight: 600; }
     .ans-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 5px; margin-top: 10px; }
     .ans { font-size: .8rem; padding: 5px 7px; border-radius: 8px; font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .ans.fixable { cursor: pointer; } .ans.fixable:hover { outline: 2px solid var(--indigo); }
+    .viol-list { margin-top: 10px; background: var(--bad-bg); border-radius: 10px; padding: 8px 12px; font-size: .84rem; display: grid; gap: 2px; }
+    .viol-list .away-long { color: var(--bad); }
     .ans.ok { background: var(--ok-bg); } .ans.part { background: var(--warn-bg); } .ans.bad { background: var(--bad-bg); }
     .essay-box { margin-top: 10px; background: var(--soft); border-radius: 10px; padding: 10px 12px; }
     .essay-box .txt { white-space: pre-wrap; font-size: .92rem; max-height: 320px; overflow: auto; margin: .4rem 0 .6rem; -webkit-user-select: text; user-select: text; }
@@ -54,12 +57,13 @@
     import { sb, configured, getMyProfile, esc, formatDate, toast, translateError, classLabel, loadStudyGroups, testAudience, inTestAudience } from "./assets/js/app.js";
     import { testFilesInfo, cleanTestFiles, signedUrls, thumbsHtml, photoViewer, fmtMB } from "./assets/js/test-files.js";
     import { fmtNum, wordCount, sectionScores } from "./assets/js/tests-common.js";
+    import { VIOLATION_LABELS } from "./assets/js/guard.js";
     import { downloadXlsx, safeName } from "./assets/js/xlsx-lite.js";
     import { CERT_MIN_PERCENT, RUBRIC } from "./assets/js/config.js";
 
     const app = document.getElementById("app");
     const testId = new URLSearchParams(location.search).get("id");
-    let test, key, attempts = [], notStarted = [], violCount = {}, qcs = [], retakes = {}, archive = {};
+    let test, key, attempts = [], notStarted = [], violCount = {}, violList = {}, qcs = [], retakes = {}, archive = {};
     let vkeys = {}, assigns = {}, anVar = "A";
     let sGroups = [], sMembers = {}, sgLoaded = false;   // dərs qrupları
     let fileInfo = null, essByAttempt = {}, essUrls = {};   // sınaq faylları və esse şəkilləri
@@ -120,13 +124,15 @@
       }
 
       // Sınaq zamanı pozuntular
-      violCount = {};
+      violCount = {}; violList = {};
       if (attempts.length && !t.is_paper) {
-        const { data: v } = await sb.from("violations").select("user_id, created_at, cancelled")
+        const { data: v } = await sb.from("violations").select("*")
           .in("user_id", attempts.map((a) => a.user_id)).eq("cancelled", false);
         for (const a of attempts) {
           const from = new Date(a.started_at).getTime(), to = new Date(a.submitted_at || a.deadline).getTime() + 60000;
-          violCount[a.id] = (v || []).filter((x) => x.user_id === a.user_id && new Date(x.created_at) >= from && new Date(x.created_at) <= to).length;
+          violList[a.id] = (v || []).filter((x) => x.user_id === a.user_id && new Date(x.created_at) >= from && new Date(x.created_at) <= to)
+            .sort((x, y) => new Date(x.created_at) - new Date(y.created_at));
+          violCount[a.id] = violList[a.id].length;
         }
       }
       return true;
@@ -210,7 +216,9 @@
         const d = det[q.n] || {};
         const cls = d.frac >= 1 ? "ok" : d.frac > 0 ? "part" : "bad";
         const K = keyOf(a);
-        return `<div class="ans ${cls}" title="Düzgün: ${esc(K[q.n] || "")}"><b>${q.n}</b> ${esc(a.answers?.[q.n] || "—")}${cls !== "ok" ? ` <span style="opacity:.6">→ ${esc(K[q.n] || "")}</span>` : ""}</div>`;
+        const fixed = !a.paper && a.answers_orig && q.n in a.answers_orig;
+        const tip = `Düzgün: ${K[q.n] || ""}${fixed ? ` · Şagird yazmışdı: ${a.answers_orig[q.n] || "boş"}` : ""}${a.paper ? "" : " · Düzəltmək üçün toxun"}`;
+        return `<div class="ans ${cls}${a.paper ? "" : " fixable"}" title="${esc(tip)}" ${a.paper ? "" : `data-fix="${a.id}" data-n="${q.n}"`}><b>${q.n}</b> ${esc(a.answers?.[q.n] || "—")}${fixed ? " ✏️" : ""}${cls !== "ok" ? ` <span style="opacity:.6">→ ${esc(K[q.n] || "")}</span>` : ""}</div>`;
       }).join("");
       const essays = a.paper ? "" : essayQs().map((q) => {
         const txt = a.answers?.[q.n] || "";
@@ -262,7 +270,9 @@
           </div>
           <details data-a="${a.id}" ${openIds.has(a.id) || (!rendered && a.status === "submitted") ? "open" : ""}>
             <summary>Cavablar${essayQs().length ? " və esse" : ""}</summary>
-            ${cells ? `<div class="ans-grid">${cells}</div>` : ""}
+            ${cells ? `<div class="ans-grid">${cells}</div>${a.paper ? "" : '<div class="small muted" style="margin-top:4px">Şagird düzgün cavabı səhv formada yazıbsa (məs. "2 4"), cavaba toxun və düzəlt. ✏️ — müəllim düzəldib.</div>'}` : ""}
+            ${violList[a.id]?.length ? `<div class="viol-list"><b>⚠️ Sınaq zamanı pozuntular</b>${violList[a.id].map((x) => `<div>${new Date(x.created_at).toLocaleTimeString("az-AZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })} — ${esc(x.details || VIOLATION_LABELS[x.kind] || x.kind)}${x.away_seconds != null ? ` · <b class="${x.away_seconds >= 10 ? "away-long" : ""}">⏱ ${awayText(x.away_seconds)} kənarda</b>` : ""}${x.cancelled ? " (ləğv)" : ""}</div>`).join("")}
+              <div class="small muted" style="margin-top:3px">1–3 saniyə çox vaxt təsadüfdür (bildiriş, səhv toxunma). 10+ saniyə — çox güman ki, başqa yerə baxıb.</div></div>` : ""}
             ${essays}
             <div style="display:flex;justify-content:space-between;gap:.5rem;flex-wrap:wrap;margin-top:10px;align-items:center">
               ${essayGrade}
@@ -493,7 +503,59 @@
       return `<p class="small muted" style="margin:.3rem 0 0">🧹 Nəticələri açandan ${test.auto_clean_days} gün sonra fayllar avtomatik silinəcək (ballar qalır).</p>`;
     }
 
+    const awayText = (s) => s >= 60 ? `${Math.floor(s / 60)} dəq ${s % 60} san` : `${s} san`;
+
+    // Şagirdin cavabını düzəlt (məs. "2 4" → "24")
+    function fixAnswer(aid, n) {
+      const a = attempts.find((x) => x.id === aid);
+      if (!a) return;
+      const q = test.questions.find((x) => String(x.n) === String(n));
+      const K = keyOf(a)[n] || "";
+      const orig = a.answers_orig && n in a.answers_orig ? a.answers_orig[n] : null;
+      const m = document.createElement("div");
+      m.className = "wd-modal";
+      m.innerHTML = `<div class="wd-modal-box" style="max-width:420px;text-align:left">
+        <h2 style="font-size:1.15rem;margin-bottom:.3rem">${esc(a.profiles?.full_name || "")} — ${n}-ci sual</h2>
+        <p class="small muted" style="margin:.2rem 0 .7rem">Düzgün cavab: <b>${esc(K) || "—"}</b>${orig !== null ? `<br>Şagirdin özünün yazdığı: <b>${esc(orig || "boş")}</b>` : ""}</p>
+        <label class="small" for="fx-val">Cavab</label>
+        <input id="fx-val" value="${esc(a.answers?.[n] || "")}" autocomplete="off" style="width:100%;font-family:ui-monospace,Menlo,monospace">
+        <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-top:.6rem">
+          ${K ? `<button type="button" class="btn btn-ghost btn-sm" id="fx-key">✓ Düzgün cavabı yaz</button>` : ""}
+          ${orig !== null ? `<button type="button" class="btn btn-ghost btn-sm" id="fx-orig">↺ Şagirdin cavabına qaytar</button>` : ""}
+        </div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+          <button type="button" class="btn btn-ghost" id="fx-no">Bağla</button>
+          <button type="button" class="btn btn-primary" id="fx-ok">Yadda saxla</button>
+        </div></div>`;
+      document.body.appendChild(m);
+      const inp = m.querySelector("#fx-val");
+      inp.focus(); inp.select();
+      const close = () => m.remove();
+      m.querySelector("#fx-no").onclick = close;
+      m.addEventListener("click", (e) => { if (e.target === m) close(); });
+      m.querySelector("#fx-key")?.addEventListener("click", () => { inp.value = q?.type === "open" ? K.split("/")[0].trim() : K; });
+      m.querySelector("#fx-orig")?.addEventListener("click", () => { inp.value = orig || ""; });
+      const save = async () => {
+        const btn = m.querySelector("#fx-ok");
+        btn.disabled = true; btn.textContent = "…";
+        const { data, error } = await sb.rpc("admin_set_answer", { p_attempt: aid, p_n: String(n), p_value: inp.value });
+        if (error) {
+          btn.disabled = false; btn.textContent = "Yadda saxla";
+          return toast(/admin_set_answer/.test(error.message || "") ? "Əvvəlcə 25-answer-fix-away.sql faylını Supabase-də işə sal" : translateError(error), "err");
+        }
+        const before = Number(a.score) || 0;
+        Object.assign(a, data);
+        close();
+        toast(`Yadda saxlandı · bal: ${fmtNum(before)} → ${fmtNum(data.score)}`, "ok");
+        openIds.add(aid);
+        render();
+      };
+      m.querySelector("#fx-ok").onclick = save;
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); if (e.key === "Escape") close(); });
+    }
+
     function bind() {
+      app.querySelectorAll("[data-fix]").forEach((el) => (el.onclick = () => fixAnswer(el.dataset.fix, el.dataset.n)));
       const cleanBtn = document.getElementById("clean-files");
       if (cleanBtn) cleanBtn.onclick = async () => {
         const n = fileInfo.essays?.length || 0;

@@ -86,6 +86,7 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 21. `supabase/22-chat.sql`
 22. `supabase/23-test-groups.sql` — sınağı dərs qruplarına təyin etmək
 23. `supabase/24-essay-photos-cleanup.sql` — esse dəftərdə (sınaq zamanı kamera ilə), sınağı yükləmək, faylları silmək
+24. `supabase/25-answer-fix-away.sql` — "2 4" = "24", müəllim cavabı düzəldir, kənarda keçən vaxt
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 

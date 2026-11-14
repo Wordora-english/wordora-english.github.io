@@ -146,7 +146,13 @@ export function startGuard({ me, page = location.pathname.split("/").pop(), tabS
     document.removeEventListener("visibilitychange", onVis);
   }
 
-  return { stop, report };
+  // Şagird sınağa qayıdanda: son pozuntuya "neçə saniyə kənarda qaldı" yazılır
+  async function reportAway(seconds) {
+    if (stopped) return;
+    try { await sb.rpc("report_away", { p_seconds: Math.round(seconds) }); } catch {}
+  }
+
+  return { stop, report, reportAway };
 }
 
 // Tor xətası gələndə göstərilən ekran

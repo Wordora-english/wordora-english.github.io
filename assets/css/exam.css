@@ -146,3 +146,8 @@ body.exam-shielded #app, body.exam-shielded .exam-bar { filter: blur(24px); visi
 .exam.show-card .pdf-zoom { display: none; }
 .exam-pdf .pages { transform-origin: 0 0; }
 .exam-pdf .page { max-width: none; }
+
+/* Ad yazısı (su nişanı) — sınaq ekranının üstündə, kliklərə mane olmur */
+.exam-wm { position: fixed; inset: 0; z-index: 850; pointer-events: none; background-repeat: repeat; opacity: .13; }
+:root[data-theme=dark] .exam-wm { opacity: .2; }
+@media print { body * { visibility: hidden !important; } }
