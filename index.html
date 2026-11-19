@@ -75,6 +75,7 @@
       try {
         const me = await getMyProfile();
         if (me) {
+          if (me.class_name === "Magistratura") document.getElementById("exam-cd")?.remove();   // magistrantlara buraxılış sayğacı lazım deyil
           const link = me.role === "admin" ? "admin.html" : "portal.html";
           const label = me.role === "admin" ? "Admin panel" : "Portalım";
           document.getElementById("nav").innerHTML =
