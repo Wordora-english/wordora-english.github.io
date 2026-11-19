@@ -130,6 +130,8 @@
         materialUsers: new Set(views.map((v) => v.user_id)).size,
         violN: activeViol.length, violKinds: activeViol.reduce((acc, v) => { acc[v.kind] = (acc[v.kind] || 0) + 1; return acc; }, {}),
         liveN: sessions.length, livePlayers: new Set(livePlayers.map((p) => p.user_id)).size,
+        liveTop: Object.entries(livePlayers.reduce((acc, p) => { (acc[p.user_id] ||= { pts: 0, n: 0 }); acc[p.user_id].pts += p.score; acc[p.user_id].n++; return acc; }, {}))
+          .map(([id, v]) => ({ p: byId[id], ...v })).filter((x) => x.p && x.pts > 0).sort((a, b) => b.pts - a.pts).slice(0, 10),
       };
     }
 
@@ -147,7 +149,7 @@
         const top = r.perStudent.slice(0, 3).map((x) => `${x.p.full_name} (${classLabel(x.p.class_name)}, ${R(x.avg)}%)`);
         if (top.length) lines.push(`Ən yüksək nəticə göstərən şagirdlər: ${top.join(", ")}.`);
       } else lines.push("Bu ay sınaq keçirilməmişdir.");
-      if (r.liveN) lines.push(`Dərslərdə ${r.liveN} canlı viktorina təşkil olunmuş, ${r.livePlayers} şagird iştirak etmişdir.`);
+      if (r.liveN) lines.push(`Dərslərdə ${r.liveN} canlı viktorina təşkil olunmuş, ${r.livePlayers} şagird iştirak etmişdir.${r.liveTop[0] ? ` Ayın viktorina çempionu ${r.liveTop[0].p.full_name} (${classLabel(r.liveTop[0].p.class_name)}) olmuşdur.` : ""}`);
       if (r.views || r.downloads) lines.push(`Dərs materiallarına ${r.materialUsers} şagird tərəfindən ${r.views} dəfə baxılmış, ${r.downloads} dəfə yüklənmişdir.`);
       const weak = r.attention.filter((x) => x.avg !== null && x.avg < 50).length;
       if (weak) lines.push(`${weak} şagirdin orta nəticəsi 50%-dən aşağı olduğu üçün onlarla əlavə iş aparılması planlaşdırılır.`);
@@ -198,6 +200,10 @@
           ${r.perStudent.slice(0, 15).map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.p.full_name)}</td><td class="muted">${esc(classLabel(x.p.class_name))}</td><td class="r">${x.n}</td><td class="r"><span class="pct ${cls(x.avg)}">${R(x.avg)}</span></td></tr>`).join("")}</table>`
           : '<div class="empty small">Məlumat yoxdur.</div>'}</div>
 
+        ${r.liveTop.length ? `<div class="section-title"><h2>🎮 Ayın viktorina çempionları</h2></div>
+        <div class="card"><table class="res-table"><tr><th>#</th><th>Şagird</th><th>Sinif</th><th class="r">Oyun</th><th class="r">Bal</th></tr>
+          ${r.liveTop.map((x, i) => `<tr><td>${i === 0 ? "👑" : i + 1}</td><td>${esc(x.p.full_name)}</td><td class="muted">${esc(classLabel(x.p.class_name))}</td><td class="r">${x.n}</td><td class="r"><b>${x.pts.toLocaleString("az")}</b></td></tr>`).join("")}</table></div>` : ""}
+
         <div class="section-title"><h2>Diqqət tələb edənlər</h2><span class="muted small">orta nəticə &lt; 50% və ya 2+ pozuntu</span></div>
         <div class="card">${r.attention.length ? `<table class="res-table"><tr><th>Şagird</th><th>Sinif</th><th class="r">Orta</th><th class="r">Pozuntu</th></tr>
           ${r.attention.map((x) => `<tr><td><a href="student.html?id=${x.p.id}">${esc(x.p.full_name)}</a></td><td class="muted">${esc(classLabel(x.p.class_name))}</td><td class="r">${x.avg === null ? "—" : `<span class="pct ${cls(x.avg)}">${R(x.avg)}</span>`}</td><td class="r">${x.viol || ""}</td></tr>`).join("")}</table>`
@@ -227,6 +233,7 @@
           ...r.perTest.map((t) => [t.title, t.classes?.length ? t.classes.map(classLabel).join(", ") : "hamı", t.n, Math.round(t.avg), Math.round(t.max), Math.round(t.min)])] },
         { name: "Siniflər", widths: [18, 12, 10], rows: [["Sinif", "İştirak", "Orta %"], ...r.perClass.map((c) => [classLabel(c.c), c.n, Math.round(c.avg)])] },
         { name: "Şagirdlər", widths: [6, 28, 14, 8, 9], rows: [["#", "Şagird", "Sinif", "Sınaq", "Orta %"], ...r.perStudent.map((x, i) => [i + 1, x.p.full_name, classLabel(x.p.class_name), x.n, Math.round(x.avg)])] },
+        { name: "Viktorina çempionları", widths: [6, 28, 14, 8, 10], rows: [["#", "Şagird", "Sinif", "Oyun", "Bal"], ...r.liveTop.map((x, i) => [i + 1, x.p.full_name, classLabel(x.p.class_name), x.n, x.pts])] },
         { name: "Diqqət", widths: [28, 14, 9, 9], rows: [["Şagird", "Sinif", "Orta %", "Pozuntu"], ...r.attention.map((x) => [x.p.full_name, classLabel(x.p.class_name), x.avg === null ? "" : Math.round(x.avg), x.viol])] },
       ]);
     }

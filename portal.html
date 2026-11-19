@@ -228,6 +228,36 @@
       document.getElementById("wotd-say")?.addEventListener("click", () => speak(w.word));
     }
 
+    // ---------- 🎮 Viktorina xalları və nişanlar ----------
+    const LIVE_BADGES = [
+      ["🎮", "İlk oyun", (s) => s.games >= 1, "Bir canlı viktorinada iştirak et"],
+      ["🕹️", "Oyunsevər", (s) => s.games >= 10, "10 viktorinada iştirak et"],
+      ["🥇", "Qalib", (s) => s.wins >= 1, "Bir oyunda 1-ci yeri tut"],
+      ["🏆", "Çempion", (s) => s.wins >= 5, "5 oyunda 1-ci yeri tut"],
+      ["🥉", "Podium", (s) => s.podiums >= 3, "3 dəfə ilk üçlüyə düş"],
+      ["🔥", "Alov", (s) => s.best_streak >= 5, "Ardıcıl 5 sualı düzgün cavabla"],
+      ["⚡", "İldırım", (s) => s.fastest >= 5, "5 dəfə ən sürətli düzgün cavabı ver"],
+      ["🎯", "Snayper", (s) => s.perfect >= 1, "Bir oyunda bütün suallara düzgün cavab ver (ən azı 5 sual)"],
+      ["👑", "Ayın çempionu", (s) => s.champion_months >= 1 || s.champion?.me, "Ay ərzində viktorinalarda ən çox bal topla"],
+    ];
+    async function loadLiveMe() {
+      const box = document.getElementById("live-me");
+      const { data: s, error } = await sb.rpc("my_live_stats");
+      if (error || !s) return;   // 31-ci SQL hələ işə salınmayıb
+      const got = LIVE_BADGES.filter((b) => b[2](s)).length;
+      box.innerHTML = `
+        <div class="lm-stats">
+          <span>⭐ Bu ay: <b>${Number(s.month_points).toLocaleString("az")}</b> bal</span>
+          <span>🎮 ${s.month_games} oyun</span>
+          ${s.month_rank ? `<span>📈 Ayın reytinqində: <b>${s.month_rank}-ci</b></span>` : ""}
+          <span class="muted">🏅 Nişanlar: ${got}/${LIVE_BADGES.length}</span>
+        </div>
+        <div class="badges">${LIVE_BADGES.map(([ic, nm, ok, hint]) => `<button type="button" class="badge-i ${ok(s) ? "" : "off"}" data-hint="${esc(hint)}" title="${esc(hint)}">${ic} ${esc(nm)}</button>`).join("")}</div>
+        ${s.champion ? `<div class="champ">${s.champion.me ? "👑 <b>Sən bu ayın viktorina çempionusan!</b>" : `👑 Ayın çempionu: <b>${esc(s.champion.name)}</b> ${s.champion.class ? `(${esc(classLabel(s.champion.class))})` : ""}`} — ${Number(s.champion.points).toLocaleString("az")} bal</div>` : ""}`;
+      box.classList.remove("hidden");
+      box.querySelectorAll(".badge-i").forEach((b) => b.onclick = () => toast(`${b.textContent.trim()}: ${b.dataset.hint}${b.classList.contains("off") ? "" : " ✓"}`, b.classList.contains("off") ? "" : "ok"));
+    }
+
     // ---------- Reytinq ----------
     let rankKind = "tests", rankScope = "class", rankDays = 30;
     async function loadRank() {
@@ -401,6 +431,7 @@
             <input id="live-code" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="000000" aria-label="Viktorina kodu">
             <button class="btn btn-primary" type="submit">Qoşul</button>
           </div>
+          <div id="live-me" class="live-me hidden"></div>
         </form>
 
         <div class="quick">
@@ -437,7 +468,7 @@
       });
       renderInstall();
       loadWotd();
-      loadQuick(); loadGroups();
+      loadQuick(); loadGroups(); loadLiveMe();
       if (me.class_name !== "Magistratura") loadRank();   // magistrantlar üçün reytinq yoxdur
       addEventListener("wd-installable", renderInstall);
       loadTests();

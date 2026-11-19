@@ -25,7 +25,7 @@
   <script type="module">
     import { sb, configured, getMyProfile, esc, toast, translateError } from "./assets/js/app.js";
     import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
-    import { OPTION_STYLE } from "./assets/js/live-common.js";
+    import { OPTION_STYLE, TEAMS, teamLabel } from "./assets/js/live-common.js";
     import { LiveAudio, confetti, AVATARS, COLORS, REACTIONS } from "./assets/js/live-audio.js";
 
     const app = document.getElementById("app");
@@ -37,6 +37,8 @@
     document.addEventListener("pointerdown", () => audio.unlock(), { once: true });
 
     const center = (html) => `<div class="pl-center"><div class="pl-card">${html}</div></div>`;
+    const teamChip = (t) => (t === null || t === undefined || !TEAMS[t] ? "" : `<span class="team-chip" style="background:${TEAMS[t].color}">${TEAMS[t].icon} ${esc(TEAMS[t].name)}</span>`);
+    let draft = "";   // yazmalı sualda yazılan (ekran yenilənsə itməsin)
     const ava = (a, c, cls = "") => `<span class="ava ${cls}" style="background:${esc(c || "#7b4fe0")}">${esc(a || "🙂")}</span>`;
 
     function joinScreen(prefill = "") {
@@ -77,6 +79,28 @@
       else if (data && !data.accepted) toast("Vaxt bitdi — cavab qəbul olunmadı", "err");
     }
 
+    async function answerText() {
+      const v = (document.getElementById("pl-ans")?.value || "").trim();
+      if (!v) return toast("Cavabı yaz", "err");
+      if (sending) return;
+      sending = true;
+      audio.tap();
+      st.my_choice = 0; st.my_text = v;
+      lastKey = ""; render();
+      const { data, error } = await sb.rpc("live_answer_text", { p_session: sid, p_text: v });
+      sending = false;
+      if (error) { toast(translateError(error), "err"); st.my_choice = null; lastKey = ""; render(); }
+      else { draft = ""; if (data && !data.accepted) toast("Vaxt bitdi — cavab qəbul olunmadı", "err"); }
+    }
+
+    // komandanın yeri (reveal/finished)
+    function teamLine() {
+      if (!st.teams || st.team === null || st.team === undefined || !st.team_scores?.length) return "";
+      const k = st.team_scores.findIndex((t) => t.team === st.team);
+      if (k < 0) return "";
+      return `<p style="margin:.4rem 0 0">${teamChip(st.team)} komandası: <b>${k + 1}-ci yer</b> · ${st.team_scores[k].avg} bal</p>`;
+    }
+
     let lastReactAt = 0;
     function reactRow() {
       return `<div class="react-row">${REACTIONS.map((e) => `<button type="button" data-react="${e}">${e}</button>`).join("")}</div>
@@ -110,11 +134,13 @@
       if (document.getElementById("pick")) {   // yalnız otağı yenilə — seçim pəncərəsi yerində qalsın
         document.getElementById("mini-room").innerHTML = roomHtml();
         document.getElementById("pcount").textContent = st.players;
+        document.getElementById("my-team").innerHTML = st.teams ? `Sənin komandan: ${teamChip(st.team)}` : "";
         return;
       }
       app.innerHTML = center(`
         <div id="my-ava">${ava(st.avatar, st.color, "lg")}</div>
         <h1 style="font-size:1.3rem;margin:.4rem 0 0">Qoşuldun, ${esc(me.full_name.split(" ")[0])}!</h1>
+        <div id="my-team" class="small" style="margin:.3rem 0">${st.teams ? `Sənin komandan: ${teamChip(st.team)}` : ""}</div>
         <p class="muted small" style="margin:.2rem 0 .4rem">Müəllim başlayana qədər personajını seç 👇</p>
         <div class="pick-grid" id="pick">${AVATARS.map((a) => `<button type="button" data-a="${a}" class="${a === st.avatar ? "on" : ""}">${a}</button>`).join("")}</div>
         <div class="color-row" id="colors">${COLORS.map((c) => `<button type="button" data-c="${c}" class="${c === st.color ? "on" : ""}" style="background:${c}" aria-label="rəng"></button>`).join("")}</div>
@@ -139,7 +165,7 @@
 
     function render() {
       const phase = `${st.status}|${st.q_index}`;
-      const key = `${phase}|${st.my_choice}|${st.my_points}|${st.score}|${st.status === "lobby" ? JSON.stringify(st.room) : ""}`;
+      const key = `${phase}|${st.my_choice}|${st.my_points}|${st.score}|${st.status === "lobby" ? JSON.stringify(st.room) + st.team + st.teams : ""}`;
       if (key === lastKey) return;
       lastKey = key;
       const changed = phase !== prevPhase;
@@ -153,10 +179,28 @@
 
       const head = `<div class="pl-status"><span class="pl-top-ava">${ava(st.avatar, st.color, "sm")} Sual ${st.q_index + 1}/${st.total}</span><span id="pl-cd"></span></div>`;
 
+      const q0 = st.question || {};
+      const x2 = q0.double ? '<div class="pl-x2">⭐ İKİQAT BAL ⭐</div>' : "";
+      if (st.status === "question" && (st.my_choice === null || st.my_choice === undefined) && q0.type === "text") {
+        if (changed) { audio.whoosh(); draft = ""; }
+        app.innerHTML = `${head}<div class="pl-time"><i id="pl-bar" style="width:100%"></i></div>${x2}
+          <form class="pl-type" id="pl-form">
+            <div class="pl-q">${esc(q0.text || "")}</div>
+            <input id="pl-ans" maxlength="120" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Cavabı yaz…" value="${esc(draft)}">
+            <button class="btn btn-primary" type="submit">Göndər ✓</button>
+          </form>`;
+        const inp = document.getElementById("pl-ans");
+        inp.addEventListener("input", () => { draft = inp.value; });
+        document.getElementById("pl-form").onsubmit = (e) => { e.preventDefault(); answerText(); };
+        if (changed) setTimeout(() => inp.focus(), 50);
+        tick();
+        return;
+      }
+
       if (st.status === "question" && (st.my_choice === null || st.my_choice === undefined)) {
         const q = st.question;
         if (changed) audio.whoosh();
-        app.innerHTML = `${head}<div class="pl-time"><i id="pl-bar" style="width:100%"></i></div>
+        app.innerHTML = `${head}<div class="pl-time"><i id="pl-bar" style="width:100%"></i></div>${x2}
           <div class="pl-opts" style="${q.options.length <= 2 ? "grid-template-columns:1fr" : ""}">
             ${q.options.map((o, i) => `<button class="pl-opt" data-i="${i}" style="background:${OPTION_STYLE[i].color}"><span class="sym">${OPTION_STYLE[i].sym}</span><span>${esc(o)}</span></button>`).join("")}
           </div>`;
@@ -166,7 +210,11 @@
       }
 
       if (st.status === "question") {
-        const s = OPTION_STYLE[st.my_choice];
+        if (q0.type === "text") {
+          app.innerHTML = center(`<div style="font-size:3rem">✍️</div><h1 style="font-size:1.4rem">Cavab göndərildi</h1><p style="font-size:1.2rem"><b>${esc(st.my_text || "")}</b></p><p class="muted">Digərlərini gözləyirik…</p>`);
+          return;
+        }
+        const s = OPTION_STYLE[st.my_choice] || OPTION_STYLE[0];
         app.innerHTML = center(`<div style="font-size:3rem;color:${s.color}">${s.sym}</div><h1 style="font-size:1.4rem">Cavab göndərildi</h1><p class="muted">Digərlərini gözləyirik…</p>`);
         return;
       }
@@ -179,8 +227,12 @@
           : st.my_correct
             ? `<div style="font-size:3rem">🎉</div><div class="result-big result-ok">Düzgün!</div><p style="font-size:1.3rem;font-weight:800">+${st.my_points}</p>
                ${st.streak >= 3 ? `<div class="streak-badge">🔥 ${st.streak} ardıcıl düzgün! Bonus bal</div>` : st.streak === 2 ? '<div class="small muted">Daha biri düzgün olsa — 🔥 seriya bonusu!</div>' : ""}`
-            : `<div style="font-size:3rem">😕</div><div class="result-big result-bad">Səhv</div><p class="muted">Düzgün cavab proyektordadır</p>`)
-        + `<hr style="border:0;border-top:1px solid var(--line);margin:1rem 0"><p>${ava(st.avatar, st.color, "sm")} Balın: <b>${st.score}</b> · Yerin: <b>${st.rank}</b> / ${st.players}</p>${reactRow()}`);
+            : `<div style="font-size:3rem">😕</div><div class="result-big result-bad">Səhv</div>${q0.type === "text"
+                ? `<p>Sənin cavabın: <s>${esc(st.my_text || "")}</s><br>Düzgün: <b style="color:var(--ok)">${esc(q0.answer || "")}</b></p>`
+                : '<p class="muted">Düzgün cavab proyektordadır</p>'}`)
+        + (none && q0.type === "text" && q0.answer ? `<p>Düzgün cavab: <b style="color:var(--ok)">${esc(q0.answer)}</b></p>` : "")
+        + (q0.double && st.my_correct ? '<p class="small" style="margin:.2rem 0 0">⭐ İkiqat bal sualı idi!</p>' : "")
+        + `<hr style="border:0;border-top:1px solid var(--line);margin:1rem 0"><p>${ava(st.avatar, st.color, "sm")} Balın: <b>${st.score}</b> · Yerin: <b>${st.rank}</b> / ${st.players}</p>${teamLine()}${reactRow()}`);
         bindReact();
         return;
       }
@@ -191,7 +243,8 @@
         const medal = st.rank === 1 ? "🥇" : st.rank === 2 ? "🥈" : st.rank === 3 ? "🥉" : "🏁";
         if (changed) { audio.fanfare(); if (st.rank <= 3) setTimeout(() => confetti(90), 600); }
         app.innerHTML = center(`<div style="font-size:3.4rem">${medal}</div>${ava(st.avatar, st.color, "lg")}<h1 style="font-size:1.5rem;margin-top:.5rem">Viktorina bitdi</h1>
-          <p style="font-size:1.2rem">Yekun bal: <b>${st.score}</b></p><p style="font-size:1.2rem">Yerin: <b>${st.rank}</b> / ${st.players}</p>
+          <p style="font-size:1.2rem">Yekun bal: <b>${st.score}</b></p><p style="font-size:1.2rem">Yerin: <b>${st.rank}</b> / ${st.players}</p>${teamLine()}
+          ${st.teams && st.team_scores?.[0]?.team === st.team && st.team_scores[0].avg > 0 ? '<p style="font-size:1.2rem">🏆 <b>Komandan qalib gəldi!</b></p>' : ""}
           <a class="btn btn-primary btn-block" href="portal.html" style="margin-top:12px">Portala qayıt</a>`);
       }
     }
@@ -216,7 +269,7 @@
         toast(translateError(error), "err");
         return joinScreen();
       }
-      if (sending && data.status === "question") data.my_choice = st?.my_choice;   // göndərilən cavabı itirmə
+      if (sending && data.status === "question") { data.my_choice = st?.my_choice; data.my_text = st?.my_text; }   // göndərilən cavabı itirmə
       st = data;
       if (st.status === "question") leftAt = Date.now() + (st.left_ms || 0);
       render();

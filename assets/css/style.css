@@ -531,3 +531,22 @@ body[data-group="mag"] .group-switch button.on { color: #8a5a00; }
 /* Portal: "Qrupuna qoşul" */
 .join-card { color: var(--text); text-align: left; margin: .7rem 0 0; padding: 14px 16px; }
 .join-list { display: flex; flex-wrap: wrap; gap: .4rem; }
+
+/* Canlı viktorina redaktoru */
+.live-tools { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: .45rem; }
+.live-prev-wrap { margin: -.2rem 0 .9rem; }
+.live-prev-wrap summary { cursor: pointer; font-weight: 700; font-size: .9rem; color: var(--violet); }
+#live-prev { display: grid; gap: .5rem; margin-top: .6rem; max-height: 460px; overflow: auto; }
+.lp-q { border: 1px solid var(--line); border-radius: 12px; padding: .6rem .75rem; background: var(--card); }
+.lp-h { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; font-size: .92rem; }
+.lp-img { display: block; max-height: 120px; max-width: 100%; border-radius: 8px; margin-top: .4rem; }
+.lp-o { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .4rem; }
+.lp-o span { font-size: .82rem; padding: .15rem .55rem; border-radius: 99px; background: var(--soft); }
+.lp-o span.ok { background: rgba(18, 146, 92, .15); color: var(--ok); font-weight: 700; }
+/* Portal: viktorina xalları və nişanlar */
+.live-me { margin-top: .7rem; padding-top: .7rem; border-top: 1px dashed var(--line); width: 100%; }
+.live-me .lm-stats { display: flex; flex-wrap: wrap; gap: .4rem 1rem; font-size: .88rem; }
+.badges { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .5rem; }
+.badge-i { border: 0; color: inherit; font-family: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: .3rem; font-size: .8rem; padding: .2rem .6rem; border-radius: 99px; background: var(--soft); font-weight: 600; }
+.badge-i.off { opacity: .38; filter: grayscale(1); font-weight: 500; }
+.champ { margin-top: .5rem; font-size: .88rem; padding: .45rem .7rem; border-radius: 10px; background: linear-gradient(90deg, rgba(245, 164, 0, .18), transparent); }

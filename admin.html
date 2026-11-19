@@ -162,17 +162,26 @@ departure | yola düşmə | The departure was delayed."></textarea>
         </div>
         <div class="field">
           <label for="live-text">Suallar</label>
-          <textarea id="live-text" style="min-height:220px;font-family:ui-monospace,Menlo,Consolas,monospace" placeholder="She ___ to school every day.
+          <div class="live-tools">
+            <button type="button" class="btn btn-ghost btn-sm" data-ltool="gen">⚡ Sözlərdən hazırla</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-ltool="x2" title="Kursorun olduğu suala ikiqat bal">⭐ İkiqat bal</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-ltool="img">🖼 Şəkil</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-ltool="say">🔊 Səsli sual</button>
+            <button type="button" class="btn btn-ghost btn-sm" data-ltool="text">✍️ Yazmalı sual</button>
+            <input type="file" id="live-img-file" accept="image/*" hidden>
+          </div>
+          <textarea id="live-text" style="min-height:240px;font-family:ui-monospace,Menlo,Consolas,monospace" placeholder="She ___ to school every day.
 *goes
 go
 going
 
-What is the past of &quot;see&quot;?
-*saw
-seen
-seed"></textarea>
-          <div class="hint">Birinci sətir — sual, altında 2–4 variant. Düzgün variantın əvvəlinə <b>*</b> qoy. Sualları <b>boş sətirlə</b> ayır.</div>
+What is the past of &quot;go&quot;?  [x2]
+= went"></textarea>
+          <div class="hint">Birinci sətir — sual, altında 2–4 variant, düzgünün əvvəlinə <b>*</b>. Sualları <b>boş sətirlə</b> ayır.
+            <b>= cavab</b> — yazmalı sual · <b>[x2]</b> — ikiqat bal · <b>[səs]</b> — proyektor sualı oxuyur, <b>[səs: söz]</b> — yalnız sözü oxuyur (ekranda görünmür) · <b>[vaxt: 30]</b> — bu suala ayrıca vaxt.
+            Düymələr kursorun olduğu suala əlavə edir.</div>
         </div>
+        <details class="live-prev-wrap"><summary>👁 Önizləmə — <span id="live-prev-n">0 sual</span></summary><div id="live-prev"></div></details>
         <div id="live-msg" class="form-msg hidden"></div>
         <div style="display:flex;gap:.5rem;flex-wrap:wrap">
           <button class="btn btn-primary" type="submit">Yadda saxla</button>
@@ -180,6 +189,8 @@ seed"></textarea>
         </div>
       </form>
       <div class="grid" id="live-list"></div>
+      <div class="section-title"><h2>📊 Keçirilmiş oyunlar</h2></div>
+      <div id="live-games"></div>
     </section>
 
     <section data-panel="tests" class="hidden">
@@ -284,7 +295,8 @@ seed"></textarea>
     };
     const groupTargets = (checked) => (group === "mag" ? [MAG_CLASS] : checked.length ? checked : null);
     import { VIOLATION_LABELS, exitVerdict, exitDetails } from "./assets/js/guard.js";
-    import { parseLive, toLiveText } from "./assets/js/live-common.js";
+    import { parseLive, toLiveText, commonTime, shrinkImage, quizFromWords, liveImg } from "./assets/js/live-common.js";
+    import { SUPABASE_URL } from "./assets/js/config.js";
     import { downloadXlsx } from "./assets/js/xlsx-lite.js";
 
     showConfigWarning();
@@ -812,10 +824,11 @@ seed"></textarea>
       } else {
         // mətnli (##) suallar və açıq/esse suallar viktorinaya uyğun deyil
         const liveText = bank.filter((b) => ids.includes(b.id) && !b.body.trim().startsWith("##"))
-          .flatMap((b) => b.body.split(/\n\s*\n/)).filter((bl) => !/^\s*=/m.test(bl)).join("\n\n");
-        if (!liveText.trim()) return toast("Viktorinaya yalnız variantlı suallar keçir", "err");
+          .flatMap((b) => b.body.split(/\n\s*\n/)).join("\n\n");
+        if (!liveText.trim()) return toast("Viktorinaya yalnız variantlı və yazmalı suallar keçir", "err");
         app.querySelector('.tab[data-tab="live"]').click();
         document.getElementById("live-text").value = liveText;
+        livePreview();
         toast("Suallar viktorina formuna köçürüldü — ad yaz və yadda saxla", "ok");
       }
     }
@@ -892,15 +905,39 @@ seed"></textarea>
       const { data, error } = await sb.from("live_quizzes").select("*").order("created_at", { ascending: false });
       if (error) { box.innerHTML = `<div class="card empty">${esc(translateError(error))}<br><span class="small">07-password-live.sql işə salınıb?</span></div>`; return; }
       liveQuizzes = data;
+      const feats = (qs) => {
+        const f = [];
+        const n = (fn) => qs.filter(fn).length;
+        if (n((q) => q.type === "text")) f.push(`✍️ ${n((q) => q.type === "text")}`);
+        if (n((q) => q.double)) f.push(`⭐ ${n((q) => q.double)}`);
+        if (n((q) => q.img)) f.push(`🖼 ${n((q) => q.img)}`);
+        if (n((q) => q.say)) f.push(`🔊 ${n((q) => q.say)}`);
+        return f.map((x) => `<span>${x}</span>`).join("");
+      };
       box.innerHTML = data.length ? data.map((q) => `
         <article class="card test-card">
-          <div><h3>🎮 ${esc(q.title)}</h3><div class="test-meta"><span>${q.questions.length} sual</span><span>${q.questions[0]?.time || 20} san/sual</span><span>${formatDate(q.created_at)}</span></div></div>
+          <div><h3>🎮 ${esc(q.title)}</h3><div class="test-meta"><span>${q.questions.length} sual</span><span>${commonTime(q.questions)} san/sual</span>${feats(q.questions)}<span>${formatDate(q.created_at)}</span></div></div>
           <div style="display:flex;gap:.4rem;flex-wrap:wrap">
             <button class="btn btn-primary btn-sm" data-live="start" data-id="${q.id}">▶ Başlat</button>
             <button class="btn btn-ghost btn-sm" data-live="edit" data-id="${q.id}">Redaktə</button>
             <button class="btn btn-bad btn-sm" data-live="delete" data-id="${q.id}">Sil</button>
           </div>
-        </article>`).join("") : '<div class="card empty">Hələ viktorina yoxdur. Yuxarıda sualları yaz və yadda saxla.</div>';
+        </article>`).join("") : '<div class="card empty">Hələ viktorina yoxdur. Yuxarıda sualları yaz və ya "⚡ Sözlərdən hazırla" düyməsini bas.</div>';
+      loadLiveGames();
+    }
+
+    async function loadLiveGames() {
+      const box = document.getElementById("live-games");
+      const { data, error } = await sb.from("live_sessions").select("id, created_at, status, live_quizzes(title), live_players(count)")
+        .order("created_at", { ascending: false }).limit(30);
+      if (error) { box.innerHTML = ""; return; }
+      const rows = (data || []).filter((g) => (g.live_players?.[0]?.count || 0) > 0);
+      box.innerHTML = rows.length ? `<div class="card"><table class="res-table">
+          <tr><th>Viktorina</th><th>Tarix</th><th class="r">İştirakçı</th><th></th></tr>
+          ${rows.map((g) => `<tr><td>🎮 ${esc(g.live_quizzes?.title || "Silinmiş viktorina")}${g.status !== "finished" ? ' <span class="pill live">gedir</span>' : ""}</td>
+            <td class="muted">${formatDate(g.created_at)}</td><td class="r">${g.live_players[0].count}</td>
+            <td class="r"><a class="btn btn-ghost btn-sm" href="live-report.html?s=${g.id}">📊 Hesabat</a></td></tr>`).join("")}</table></div>`
+        : '<div class="card empty small">Oyun keçiriləndən sonra hesabatı burada görünəcək.</div>';
     }
 
     function resetLiveForm() {
@@ -909,6 +946,128 @@ seed"></textarea>
       document.getElementById("live-form-title").textContent = "Yeni canlı viktorina";
       document.getElementById("live-cancel").classList.add("hidden");
       document.getElementById("live-msg").classList.add("hidden");
+      livePreview();
+    }
+
+    // ---- Önizləmə ----
+    let prevT = null;
+    function livePreview() {
+      clearTimeout(prevT);
+      prevT = setTimeout(() => {
+        const time = Number(document.getElementById("live-time").value);
+        const { questions, errors } = parseLive(document.getElementById("live-text").value, time);
+        document.getElementById("live-prev-n").textContent = `${questions.length} sual${errors.length ? ` · ⚠️ ${errors.length} səhv` : ""}`;
+        document.getElementById("live-prev").innerHTML = (errors.length ? `<div class="form-msg err">${errors.map(esc).join("<br>")}</div>` : "") +
+          questions.map((q, i) => `<div class="lp-q">
+            <div class="lp-h"><b>${i + 1}.</b> ${esc(q.text)}
+              ${q.double ? '<span class="pill wait">⭐ x2</span>' : ""}${q.type === "text" ? '<span class="pill live">✍️ yazmalı</span>' : ""}
+              ${q.say ? `<span class="pill">🔊 ${esc(q.say === q.text ? "sual oxunur" : q.say)}</span>` : ""}<span class="muted small">${q.time} san</span></div>
+            ${q.img ? `<img class="lp-img" src="${esc(liveImg(q.img, SUPABASE_URL))}" alt="">` : ""}
+            <div class="lp-o">${q.type === "text" ? q.answers.map((a) => `<span class="ok">✓ ${esc(a)}</span>`).join("")
+              : q.options.map((o, k) => `<span class="${k === q.correct ? "ok" : ""}">${k === q.correct ? "✓ " : ""}${esc(o)}</span>`).join("")}</div></div>`).join("");
+      }, 250);
+    }
+
+    // ---- Alətlər: kursorun olduğu suala teq əlavə et ----
+    function blockAtCursor(ta) {
+      const v = ta.value, pos = ta.selectionStart ?? v.length;
+      let start = v.lastIndexOf("\n\n", Math.max(0, pos - 1)); start = start === -1 ? 0 : start + 2;
+      let end = v.indexOf("\n\n", pos); end = end === -1 ? v.length : end;
+      return { start, end, text: v.slice(start, end) };
+    }
+    function addToBlock(tagLine) {
+      const ta = document.getElementById("live-text");
+      const b = blockAtCursor(ta);
+      if (!b.text.trim()) { toast("Əvvəlcə kursoru bir sualın içinə qoy", "err"); ta.focus(); return false; }
+      const lines = b.text.split("\n");
+      lines.splice(1, 0, tagLine);                // sualın altına
+      const nt = lines.join("\n");
+      ta.value = ta.value.slice(0, b.start) + nt + ta.value.slice(b.end);
+      ta.selectionStart = ta.selectionEnd = b.start + nt.length;
+      ta.focus(); livePreview();
+      return true;
+    }
+    function appendBlock(block) {
+      const ta = document.getElementById("live-text");
+      ta.value = (ta.value.trim() ? ta.value.trim() + "\n\n" : "") + block;
+      ta.selectionStart = ta.selectionEnd = ta.value.length;
+      ta.focus(); ta.scrollTop = ta.scrollHeight; livePreview();
+    }
+    async function liveTool(kind) {
+      const ta = document.getElementById("live-text");
+      if (kind === "x2") {
+        const b = blockAtCursor(ta);
+        if (/\[\s*x2\s*\]/i.test(b.text)) {   // artıq var — götür
+          const nt = b.text.replace(/\s*\[\s*x2\s*\]/ig, "");
+          ta.value = ta.value.slice(0, b.start) + nt + ta.value.slice(b.end); livePreview();
+          return toast("İkiqat bal götürüldü", "ok");
+        }
+        if (addToBlock("[x2]")) toast("⭐ Bu sual ikiqat bal olacaq", "ok");
+      } else if (kind === "say") {
+        const w = prompt("Proyektor nəyi səsli oxusun?\n\nBoş burax — sualın özünü oxuyacaq.\nSöz yazsan — yalnız o sözü oxuyacaq (ekranda görünməyəcək, listening üçün).", "");
+        if (w === null) return;
+        addToBlock(w.trim() ? `[səs: ${w.trim().replace(/[\[\]]/g, "")}]` : "[səs]");
+      } else if (kind === "text") {
+        appendBlock("Sualı bura yaz (məs. What is the past of \"go\"?)\n= went");
+        toast('"=" ilə başlayan sətir — düzgün cavabdır. Bir neçə ola bilər.', "ok");
+      } else if (kind === "img") {
+        if (!blockAtCursor(ta).text.trim()) return toast("Əvvəlcə kursoru şəkil qoyulacaq sualın içinə qoy", "err");
+        document.getElementById("live-img-file").click();
+      } else if (kind === "gen") genFromWords();
+    }
+    async function uploadLiveImg(file) {
+      if (!file) return;
+      if (!file.type.startsWith("image/")) return toast("Yalnız şəkil seç", "err");
+      toast("Şəkil yüklənir…");
+      const blob = await shrinkImage(file);
+      const ext = blob.type === "image/gif" ? "gif" : "jpg";
+      const name = `${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${ext}`;
+      const { error } = await sb.storage.from("live").upload(name, blob, { contentType: blob.type || "image/jpeg" });
+      if (error) return toast(translateError(error) + " (31-live-more.sql işə salınıb?)", "err");
+      addToBlock(`[şəkil: live/${name}]`);
+      toast("Şəkil əlavə olundu 🖼", "ok");
+    }
+
+    // ---- ⚡ Sözlərdən avtomatik viktorina ----
+    async function genFromWords() {
+      const { data: words, error } = await sb.from("words").select("deck, word, meaning").limit(5000);
+      if (error) return toast(translateError(error), "err");
+      if (!words?.length) return toast("Söz bazası boşdur — əvvəlcə 🔤 Sözlər bölməsinə söz əlavə et", "err");
+      const decks = {};
+      for (const w of words) (decks[w.deck] ||= []).push(w);
+      const box = document.createElement("div");
+      box.className = "wd-modal";
+      box.innerHTML = `<div class="wd-modal-box" style="text-align:left;max-width:440px">
+        <div class="wd-modal-ico" style="text-align:center">⚡</div><h2 style="text-align:center">Sözlərdən viktorina</h2>
+        <div class="field"><label>Söz dəsti</label><select id="g-deck"><option value="">Hamısı (${words.length} söz)</option>
+          ${Object.entries(decks).map(([d, ws]) => `<option value="${esc(d)}">${esc(d)} (${ws.length})</option>`).join("")}</select></div>
+        <div class="field"><label>Sual sayı</label><select id="g-n"><option>5</option><option selected>10</option><option>15</option><option>20</option></select></div>
+        <div class="field"><label>Sual növləri</label>
+          <label class="chk"><input type="checkbox" value="en_az" checked> İngilis sözü → mənası (variant)</label>
+          <label class="chk"><input type="checkbox" value="az_en" checked> Mənası → ingilis sözü (variant)</label>
+          <label class="chk"><input type="checkbox" value="listen"> 🔊 Dinlə və yaz (yazmalı)</label>
+          <label class="chk"><input type="checkbox" value="spell"> ✍️ Mənasına görə yaz (yazmalı)</label></div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end"><button class="btn btn-ghost" id="g-no">Ləğv et</button><button class="btn btn-primary" id="g-ok">Hazırla</button></div></div>`;
+      document.body.appendChild(box);
+      box.querySelector("#g-no").onclick = () => box.remove();
+      box.addEventListener("click", (e) => { if (e.target === box) box.remove(); });
+      box.querySelector("#g-ok").onclick = () => {
+        const deck = box.querySelector("#g-deck").value;
+        const kinds = [...box.querySelectorAll(".chk input:checked")].map((c) => c.value);
+        if (!kinds.length) return toast("Ən azı bir sual növü seç", "err");
+        const list = deck ? decks[deck] : words;
+        const txt = quizFromWords(list, Number(box.querySelector("#g-n").value), kinds);
+        if (!txt) return toast("Bu dəstdə kifayət qədər söz yoxdur (variantlı sual üçün ən azı 4 söz)", "err");
+        const ta = document.getElementById("live-text");
+        if (ta.value.trim() && !confirm("Yazılmış sualların yerinə yenilər qoyulsun?\n\nOK — əvəz et · Ləğv — sona əlavə et")) ta.value = ta.value.trim() + "\n\n" + txt;
+        else ta.value = txt;
+        const nm = document.getElementById("live-name");
+        if (!nm.value.trim()) nm.value = `${deck || "Sözlər"} — viktorina`.slice(0, 150);
+        box.remove();
+        livePreview();
+        document.querySelector(".live-prev-wrap").open = true;
+        toast("Hazırdır ✓ Yoxla, istəsən dəyiş və yadda saxla", "ok");
+      };
     }
 
     async function saveLive(e) {
@@ -939,16 +1098,24 @@ seed"></textarea>
         location.href = `live-host.html?s=${data.session_id}`;
       } else if (action === "edit") {
         liveEditId = id;
+        const t = commonTime(q.questions);
         document.getElementById("live-name").value = q.title;
-        document.getElementById("live-time").value = String(q.questions[0]?.time || 20);
-        document.getElementById("live-text").value = toLiveText(q.questions);
+        const sel = document.getElementById("live-time");
+        if (![...sel.options].some((o) => o.value === String(t))) sel.insertAdjacentHTML("beforeend", `<option value="${t}">${t} saniyə</option>`);
+        sel.value = String(t);
+        document.getElementById("live-text").value = toLiveText(q.questions, t);
         document.getElementById("live-form-title").textContent = "Viktorinanı redaktə et";
         document.getElementById("live-cancel").classList.remove("hidden");
         document.getElementById("live-form").scrollIntoView({ behavior: "smooth" });
+        livePreview();
       } else if (action === "delete") {
         if (!confirm(`"${q.title}" silinsin?`)) return;
         const { error } = await sb.from("live_quizzes").delete().eq("id", id);
         if (error) return toast(translateError(error), "err");
+        // bu viktorinanın şəkillərini də sil (başqa viktorina istifadə etmirsə)
+        const used = new Set(liveQuizzes.filter((x) => x.id !== id).flatMap((x) => x.questions.map((qq) => qq.img)).filter(Boolean));
+        const imgs = [...new Set(q.questions.map((qq) => qq.img).filter((p) => p && p.startsWith("live/") && !used.has(p)))];
+        if (imgs.length) sb.storage.from("live").remove(imgs.map((p) => p.replace(/^live\//, ""))).catch(() => {});
         toast("Silindi", "ok");
         loadLive();
       }
@@ -1458,6 +1625,10 @@ seed"></textarea>
       document.getElementById("storage-btn").addEventListener("click", openStorage);
       document.getElementById("live-form").addEventListener("submit", saveLive);
       document.getElementById("live-cancel").addEventListener("click", resetLiveForm);
+      document.getElementById("live-text").addEventListener("input", livePreview);
+      document.getElementById("live-time").addEventListener("change", livePreview);
+      document.querySelectorAll("[data-ltool]").forEach((b) => b.addEventListener("click", () => liveTool(b.dataset.ltool)));
+      document.getElementById("live-img-file").addEventListener("change", (e) => { uploadLiveImg(e.target.files[0]); e.target.value = ""; });
       document.getElementById("set-max").addEventListener("change", (e) => saveSetting("max_warnings", e.target.value));
       document.getElementById("set-tor").addEventListener("change", (e) => saveSetting("tor_block", e.target.value));
       document.getElementById("set-weekly").addEventListener("change", async (e) => {

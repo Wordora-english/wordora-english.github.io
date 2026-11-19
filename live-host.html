@@ -18,6 +18,7 @@
   <div class="live-top">
     <span class="wordmark"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></span>
     <div style="display:flex;gap:.5rem">
+      <button class="btn btn-ghost btn-sm" id="auto" title="Cavab göstəriləndən sonra növbəti sual özü açılsın">⏩ Avto: bağlı</button>
       <button class="btn btn-ghost btn-sm" id="fs">⛶ Tam ekran</button>
       <a class="btn btn-ghost btn-sm" href="admin.html#live">Çıxış</a>
     </div>
@@ -28,12 +29,16 @@
   <button class="sound-btn" id="snd" title="Musiqi və səslər">🔇</button>
   <script type="module">
     import { sb, configured, getMyProfile, esc, toast, translateError } from "./assets/js/app.js";
-    import { OPTION_STYLE } from "./assets/js/live-common.js";
+    import { SUPABASE_URL } from "./assets/js/config.js";
+    import { OPTION_STYLE, TEAMS, teamLabel, liveImg } from "./assets/js/live-common.js";
     import { LiveAudio, confetti } from "./assets/js/live-audio.js";
+    import { speak, canSpeak } from "./assets/js/words.js";
 
     const app = document.getElementById("app");
     const sid = new URLSearchParams(location.search).get("s");
     let st = null, busy = false, lastKey = "", leftAt = 0, autoRevealed = -1, lastReact = 0, prevStatus = "", lastTick = -1, counting = false;
+    let lobbyTeams = null, autoTimer = null, autoAt = 0;
+    const REVEAL_SEC = 8;   // avtomatik rejimdə cavab ekranı neçə saniyə qalsın
     const siteUrl = location.origin + location.pathname.replace(/[^/]*$/, "");
     const audio = new LiveAudio({ music: true });
 
@@ -46,25 +51,73 @@
       bg.appendChild(sp);
     });
 
-    // Səs düyməsi — brauzer musiqini yalnız toxunandan sonra açır
+    // Səs düyməsi — brauzer musiqini (və səsli oxumanı) yalnız toxunandan sonra açır
+    const primeSpeech = () => { try { if (canSpeak()) { const u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); } } catch { /* yox */ } };
     const snd = document.getElementById("snd");
     const sndUi = () => { const on = audio.ready && audio.musicOn; snd.textContent = on ? "🔊" : "🔇"; snd.classList.toggle("off", !on); snd.classList.toggle("sound-hint", !audio.ready); };
     snd.onclick = () => {
-      if (!audio.ready) { audio.unlock(); audio.setMusic(true); audio.setSfx(true); }
+      if (!audio.ready) { audio.unlock(); audio.setMusic(true); audio.setSfx(true); primeSpeech(); }
       else { const on = !audio.musicOn; audio.setMusic(on); audio.setSfx(on); }
       syncMusic(); sndUi();
     };
-    document.addEventListener("pointerdown", () => { if (!audio.ready) { audio.unlock(); syncMusic(); sndUi(); } }, { once: true });
+    document.addEventListener("pointerdown", () => { if (!audio.ready) { audio.unlock(); primeSpeech(); syncMusic(); sndUi(); } }, { once: true });
     sndUi();
 
     document.getElementById("fs").onclick = () => {
       if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.().catch(() => {});
     };
 
+    // ⏩ Avtomatik keçid: cavab göstəriləndən 8 saniyə sonra növbəti sual özü açılır
+    let auto = false;
+    try { auto = localStorage.getItem("wd_live_auto") === "1"; } catch { /* yox */ }
+    const autoBtn = document.getElementById("auto");
+    function autoUi() {
+      autoBtn.textContent = auto ? "⏩ Avto: açıq" : "⏩ Avto: bağlı";
+      autoBtn.classList.toggle("on", auto);
+      const box = document.getElementById("auto-chk");
+      if (box) box.checked = auto;
+    }
+    function setAuto(v) {
+      auto = v;
+      try { localStorage.setItem("wd_live_auto", v ? "1" : "0"); } catch { /* yox */ }
+      autoUi();
+      if (auto && st?.status === "reveal") startAutoNext(); else stopAutoNext();
+      toast(auto ? "Suallar özü keçəcək ⏩" : "Avtomatik keçid dayandırıldı", "ok");
+    }
+    autoBtn.onclick = () => setAuto(!auto);
+    autoUi();
+
+    let autoFor = -1;
+    function stopAutoNext() {
+      clearInterval(autoTimer); autoTimer = null; autoFor = -1;
+      const b = document.getElementById("next");
+      if (b && st) b.textContent = nextLabel();
+    }
+    function startAutoNext() {
+      if (!auto || st?.status !== "reveal") return stopAutoNext();
+      if (autoTimer && autoFor === st.q_index) return;    // artıq sayır — yenidən başlatma
+      stopAutoNext();
+      const at = autoFor = st.q_index;
+      autoAt = Date.now() + (st.q_index + 1 >= st.total ? REVEAL_SEC + 2 : REVEAL_SEC) * 1000;
+      const step = () => {
+        if (!auto || st?.status !== "reveal" || st.q_index !== at) return stopAutoNext();
+        const left = Math.ceil((autoAt - Date.now()) / 1000);
+        const b = document.getElementById("next");
+        if (b) b.textContent = `${nextLabel()} · ${Math.max(0, left)}`;
+        if (left <= 0) { stopAutoNext(); control("next"); }
+      };
+      step();
+      autoTimer = setInterval(step, 250);
+    }
+    const nextLabel = () => (st.q_index + 1 >= st.total ? "Nəticələr 🏆" : "Növbəti sual ▶");
+
+    const isSay = (q) => !!q?.say;
+    const hiddenSay = (q) => q?.say && q.say !== q.text;   // ekranda görünməyən söz (listening)
+
     function syncMusic() {
       if (!audio.ready || !st) return;
       if (st.status === "lobby") audio.play("lobby");
-      else if (st.status === "question") audio.play("question");
+      else if (st.status === "question" && !isSay(st.question)) audio.play("question");
       else audio.stop();
     }
 
@@ -89,6 +142,7 @@
     async function control(action) {
       if (busy) return;
       busy = true;
+      stopAutoNext();
       if (action === "next" && st && st.q_index + 1 < st.total) await countIn(st.q_index < 0 ? "Hazır olun!" : `Sual ${st.q_index + 2}`);
       const { error } = await sb.rpc("live_control", { p_session: sid, p_action: action });
       busy = false;
@@ -96,7 +150,15 @@
       poll(true);
     }
 
+    async function setTeams(n, shuffle = false) {
+      const { error } = await sb.rpc("live_settings", { p_session: sid, p_teams: n, p_shuffle: shuffle });
+      if (error) return toast(/live_settings/.test(error.message || "") ? "Komandalar üçün əvvəlcə 31-live-more.sql işə salınmalıdır" : translateError(error), "err");
+      if (shuffle) toast("Komandalar qarışdırıldı 🔀", "ok");
+      poll(true);
+    }
+
     const ava = (p, cls = "") => `<span class="ava ${cls}" style="background:${esc(p.color || "#7b4fe0")}">${esc(p.avatar || "🙂")}</span>`;
+    const teamTag = (t) => (t === null || t === undefined || !TEAMS[t] ? "" : `<span class="team-dot" style="background:${TEAMS[t].color}" title="${esc(TEAMS[t].name)}">${TEAMS[t].icon}</span>`);
 
     function optsHtml(q, reveal, dist) {
       return `<div class="opts">${q.options.map((o, i) => {
@@ -106,71 +168,139 @@
       }).join("")}</div>`;
     }
 
+    function typedHtml(q, reveal) {
+      if (!reveal) return `<div class="type-box">✍️ Cavabı telefonda yaz</div>`;
+      const ok = st.dist?.[1] || 0, bad = st.dist?.[0] || 0;
+      return `<div class="type-ans">✓ ${esc((q.answers || [])[0] || "")}${(q.answers || []).length > 1 ? `<small> (${q.answers.slice(1).map(esc).join(", ")})</small>` : ""}</div>
+        <div class="type-stats"><span class="g">✓ ${ok} düzgün</span><span class="r">✗ ${bad} səhv</span></div>
+        ${st.wrong?.length ? `<div class="wrong-chips"><span>Ən çox yazılan səhvlər:</span>${st.wrong.map((w) => `<b>${esc(w.a)}${w.n > 1 ? ` ×${w.n}` : ""}</b>`).join("")}</div>` : ""}`;
+    }
+
     function boardHtml(top, n = 5) {
       return `<div class="board">${top.slice(0, n).map((p, i) =>
-        `<div class="board-row"><span class="pos">${i + 1}.</span>${ava(p, "sm")}<span class="nm">${esc(p.name)}${p.streak >= 3 ? ` <span class="fire">🔥${p.streak}</span>` : ""}</span><span class="pt">${p.score}</span></div>`).join("")}</div>`;
+        `<div class="board-row"><span class="pos">${i + 1}.</span>${ava(p, "sm")}<span class="nm">${esc(p.name)}${p.streak >= 3 ? ` <span class="fire">🔥${p.streak}</span>` : ""}</span>${st.teams ? teamTag(p.team) : ""}<span class="pt">${p.score}</span></div>`).join("")}</div>`;
+    }
+
+    function teamBars(list, big = false) {
+      if (!list?.length) return "";
+      const max = Math.max(1, ...list.map((t) => t.avg));
+      return `<div class="team-bars ${big ? "big" : ""}">${list.map((t, i) => {
+        const T = TEAMS[t.team] || TEAMS[0];
+        return `<div class="tb-row"><span class="tb-nm">${i === 0 && t.avg > 0 ? "👑 " : ""}${T.icon} ${esc(T.name)} <small>(${t.n})</small></span>
+          <span class="tb-bar"><i style="width:${Math.max(3, (t.avg / max) * 100)}%;background:${T.color}"></i></span><b class="tb-pt">${t.avg}</b></div>`;
+      }).join("")}<div class="tb-note">Komanda balı — üzvlərin orta balı</div></div>`;
+    }
+
+    // ---------- Gözləmə otağı ----------
+    function roomEl(p) {
+      const d = document.createElement("div");
+      d.className = "room-p"; d.dataset.u = p.uid || p.name;
+      d.innerHTML = `${ava(p, "xl")}<span class="nm">${esc(p.name.split(" ")[0])}</span>`;
+      return d;
+    }
+    function syncRoom() {
+      const teams = st.teams || 0;
+      const dense = st.players.length > (teams ? 8 : 12);
+      const seen = new Set();
+      let added = false;
+      for (const p of st.players) {
+        const key = p.uid || p.name;
+        seen.add(key);
+        const box = teams ? document.getElementById(`tr-${p.team ?? 0}`) : document.getElementById("room");
+        if (!box) continue;
+        let el = app.querySelector(`.room-p[data-u="${CSS.escape(key)}"]`);
+        if (!el) { el = roomEl(p); box.appendChild(el); added = true; }
+        else {
+          if (el.parentElement !== box) box.appendChild(el);
+          const a = el.querySelector(".ava");
+          if (a && a.textContent !== p.avatar) { a.textContent = p.avatar || "🙂"; a.style.background = p.color; }
+        }
+      }
+      app.querySelectorAll(".room-p").forEach((el) => { if (!seen.has(el.dataset.u)) el.remove(); });
+      app.querySelectorAll(".room").forEach((r) => r.classList.toggle("dense", dense));
+      if (teams) for (let t = 0; t < teams; t++) { const c = document.getElementById(`tc-${t}`); if (c) c.textContent = st.players.filter((p) => (p.team ?? 0) === t).length; }
+      document.getElementById("cnt").textContent = st.players.length;
+      document.getElementById("go").disabled = !st.players.length;
+      if (added) audio.pop();
     }
 
     function lobbyRender() {
-      // Artıq otaq çəkilibsə — yalnız yeni gələnləri əlavə et (animasiya hamıda təkrarlanmasın)
-      const room = document.getElementById("room");
-      if (room) {
-        room.classList.toggle("dense", st.players.length > 12);
-        const have = room.children.length;
-        if (st.players.length > have) {
-          room.insertAdjacentHTML("beforeend", st.players.slice(have).map((p) => `<div class="room-p">${ava(p, "xl")}<span class="nm">${esc(p.name.split(" ")[0])}</span></div>`).join(""));
-          audio.pop();
-        }
-        // personaj dəyişibsə — yenilə
-        st.players.forEach((p, k) => { const a = room.children[k]?.querySelector(".ava"); if (a && a.textContent !== p.avatar) { a.textContent = p.avatar || "🙂"; a.style.background = p.color; } });
-        document.getElementById("cnt").textContent = st.players.length;
-        document.getElementById("go").disabled = !st.players.length;
-        return;
-      }
+      const teams = st.teams || 0;
+      if (document.getElementById("lobby") && lobbyTeams === teams) return syncRoom();
+      lobbyTeams = teams;
+      const tbtn = (n, label) => `<button type="button" class="seg ${teams === n ? "on" : ""}" data-teams="${n}">${label}</button>`;
       app.innerHTML = `
-        <div class="lobby">
+        <div class="lobby" id="lobby">
           <div class="join-hint">Telefonda saytı aç → <b>Portal</b> → <b>Canlı viktorina</b> → kodu yaz</div>
           <div class="join-hint" style="opacity:.7;font-size:.95rem;margin-top:.3rem">${esc(siteUrl.replace(/^https?:\/\//, ""))}</div>
           <div class="big-code">${st.code.slice(0, 3)} ${st.code.slice(3)}</div>
           <h1 style="font-size:clamp(1.3rem,3vw,2rem)">${esc(st.title)}</h1>
+          <div class="lobby-opts">
+            <div class="seg-row"><span>👥 Komanda:</span>${tbtn(0, "Yox")}${tbtn(2, "2")}${tbtn(3, "3")}${tbtn(4, "4")}
+              ${teams ? '<button type="button" class="seg" id="shuffle">🔀 Qarışdır</button>' : ""}</div>
+            <label class="seg-row auto-row"><input type="checkbox" id="auto-chk" ${auto ? "checked" : ""}> ⏩ Sualları özü keçsin</label>
+          </div>
           <div class="lobby-count">👥 <span id="cnt">${st.players.length}</span> nəfər otaqda</div>
-          <div class="room${st.players.length > 12 ? " dense" : ""}" id="room">${st.players.map((p) => `<div class="room-p">${ava(p, "xl")}<span class="nm">${esc(p.name.split(" ")[0])}</span></div>`).join("")}</div>
-          <button class="live-btn gold" id="go" ${st.players.length ? "" : "disabled"}>Başla ▶</button>
+          ${teams ? `<div class="team-cols">${Array.from({ length: teams }, (_, t) => `
+              <div class="team-col" style="--tc:${TEAMS[t].color}"><div class="team-h">${TEAMS[t].icon} ${esc(TEAMS[t].name)} · <span id="tc-${t}">0</span></div>
+                <div class="room" id="tr-${t}"></div></div>`).join("")}</div>`
+            : '<div class="room" id="room"></div>'}
+          <button class="live-btn gold" id="go" disabled>Başla ▶</button>
           ${audio.ready ? "" : '<p class="join-hint" style="margin-top:2vh;font-size:.95rem">🔊 Musiqi üçün sağ altdakı düyməyə və ya ekrana toxun</p>'}
         </div>`;
       document.getElementById("go").onclick = () => control("next");
+      app.querySelectorAll("[data-teams]").forEach((b) => b.onclick = () => setTeams(Number(b.dataset.teams)));
+      document.getElementById("shuffle")?.addEventListener("click", () => setTeams(teams, true));
+      document.getElementById("auto-chk").onchange = (e) => setAuto(e.target.checked);
+      syncRoom();
     }
 
     function render(force) {
-      const key = `${st.status}|${st.q_index}|${st.status === "lobby" ? JSON.stringify(st.players) : st.players.length}|${st.answered}|${st.status === "reveal" || st.status === "finished" ? JSON.stringify(st.top) : ""}`;
+      const key = `${st.status}|${st.q_index}|${st.teams}|${st.status === "lobby" ? JSON.stringify(st.players) : st.players.length}|${st.answered}|${st.status === "reveal" || st.status === "finished" ? JSON.stringify(st.top) : ""}`;
       if (!force && key === lastKey) return;
       lastKey = key;
       const changed = prevStatus !== `${st.status}|${st.q_index}`;
       prevStatus = `${st.status}|${st.q_index}`;
-      if (changed) syncMusic();
+      if (changed) { syncMusic(); stopAutoNext(); }
+      if (st.status !== "lobby") lobbyTeams = null;
 
       if (st.status === "lobby") return lobbyRender();
 
       if (st.status === "question" || st.status === "reveal") {
         const reveal = st.status === "reveal";
         const q = st.question;
+        const typed = q.type === "text";
         if (changed && reveal) { audio.whoosh(); setTimeout(() => audio.correct(), 250); }
-        app.innerHTML = `
+        if (changed && !reveal) {
+          if (q.double) setTimeout(() => audio.streak(), 200);
+          if (q.say) setTimeout(() => speak(typeof q.say === "string" ? q.say : q.text, { rate: 0.85 }), q.double ? 900 : 350);
+        }
+                app.innerHTML = `
           <div class="q-head">
             <span class="q-count">Sual ${st.q_index + 1} / ${st.total}</span>
             ${reveal ? `<span class="q-count">${st.answered} / ${st.players.length} cavab</span>` : `<div class="countdown" id="cd">–</div>`}
           </div>
           ${reveal ? "" : '<div class="time-bar"><i id="tbar" style="width:100%"></i></div>'}
-          <div class="q-text">${esc(q.text)}</div>
-          ${optsHtml(q, reveal, st.dist || {})}
+          ${q.double ? '<div class="x2-banner">⭐ İKİQAT BAL ⭐</div>' : ""}
+          <div class="q-text">${esc(q.text)}
+            ${q.say ? `<div class="say-row">${hiddenSay(q) && reveal ? `<span class="say-word">🔊 ${esc(q.say)}</span>` : ""}<button type="button" class="say-btn" id="say">🔊 ${reveal ? "Dinlə" : "Yenidən dinlə"}</button></div>` : ""}
+          </div>
+          ${q.img ? `<div class="q-media"><div class="q-img-wrap"><img class="q-img" src="${esc(liveImg(q.img, SUPABASE_URL))}" alt=""></div>
+              <div>${typed ? typedHtml(q, reveal) : optsHtml(q, reveal, st.dist || {})}</div></div>`
+            : typed ? typedHtml(q, reveal) : optsHtml(q, reveal, st.dist || {})}
           ${reveal
             ? `${st.fastest ? `<div class="fastest">⚡ Ən sürətli: ${ava(st.fastest, "sm")} <b>${esc(st.fastest.name)}</b> — ${(st.fastest.ms / 1000).toFixed(1)} san</div>` : ""}
-               <h2 style="text-align:center;margin-top:3vh">🏆 İlk 5</h2>${boardHtml(st.top)}
-               <div class="host-actions"><button class="live-btn gold" id="next">${st.q_index + 1 >= st.total ? "Nəticələr 🏆" : "Növbəti sual ▶"}</button></div>`
+               ${st.teams && st.team_scores?.length ? `<h2 style="text-align:center;margin-top:3vh">👥 Komandalar</h2>${teamBars(st.team_scores)}<h2 style="text-align:center;margin-top:2vh">🏆 İlk 3</h2>${boardHtml(st.top, 3)}`
+                 : `<h2 style="text-align:center;margin-top:3vh">🏆 İlk 5</h2>${boardHtml(st.top)}`}
+               <div class="host-actions"><button class="live-btn gold" id="next">${nextLabel()}</button>
+                 ${auto ? '<button class="live-btn" id="pause">⏸ Dayandır</button>' : ""}</div>`
             : `<div class="answered-info">Cavab verən: <b>${st.answered}</b> / ${st.players.length}</div>
                <div class="host-actions"><button class="live-btn" id="reveal">Cavabı göstər</button></div>`}`;
         document.getElementById("next")?.addEventListener("click", () => control("next"));
         document.getElementById("reveal")?.addEventListener("click", () => control("reveal"));
+        document.getElementById("pause")?.addEventListener("click", () => setAuto(false));
+        document.getElementById("say")?.addEventListener("click", () => speak(typeof q.say === "string" ? q.say : q.text, { rate: 0.8 }));
+        if (reveal && auto) startAutoNext();
         tickCountdown();
         return;
       }
@@ -178,13 +308,15 @@
       // finished
       if (changed) { audio.fanfare(); setTimeout(() => confetti(), 1700); }
       const t = st.top;
+      const win = st.teams && st.team_scores?.length ? st.team_scores[0] : null;
       const pod = (p, i) => p ? `<div class="pod p${i + 1}">${ava(p, i === 0 ? "xl" : "lg")}<div class="nm">${esc(p.name)}</div><div class="block">${i + 1}</div><div class="pt">${p.score} bal</div></div>` : "";
       app.innerHTML = `
         <div class="lobby">
           <h1 style="font-size:clamp(1.6rem,4vw,2.6rem)">🏆 ${esc(st.title)} — nəticələr</h1>
+          ${win && win.avg > 0 ? `<div class="team-win" style="--tc:${(TEAMS[win.team] || TEAMS[0]).color}">🏆 Qalib komanda: <b>${esc(teamLabel(win.team))}</b></div>${teamBars(st.team_scores, true)}` : ""}
           <div class="podium">${pod(t[1], 1)}${pod(t[0], 0)}${pod(t[2], 2)}</div>
           ${boardHtml(t, 50)}
-          <div class="host-actions"><a class="live-btn" href="admin.html#live">Admin panelə qayıt</a></div>
+          <div class="host-actions"><a class="live-btn gold" href="live-report.html?s=${sid}">📊 Hesabat</a><a class="live-btn" href="admin.html#live">Admin panelə qayıt</a></div>
         </div>`;
     }
 
@@ -224,6 +356,7 @@
           st = r.data;
         } else { app.innerHTML = `<div class="lobby"><p>${esc(translateError(error))}</p></div>`; return; }
       } else st = data;
+      st.teams = st.teams || 0;
       if (st.status === "question") leftAt = Date.now() + (st.left_ms || 0);
       if (lastReact === 0 && st.reactions?.length) lastReact = Math.max(...st.reactions.map((r) => r.id));   // köhnələri uçurma
       else flyReactions(st.reactions);

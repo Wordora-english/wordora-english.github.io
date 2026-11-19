@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Viktorina hesabatı — Wordora</title>
+  <meta name="theme-color" content="#0e1f3d">
+  <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
+  <style>
+    .res-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: flex-start; margin-bottom: 14px; }
+    .stats.four { grid-template-columns: repeat(4, 1fr); }
+    @media (max-width: 700px) { .stats.four { grid-template-columns: repeat(2, 1fr); } }
+    .qrow { display: grid; grid-template-columns: 2.2em 1fr 9em; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); }
+    .qrow:last-child { border-bottom: 0; }
+    .qrow .qt { font-size: .92rem; }
+    .qrow .qt small { color: var(--muted); }
+    .qbar { height: 9px; border-radius: 99px; background: var(--line); overflow: hidden; }
+    .qbar div { height: 100%; border-radius: 99px; }
+    .qpct { font-weight: 800; font-size: .95rem; text-align: right; }
+    .hard { background: var(--bad-bg); border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; font-size: .92rem; }
+    .tag { display: inline-block; font-size: .72rem; padding: .05rem .45rem; border-radius: 99px; background: var(--soft); margin-left: .3rem; vertical-align: middle; }
+    .wrongs { font-size: .78rem; color: var(--muted); margin-top: 2px; }
+    td.dots { font-size: .8rem; letter-spacing: 1px; white-space: nowrap; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="admin.html#live">← Viktorinalar</a></nav>
+    </div>
+  </header>
+
+  <main class="container" id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, formatDate, toast, translateError, classLabel } from "./assets/js/app.js";
+    import { TEAMS, teamLabel } from "./assets/js/live-common.js";
+    import { downloadXlsx, safeName } from "./assets/js/xlsx-lite.js";
+
+    const app = document.getElementById("app");
+    const sid = new URLSearchParams(location.search).get("s");
+    let S, P, A, Q;
+
+    async function load() {
+      let r = await sb.from("live_sessions").select("id, created_at, finished_at, status, teams, questions, live_quizzes(title, questions)").eq("id", sid).maybeSingle();
+      if (r.error) r = await sb.from("live_sessions").select("id, created_at, status, live_quizzes(title, questions)").eq("id", sid).maybeSingle();   // 31-ci SQL hələ yoxdur
+      if (r.error) throw r.error;
+      if (!r.data) throw new Error("Oyun tapılmadı");
+      S = r.data;
+      Q = S.questions || S.live_quizzes?.questions || [];
+      const [p, a] = await Promise.all([
+        sb.from("live_players").select("*, profiles(full_name, class_name)").eq("session_id", sid),
+        sb.from("live_answers").select("*").eq("session_id", sid),
+      ]);
+      if (p.error) throw p.error;
+      if (a.error) throw a.error;
+      P = p.data.sort((x, y) => y.score - x.score);
+      A = a.data;
+    }
+
+    const pctCls = (v) => (v >= 75 ? "var(--ok)" : v >= 50 ? "#d69e2e" : "var(--bad)");
+    const qText = (q) => (q.say && q.say !== q.text ? `${q.text} (🔊 ${q.say})` : q.text);
+    const rightAns = (q) => (q.type === "text" ? (q.answers || [])[0] || "" : q.options?.[q.correct] ?? "");
+
+    function compute() {
+      const n = P.length;
+      const per = Q.map((q, i) => {
+        const ans = A.filter((a) => a.q_index === i);
+        const ok = ans.filter((a) => a.correct);
+        const wrongTexts = {};
+        for (const a of ans) if (!a.correct && a.text_answer) { const k = a.text_answer.trim().toLowerCase(); wrongTexts[k] = (wrongTexts[k] || 0) + 1; }
+        const wrongOpts = {};
+        for (const a of ans) if (!a.correct && q.type !== "text") wrongOpts[a.choice] = (wrongOpts[a.choice] || 0) + 1;
+        return {
+          i, q, answered: ans.length, ok: ok.length,
+          pct: n ? Math.round((ok.length / n) * 100) : 0,
+          avgMs: ok.length ? ok.reduce((s, a) => s + a.ms, 0) / ok.length : null,
+          wrong: q.type === "text"
+            ? Object.entries(wrongTexts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t, c]) => `${t}${c > 1 ? ` ×${c}` : ""}`)
+            : Object.entries(wrongOpts).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k, c]) => `${q.options?.[k] ?? "?"} ×${c}`),
+        };
+      });
+      const rows = P.map((p, k) => {
+        const mine = A.filter((a) => a.user_id === p.user_id);
+        const ok = mine.filter((a) => a.correct);
+        return {
+          rank: k > 0 && P[k - 1].score === p.score ? null : k + 1, p,
+          name: p.profiles?.full_name || "—", cls: p.profiles?.class_name || "",
+          ok: ok.length, answered: mine.length,
+          avgSec: ok.length ? ok.reduce((s, a) => s + a.ms, 0) / ok.length / 1000 : null,
+          dots: Q.map((_, i) => { const a = mine.find((x) => x.q_index === i); return !a ? "·" : a.correct ? "✓" : "✗"; }),
+          answers: Q.map((q, i) => { const a = mine.find((x) => x.q_index === i); if (!a) return ""; return q.type === "text" ? a.text_answer || "" : q.options?.[a.choice] ?? ""; }),
+        };
+      });
+      rows.forEach((r, k) => { if (r.rank === null) r.rank = rows[k - 1].rank; });
+      const avgPct = per.length ? Math.round(per.reduce((s, x) => s + x.pct, 0) / per.length) : 0;
+      const teams = {};
+      if (S.teams) for (const p of P) if (p.team !== null && p.team !== undefined) (teams[p.team] ||= []).push(p.score);
+      const teamRows = Object.entries(teams).map(([t, sc]) => ({ t: Number(t), n: sc.length, avg: Math.round(sc.reduce((a, b) => a + b, 0) / sc.length), total: sc.reduce((a, b) => a + b, 0) }))
+        .sort((a, b) => b.avg - a.avg);
+      return { per, rows, avgPct, teamRows };
+    }
+
+    function render() {
+      const { per, rows, avgPct, teamRows } = compute();
+      const title = S.live_quizzes?.title || "Viktorina";
+      const hard = per.filter((x) => x.answered).sort((a, b) => a.pct - b.pct).slice(0, 3).filter((x) => x.pct < 60);
+      app.innerHTML = `
+        <div class="res-head">
+          <div><h1 style="font-size:1.5rem;margin:0">📊 ${esc(title)}</h1>
+            <div class="muted small">${formatDate(S.created_at)} · ${Q.length} sual${S.status !== "finished" ? ' · <span class="pill live">oyun hələ gedir</span>' : ""}</div></div>
+          <button class="btn btn-primary" id="xlsx">⬇ Excel</button>
+        </div>
+        <div class="stats four">
+          <div class="stat"><div class="n">${P.length}</div><div class="l">İştirakçı</div></div>
+          <div class="stat"><div class="n">${avgPct}%</div><div class="l">Orta düzgün</div></div>
+          <div class="stat"><div class="n">${P[0]?.score ?? 0}</div><div class="l">Ən yüksək bal</div></div>
+          <div class="stat"><div class="n">${rows[0] ? esc(rows[0].name.split(" ")[0]) : "—"}</div><div class="l">🥇 Qalib</div></div>
+        </div>
+
+        ${teamRows.length ? `<div class="section-title"><h2>👥 Komandalar</h2></div><div class="card"><table class="res-table">
+          <tr><th>Yer</th><th>Komanda</th><th class="r">Üzv</th><th class="r">Orta bal</th><th class="r">Cəmi</th></tr>
+          ${teamRows.map((t, k) => `<tr><td>${k === 0 ? "🏆" : k + 1}</td><td><b>${esc(teamLabel(t.t))}</b></td><td class="r">${t.n}</td><td class="r"><b>${t.avg}</b></td><td class="r">${t.total}</td></tr>`).join("")}
+        </table></div>` : ""}
+
+        <div class="section-title"><h2>❓ Suallar üzrə</h2></div>
+        ${hard.length ? `<div class="hard">⚠️ <b>Ən çətin suallar</b> (təkrar etməyə dəyər): ${hard.map((x) => `<b>${x.i + 1}.</b> ${esc(qText(x.q).slice(0, 60))} — ${x.pct}%`).join(" · ")}</div>` : ""}
+        <div class="card">${per.map((x) => `
+          <div class="qrow">
+            <b>${x.i + 1}.</b>
+            <div class="qt">${esc(qText(x.q))}${x.q.type === "text" ? '<span class="tag">✍️</span>' : ""}${x.q.double ? '<span class="tag">⭐ x2</span>' : ""}${x.q.img ? '<span class="tag">🖼</span>' : ""}
+              <br><small>✓ ${esc(rightAns(x.q))}${x.avgMs ? ` · orta vaxt ${(x.avgMs / 1000).toFixed(1)} san` : ""} · ${x.ok}/${P.length} düzgün</small>
+              ${x.wrong.length ? `<div class="wrongs">Səhvlər: ${x.wrong.map(esc).join(", ")}</div>` : ""}
+              <div class="qbar"><div style="width:${x.pct}%;background:${pctCls(x.pct)}"></div></div></div>
+            <div class="qpct" style="color:${pctCls(x.pct)}">${x.pct}%</div>
+          </div>`).join("") || '<div class="empty">Sual yoxdur.</div>'}</div>
+
+        <div class="section-title"><h2>👤 Şagirdlər</h2></div>
+        <div class="card" style="overflow-x:auto"><table class="res-table">
+          <tr><th>#</th><th>Ad Soyad</th><th>Sinif</th>${S.teams ? "<th>Komanda</th>" : ""}<th class="r">Bal</th><th class="r">Düzgün</th><th class="r">Orta vaxt</th><th>Cavablar</th></tr>
+          ${rows.map((r) => `<tr><td>${r.rank === 1 ? "🥇" : r.rank === 2 ? "🥈" : r.rank === 3 ? "🥉" : r.rank}</td><td>${esc(r.name)}</td><td class="muted">${esc(classLabel(r.cls))}</td>
+            ${S.teams ? `<td>${esc(teamLabel(r.p.team))}</td>` : ""}<td class="r"><b>${r.p.score}</b></td><td class="r">${r.ok}/${Q.length}</td>
+            <td class="r muted">${r.avgSec ? r.avgSec.toFixed(1) + " san" : "—"}</td><td class="dots">${r.dots.map((d) => `<span style="color:${d === "✓" ? "var(--ok)" : d === "✗" ? "var(--bad)" : "var(--muted)"}">${d}</span>`).join("")}</td></tr>`).join("")}
+        </table>
+        ${rows.length ? "" : '<div class="empty">Bu oyunda iştirakçı yoxdur.</div>'}</div>`;
+
+      document.getElementById("xlsx").onclick = () => {
+        const head = ["Yer", "Ad Soyad", "Sinif", ...(S.teams ? ["Komanda"] : []), "Bal", "Düzgün", "Sual sayı", "Orta vaxt (san)"];
+        downloadXlsx(`${safeName(title)}_viktorina.xlsx`, [
+          { name: "Şagirdlər", widths: [6, 28, 10, ...(S.teams ? [16] : []), 9, 9, 9, 12],
+            rows: [head, ...rows.map((r) => [r.rank, r.name, classLabel(r.cls), ...(S.teams ? [teamLabel(r.p.team).replace(/^\S+\s/, "")] : []), r.p.score, r.ok, Q.length, r.avgSec ? Number(r.avgSec.toFixed(1)) : ""])] },
+          { name: "Suallar", widths: [5, 50, 22, 10, 10, 30],
+            rows: [["№", "Sual", "Düzgün cavab", "Düzgün", "Faiz %", "Ən çox səhv"], ...per.map((x) => [x.i + 1, qText(x.q), rightAns(x.q), `${x.ok}/${P.length}`, x.pct, x.wrong.join(", ")])] },
+          { name: "Cavablar", widths: [28, ...Q.map(() => 14)],
+            rows: [["Ad Soyad", ...Q.map((_, i) => `S${i + 1}`)], ["DÜZGÜN", ...Q.map(rightAns)], ...rows.map((r) => [r.name, ...r.answers.map((a, i) => (a === "" ? "—" : `${r.dots[i] === "✓" ? "✓" : "✗"} ${a}`))])] },
+          ...(teamRows.length ? [{ name: "Komandalar", widths: [6, 18, 8, 10, 10], rows: [["Yer", "Komanda", "Üzv", "Orta bal", "Cəmi"], ...teamRows.map((t, k) => [k + 1, teamLabel(t.t).replace(/^\S+\s/, ""), t.n, t.avg, t.total])] }] : []),
+        ]);
+        toast("Excel yükləndi ✓", "ok");
+      };
+    }
+
+    async function start() {
+      if (!configured) { app.innerHTML = '<div class="card empty">Sayt bazaya qoşulmayıb.</div>'; return; }
+      const me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.role !== "admin") { location.href = "portal.html"; return; }
+      if (!sid) { app.innerHTML = '<div class="card empty">Oyun seçilməyib.</div>'; return; }
+      try { await load(); render(); }
+      catch (err) { app.innerHTML = `<div class="card empty">${esc(translateError(err))}</div>`; }
+    }
+    start();
+  </script>
+</body>
+</html>
