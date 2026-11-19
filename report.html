@@ -193,9 +193,9 @@
         <div class="section-title"><h2>Siniflər üzrə orta nəticə</h2></div>
         <div class="card">${barList(r.perClass.map((c) => ({ label: `${classLabel(c.c)} (${c.n})`, value: Math.round(c.avg), max: 100 })), { unit: "%" })}</div>
 
-        <div class="section-title"><h2>Ən yaxşı 10 şagird</h2></div>
+        <div class="section-title"><h2>Ən yaxşı 15 şagird</h2></div>
         <div class="card">${r.perStudent.length ? `<table class="res-table"><tr><th>#</th><th>Şagird</th><th>Sinif</th><th class="r">Sınaq</th><th class="r">Orta</th></tr>
-          ${r.perStudent.slice(0, 10).map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.p.full_name)}</td><td class="muted">${esc(classLabel(x.p.class_name))}</td><td class="r">${x.n}</td><td class="r"><span class="pct ${cls(x.avg)}">${R(x.avg)}</span></td></tr>`).join("")}</table>`
+          ${r.perStudent.slice(0, 15).map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.p.full_name)}</td><td class="muted">${esc(classLabel(x.p.class_name))}</td><td class="r">${x.n}</td><td class="r"><span class="pct ${cls(x.avg)}">${R(x.avg)}</span></td></tr>`).join("")}</table>`
           : '<div class="empty small">Məlumat yoxdur.</div>'}</div>
 
         <div class="section-title"><h2>Diqqət tələb edənlər</h2><span class="muted small">orta nəticə &lt; 50% və ya 2+ pozuntu</span></div>
