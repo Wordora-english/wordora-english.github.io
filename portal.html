@@ -229,6 +229,48 @@
       document.getElementById("wotd-say")?.addEventListener("click", () => speak(w.word));
     }
 
+    // ---------- 🔥 Gündəlik məşq ----------
+    async function loadDaily() {
+      const el = document.getElementById("daily-card");
+      const { data: s, error } = await sb.rpc("daily_status");
+      if (error || !s) return;
+      el.innerHTML = s.today
+        ? `<span class="fl">🔥</span><span class="tx"><b>${s.current} günlük seriya!</b><small>Bugünkü məşq edildi ✓ Sabah yeni 5 sual olacaq</small></span><span>›</span>`
+        : `<span class="fl">${s.current ? "🔥" : "🌱"}</span><span class="tx"><b>Gündəlik məşq — 5 sual</b><small>${s.current ? `Seriyan: ${s.current} gün — bu gün də et, itirmə!` : "2 dəqiqə çəkir. Bu gün seriyaya başla!"}</small></span><span class="btn btn-primary btn-sm">Başla</span>`;
+      el.classList.remove("hidden");
+    }
+
+    // ---------- 🎯 Mövzular ----------
+    async function loadTopics() {
+      const { data, error } = await sb.rpc("my_topics");
+      if (error || !data?.length) return;
+      const col = (p) => (p >= 75 ? "var(--ok)" : p >= 50 ? "#d69e2e" : "var(--bad)");
+      document.getElementById("topics").classList.remove("hidden");
+      document.getElementById("topic-box").innerHTML = `<div class="card">
+        ${data.slice(0, 10).map((t) => `<div class="tp-row"><span>${t.pct < 50 ? "⚠️ " : ""}${esc(t.topic)}</span><span class="tp-bar"><i style="width:${Math.max(3, t.pct)}%;background:${col(t.pct)}"></i></span><span class="tp-pct" style="color:${col(t.pct)}">${t.pct}%</span></div>`).join("")}
+        ${data[0].pct < 60 ? `<p class="small" style="margin:.6rem 0 0">💡 Ən çox <b>${esc(data[0].topic)}</b> mövzusunu təkrar et. <a href="mistakes.html">Səhvlərim →</a></p>` : '<p class="small muted" style="margin:.6rem 0 0">Əla gedirsən! 💪</p>'}</div>`;
+    }
+
+    // ---------- 🔔 Bildirişlər ----------
+    async function loadPush() {
+      const box = document.getElementById("push-box");
+      let st;
+      try { const m = await import("./assets/js/push.js"); st = await m.pushState(); box._m = m; } catch { return; }
+      const card = (html) => `<div class="card" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px">${html}</div>`;
+      if (st.state === "off") {
+        box.innerHTML = card(`<span style="font-size:1.8rem">🔔</span><span style="flex:1;min-width:200px"><b>Bildirişləri aç</b><br><span class="muted small">Yeni sınaq, ev tapşırığı və nəticə açılanda telefonuna xəbər gəlsin</span></span><button class="btn btn-primary btn-sm" id="push-on">Aç</button>`);
+        document.getElementById("push-on").onclick = async (e) => {
+          e.target.disabled = true;
+          try { await box._m.enablePush(st.key); box.innerHTML = ""; toast("Bildirişlər açıldı 🔔", "ok"); }
+          catch (err) { e.target.disabled = false; toast(translateError(err), "err"); }
+        };
+      } else if (st.state === "ios-install") {
+        box.innerHTML = card(`<span style="font-size:1.8rem">🔔</span><span style="flex:1;min-width:200px"><b>Bildiriş almaq üçün</b><br><span class="muted small">iPhone-da saytı ana ekrana əlavə et: <b>Paylaş ⬆</b> → <b>Ana ekrana əlavə et</b>. Sonra oradan aç.</span></span>`);
+      } else if (st.state === "denied") {
+        box.innerHTML = `<p class="small muted" style="margin:0 0 12px">🔕 Bildirişlər brauzerdə bağlıdır. Açmaq üçün brauzerin parametrlərində bu sayta icazə ver.</p>`;
+      }
+    }
+
     // ---------- 🎮 Viktorina xalları və nişanlar ----------
     const LIVE_BADGES = [
       ["🎮", "İlk oyun", (s) => s.games >= 1, "Bir canlı viktorinada iştirak et"],
@@ -424,7 +466,9 @@
         </section>
 
         ${me.class_name === "Magistratura" ? "" : '<div id="exam-cd"></div>'}
+        <a class="card daily-card hidden" href="practice.html" id="daily-card"></a>
         <div id="install-box" style="margin-bottom:12px"></div>
+        <div id="push-box"></div>
         <div id="wotd" style="margin-bottom:12px"></div>
 
         <form class="card live-join" id="live-join">
@@ -440,6 +484,7 @@
           <a class="card quick-item" href="messages.html"><span class="qi">💬</span><span><b>Müəllimə sual</b><span class="muted small" id="msg-note">Sualını yaz</span></span><span class="badge zero" id="msg-badge">0</span></a>
           <a class="card quick-item" href="chat.html"><span class="qi">🗨️</span><span><b>Chat</b><span class="muted small">Ümumi və qrup chatı</span></span></a>
           <a class="card quick-item" href="homework.html"><span class="qi">📝</span><span><b>Ev tapşırıqları</b><span class="muted small" id="hw-note">—</span></span><span class="badge zero" id="hw-badge">0</span></a>
+          <a class="card quick-item" href="mistakes.html"><span class="qi">📕</span><span><b>Səhvlərim</b><span class="muted small">Səhvlərini təkrar et</span></span></a>
           <a class="card quick-item" href="words.html"><span class="qi">🔤</span><span><b>Söz kartları</b><span class="muted small">Öyrən və yoxla</span></span></a>
           <button class="card quick-item" id="parent-btn" type="button"><span class="qi">👨‍👩‍👧</span><span><b>Valideyn kodu</b><span class="muted small">Valideynin nəticəni görsün</span></span></button>
           <div class="card quick-item" id="att-card"><span class="qi">✅</span><span><b>Davamiyyət</b><span class="muted small" id="att-note">—</span></span></div>
@@ -450,6 +495,9 @@
 
         <div class="section-title" id="results"><h2>Nəticələrim</h2></div>
         <div id="my-results"><div class="spinner"></div></div>
+
+        <div class="section-title hidden" id="topics"><h2>🎯 Mövzularım</h2><span class="muted small">zəifdən güclüyə</span></div>
+        <div id="topic-box"></div>
 
         ${me.class_name === "Magistratura" ? "" : `<div class="section-title" id="rank"><h2>🏆 Reytinq</h2></div>
         <div id="rank-box"><div class="spinner"></div></div>`}
@@ -471,7 +519,7 @@
       examCountdown(document.getElementById("exam-cd"));
       renderInstall();
       loadWotd();
-      loadQuick(); loadGroups(); loadLiveMe();
+      loadQuick(); loadGroups(); loadLiveMe(); loadDaily(); loadTopics(); loadPush();
       if (me.class_name !== "Magistratura") loadRank();   // magistrantlar üçün reytinq yoxdur
       addEventListener("wd-installable", renderInstall);
       loadTests();

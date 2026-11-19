@@ -1,0 +1,66 @@
+# Telefona bildirişlər: hər 5 dəqiqədən bir növbədəki bildirişləri göndərir.
+# Lazım olan secrets: SUPABASE_URL, SUPABASE_KEY, BACKUP_SECRET (artıq var — ehtiyat nüsxə üçün qurulub).
+# VAPID açarları ilk dəfə avtomatik yaradılır və bazada (Vault) saxlanır — heç nə etmək lazım deyil.
+# DİQQƏT: repo açıqdır — loglarda heç bir şəxsi məlumat çap olunmur.
+name: Bildirişlər
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: push
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Göndər
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_KEY }}
+          SECRET: ${{ secrets.BACKUP_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${URL}" ] || [ -z "${KEY}" ] || [ -z "${SECRET}" ]; then
+            echo "SUPABASE_URL, SUPABASE_KEY və ya BACKUP_SECRET yoxdur — SETUP.md-ə bax."; exit 0
+          fi
+          mkdir -p /tmp/p && cd /tmp/p && npm init -y >/dev/null && npm i --silent web-push@3.6.7 >/dev/null
+          cat > send.mjs <<'JS'
+          import webpush from "web-push";
+          const { URL: U, KEY, SECRET } = process.env;
+          const rpc = async (fn, body) => {
+            const r = await fetch(`${U}/rest/v1/rpc/${fn}`, { method: "POST", headers: { apikey: KEY, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+            if (!r.ok) { const t = await r.text(); if (/Could not find the function/.test(t)) { console.log("32-ci SQL hələ işə salınmayıb."); process.exit(0); } throw new Error(`${fn}: ${r.status}`); }
+            const t = await r.text(); return t ? JSON.parse(t) : null;
+          };
+          let data = await rpc("push_pending", { p_secret: SECRET });
+          if (!data.vapid?.public) {
+            const k = webpush.generateVAPIDKeys();
+            await rpc("push_set_vapid", { p_secret: SECRET, p_public: k.publicKey, p_private: k.privateKey });
+            console.log("VAPID açarları yaradıldı ✓");
+            data = await rpc("push_pending", { p_secret: SECRET });
+          }
+          webpush.setVapidDetails("mailto:noreply@wordora-english.github.io", data.vapid.public, data.vapid.private);
+          const ids = [], sent = [], dead = new Set();
+          for (const it of data.items || []) {
+            const payload = JSON.stringify({ title: it.title, body: it.body, url: it.url, tag: it.tag });
+            let ok = 0;
+            await Promise.all((it.subs || []).map(async (s) => {
+              if (dead.has(s.id)) return;
+              try { await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 86400 }); ok++; }
+              catch (e) { if (e.statusCode === 404 || e.statusCode === 410) dead.add(s.id); }
+            }));
+            ids.push(it.id); sent.push(ok);
+            console.log(`Bildiriş #${it.id}: ${ok}/${(it.subs || []).length} cihaz`);
+          }
+          if (ids.length || dead.size) await rpc("push_done", { p_secret: SECRET, p_ids: ids, p_sent: sent, p_dead: [...dead] });
+          if (!ids.length) console.log("Göndəriləcək bildiriş yoxdur.");
+          JS
+          URL="${URL}" KEY="${KEY}" SECRET="${SECRET}" node send.mjs

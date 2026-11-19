@@ -56,6 +56,8 @@
       app.innerHTML = `
         <section class="welcome"><h1>${esc(data.name)}</h1><p>${esc(classLabel(data.class))} · İngilis dili</p></section>
         ${data.status === "blocked" ? '<div class="card" style="border-color:var(--bad);margin-bottom:12px"><b style="color:var(--bad)">Hesab müvəqqəti bloklanıb.</b> <span class="muted">Ətraflı məlumat üçün müəllimlə əlaqə saxlayın.</span></div>' : ""}
+        <div id="month-rep"></div>
+        <div class="section-title"><h2>Ümumi göstəricilər</h2></div>
         <div class="stats">
           <div class="stat"><div class="n">${avg === null ? "—" : Math.round(avg) + "%"}</div><div class="l">Sınaq ortalaması</div></div>
           <div class="stat"><div class="n">${days ? Math.round(((a.present || 0) + (a.late || 0)) / days * 100) + "%" : "—"}</div><div class="l">Davamiyyət (90 gün)</div></div>
@@ -72,7 +74,57 @@
           : '<div class="empty small">Davamiyyət hələ yazılmayıb.</div>'}</div>
         ${data.live ? `<div class="section-title"><h2>🎮 Canlı viktorina</h2></div><div class="card">Dərslərdəki viktorinalarda cəmi <b>${data.live}</b> bal toplayıb.</div>` : ""}
         <p class="center" style="margin-top:20px"><button class="btn btn-ghost" id="out">Başqa kod yaz</button></p>`;
+      monthReport(code);
       document.getElementById("out").onclick = () => { try { sessionStorage.removeItem("wd_parent"); } catch {} form(); };
+    }
+
+    // ---------- 📅 Aylıq hesabat ----------
+    const MON = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "İyun", "İyul", "Avqust", "Sentyabr", "Oktyabr", "Noyabr", "Dekabr"];
+    async function monthReport(code, ym) {
+      const box = document.getElementById("month-rep");
+      if (!box) return;
+      const now = new Date();
+      ym = ym || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const { data: r, error } = await sb.rpc("parent_month", { p_code: code, p_month: `${ym}-01` });
+      if (error) { box.innerHTML = ""; return; }
+      const [y, m] = ym.split("-").map(Number);
+      const opts = Array.from({ length: 6 }, (_, i) => { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); const v = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; return `<option value="${v}" ${v === ym ? "selected" : ""}>${MON[d.getMonth()]} ${d.getFullYear()}</option>`; }).join("");
+      const a = r.attendance || {}, days = (a.present || 0) + (a.late || 0) + (a.absent || 0) + (a.excused || 0);
+      const attPct = days ? Math.round(((a.present || 0) + (a.late || 0)) / days * 100) : null;
+      const hw = r.homework || {}, lv = r.live || {}, dl = r.daily || {}, st = r.streak || {};
+      const first = r.name.split(" ")[0];
+      const weak = (r.topics || []).filter((t) => t.pct < 60).slice(0, 3);
+      const strong = (r.topics || []).filter((t) => t.pct >= 75).slice(-3).reverse();
+      // avtomatik rəy
+      const lines = [];
+      if (r.avg !== null) {
+        lines.push(`${first} bu ay ${r.tests.length} sınaqda orta hesabla ${r.avg}% nəticə göstərib${r.class_avg !== null ? ` (sinif ortalaması ${r.class_avg}%)` : ""}.`);
+        if (r.prev_avg !== null) lines.push(r.avg > r.prev_avg ? `Bu, keçən aydan ${r.avg - r.prev_avg}% yaxşıdır 👏` : r.avg < r.prev_avg ? `Keçən aya nisbətən ${r.prev_avg - r.avg}% aşağıdır — əlavə təkrar tövsiyə olunur.` : "Nəticə keçən ayla eynidir.");
+      } else lines.push(`${first} bu ay sınaq yazmayıb.`);
+      if (attPct !== null) lines.push(`Davamiyyət: ${attPct}%${a.absent ? ` (${a.absent} dərs buraxılıb)` : ""}.`);
+      if (hw.given) lines.push(`Ev tapşırıqları: ${hw.done} / ${hw.given} təhvil verilib${hw.avg !== null ? `, orta qiymət ${hw.avg}%` : ""}.`);
+      if (dl.days) lines.push(`Gündəlik məşq: ${dl.days} gün${st.best >= 3 ? ` (ən uzun seriya ${st.best} gün)` : ""}.`); else lines.push("Gündəlik məşqdə iştirak etməyib — hər gün 5 sual cəmi 2 dəqiqə çəkir.");
+      if (weak.length) lines.push(`Diqqət tələb edən mövzular: ${weak.map((t) => t.topic).join(", ")}.`);
+      if (strong.length) lines.push(`Güclü olduğu mövzular: ${strong.map((t) => t.topic).join(", ")}.`);
+      const cls = (x) => (x >= 75 ? "hi" : x >= 50 ? "mid" : "lo");
+      box.innerHTML = `
+        <div class="section-title"><h2>📅 Aylıq hesabat</h2><span class="no-print" style="display:flex;gap:.4rem"><select id="ym" style="width:auto">${opts}</select><button class="btn btn-ghost btn-sm" id="prt">🖨 Çap / PDF</button></span></div>
+        <div class="card" style="margin-bottom:12px">
+          <h3 style="margin:0 0 .4rem">${esc(r.name)} — ${MON[m - 1]} ${y}</h3>
+          <p style="margin:0;line-height:1.6">${lines.map(esc).join(" ")}</p>
+        </div>
+        <div class="stats" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
+          <div class="stat"><div class="n">${r.avg === null ? "—" : r.avg + "%"}</div><div class="l">Sınaq ortalaması${r.prev_avg !== null && r.avg !== null ? ` ${r.avg >= r.prev_avg ? "▲" : "▼"}` : ""}</div></div>
+          <div class="stat"><div class="n">${attPct === null ? "—" : attPct + "%"}</div><div class="l">Davamiyyət</div></div>
+          <div class="stat"><div class="n">${hw.given ? `${hw.done}/${hw.given}` : "—"}</div><div class="l">Ev tapşırığı</div></div>
+          <div class="stat"><div class="n">${dl.days || 0}</div><div class="l">🔥 Məşq günü</div></div>
+          <div class="stat"><div class="n">${lv.points || 0}</div><div class="l">🎮 Viktorina balı</div></div>
+        </div>
+        ${r.tests.length ? `<div class="card" style="margin-top:12px"><table class="res-table"><tr><th>Sınaq</th><th>Tarix</th><th class="r">%</th></tr>
+          ${r.tests.map((t) => `<tr><td>${esc(t.title)}</td><td class="muted">${formatDate(t.date).split(",")[0]}</td><td class="r"><span class="pct ${cls(t.pct)}">${t.pct}%</span></td></tr>`).join("")}</table></div>` : ""}
+        ${(r.topics || []).length ? `<div class="card" style="margin-top:12px"><b>🎯 Mövzular üzrə</b>${r.topics.slice(0, 8).map((t) => `<div class="tp-row"><span>${esc(t.topic)}</span><span class="tp-bar"><i style="width:${Math.max(3, t.pct)}%;background:${t.pct >= 75 ? "var(--ok)" : t.pct >= 50 ? "#d69e2e" : "var(--bad)"}"></i></span><span class="tp-pct">${t.pct}%</span></div>`).join("")}</div>` : ""}`;
+      document.getElementById("ym").onchange = (e) => monthReport(code, e.target.value);
+      document.getElementById("prt").onclick = () => print();
     }
 
     if (!configured) app.innerHTML = '<div class="card empty">Sayt bazaya qoşulmayıb.</div>';

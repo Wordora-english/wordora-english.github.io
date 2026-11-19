@@ -121,6 +121,11 @@ Write about your favourite hobby.
           <input id="sections" maxlength="400" placeholder="Reading: 1-10; Listening: 11-15; Grammar: 16-20; Essay: 21">
           <div class="hint">Nəticələrdə hər şagird və bütün sinif üçün bölmə üzrə faiz görünür (məs. "Listening 55%"). Onlayn sınaqda sualların arasına <b># Reading</b> kimi sətir yazsan, avtomatik dolur.</div>
         </div>
+        <div class="field">
+          <label for="topics">🎯 Mövzular <span class="muted small">(istəyə görə)</span></label>
+          <input id="topics" maxlength="600" placeholder="Present Perfect: 1-5; Passive Voice: 6-10; Vocabulary: 11-20">
+          <div class="hint">Hər şagird portalında <b>"Mövzularım"</b> bölməsində hansı mövzuda zəif olduğunu görür (məs. "Passive 45%"). Siz də aylıq hesabatda sinif üzrə görürsünüz. Yazmasanız, bölmələr götürülür.</div>
+        </div>
         <label class="chk hidden" id="shuffle-wrap" style="width:max-content"><input type="checkbox" id="shuffle" checked> 🔀 Sualları və variantları hər şagird üçün qarışdır</label>
         <div class="hint hidden" id="shuffle-hint">Yan-yana oturanlar eyni ardıcıllığı görmür. Mətnin sualları mətnin altında qalır, esse həmişə bölmənin sonunda olur.</div>
       </section>
@@ -329,6 +334,7 @@ Write about your favourite hobby.
       $("total").value = totalPoints(rows) || 100;
       passages = on?.passages || [];
       $("sections").value = formatSections(t.content?.sections);
+      $("topics").value = formatSections(t.content?.topics);
       $("is-paper").checked = !!t.is_paper; paperUi();
       variants = (t.variants || []).map((v) => ({ ...v, keytext: fmtKey(k?.variants?.[v.code] || {}, rows) }));
       $("variants").innerHTML = "";
@@ -364,6 +370,10 @@ Write about your favourite hobby.
       const maxN = Math.max(...rows.map((r) => r.n));
       const badSec = sec.sections.find((x) => x.from > maxN);
       if (badSec) return toast(`Bölmə "${badSec.name}": ${badSec.from}-ci sual yoxdur`, "err");
+      const tps = parseSections($("topics").value);
+      if (tps.errors.length) return toast(`Mövzular: ${tps.errors[0]}`, "err");
+      const badTp = tps.sections.find((x) => x.from > maxN);
+      if (badTp) return toast(`Mövzu "${badTp.name}": ${badTp.from}-ci sual yoxdur`, "err");
 
       readVariants();
       const vErrs = [], vKeys = {};
@@ -468,7 +478,7 @@ Write about your favourite hobby.
           ...(current?.files_cleaned_at && (pdf_path || vOut.some((v) => v.pdf_path)) ? { files_cleaned_at: null } : {}),
           results_mode: document.querySelector("input[name=rmode]:checked").value,
           is_published: published,
-          content: { ...(mode === "online" ? { mode: "online", shuffle: $("shuffle").checked } : {}), ...(sec.sections.length ? { sections: sec.sections } : {}) },
+          content: { ...(mode === "online" ? { mode: "online", shuffle: $("shuffle").checked } : {}), ...(sec.sections.length ? { sections: sec.sections } : {}), ...(tps.sections.length ? { topics: tps.sections } : {}) },
         };
         if (testId) {
           const { error } = await sb.from("tests").update(row).eq("id", testId);

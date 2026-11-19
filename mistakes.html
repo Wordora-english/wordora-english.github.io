@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Səhvlərim — Wordora</title>
+  <meta name="theme-color" content="#3a32b5">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="portal.html">← Portal</a></nav>
+    </div>
+  </header>
+  <main class="container" style="max-width:760px" id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, formatDate, toast, translateError } from "./assets/js/app.js";
+    import { startGuard } from "./assets/js/guard.js";
+    import { confetti } from "./assets/js/live-audio.js";
+
+    const app = document.getElementById("app");
+    let me, items = [], filter = "all", fixedNow = 0;
+
+    const norm = (s) => String(s || "").toLowerCase().replace(/[’‘`´]/g, "'").replace(/\s+/g, " ").trim().replace(/^[\s.,!?;:"]+|[\s.,!?;:"]+$/g, "");
+    const digits = (s) => String(s || "").replace(/[\s,.;:/\-]+/g, "");
+    function check(m, v) {
+      const key = String(m.key || "");
+      if (m.type === "choice") return v.toUpperCase() === key.toUpperCase();
+      if (m.type === "multi") return digits(v).toUpperCase() === key.toUpperCase();
+      return key.split("/").some((alt) => (norm(alt) && norm(alt) === norm(v)) || (/^\d+$/.test(digits(alt)) && digits(alt) === digits(v)));
+    }
+    const keyOf = (m) => `${m.src}|${m.ref}|${m.n}`;
+    const showKey = (m) => {
+      if (m.type === "choice" && Array.isArray(m.opts)) { const i = "ABCDE".indexOf(String(m.key).toUpperCase()); return `${m.key}) ${m.opts[i] ?? ""}`; }
+      return String(m.key || "").replace(/\//g, " / ");
+    };
+    const showMy = (m) => {
+      if (!m.my) return "boş qalıb";
+      if (m.type === "choice" && Array.isArray(m.opts)) { const i = "ABCDE".indexOf(String(m.my).toUpperCase()); return `${m.my}) ${m.opts[i] ?? ""}`; }
+      return m.my;
+    };
+
+    function card(m) {
+      const k = keyOf(m);
+      const head = m.src === "daily"
+        ? `<span>🔥 Gündəlik məşq · ${formatDate(m.at + "T12:00:00").split(",")[0]}${m.topic ? ` · ${esc(m.topic)}` : ""}</span>`
+        : `<span>📝 ${esc(m.title)} · <b>${m.n}-ci sual</b></span><a href="test.html?id=${m.ref}" class="small">Sınağa bax →</a>`;
+      let body = "";
+      if (m.passage) body += `<details class="mk-pass"><summary>📖 ${esc(m.passage.title || "Mətn")}</summary><div>${esc(m.passage.text || "")}</div></details>`;
+      if (m.text) body += `<div class="mk-q">${esc(m.text)}</div>`;
+      else body += `<div class="mk-q muted" style="font-weight:500">Sualın mətni sınaq vərəqindədir (PDF). Sınağa baxıb yenidən həll et.</div>`;
+      if (m.type === "choice" && Array.isArray(m.opts)) {
+        body += `<div class="pq-opts">${m.opts.map((o, i) => `<button class="pq-opt" data-k="${esc(k)}" data-v="${"ABCDE"[i]}"><b>${"ABCDE"[i]}</b><span>${esc(o)}</span></button>`).join("")}</div>`;
+      } else if (m.type === "choice") {
+        body += `<div class="mk-letters">${String(m.options || "ABCDE").split("").map((L) => `<button data-k="${esc(k)}" data-v="${L}">${L}</button>`).join("")}</div>`;
+      } else {
+        body += `<form class="mk-row" data-k="${esc(k)}"><input placeholder="${m.type === "multi" ? `Hərfləri yaz (${m.parts || ""} hərf, məs. ABCA)` : "Cavabı yaz…"}" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn btn-primary btn-sm">Yoxla</button></form>`;
+      }
+      return `<div class="mk" id="mk-${CSS.escape(k)}" data-key="${esc(k)}">
+        <div class="mk-h">${head}</div>${body}
+        <div class="mk-was">Əvvəl yazdığın: <s>${esc(showMy(m))}</s></div>
+        <div class="mk-msg"></div></div>`;
+    }
+
+    async function fix(m, el, good) {
+      const { error } = await sb.rpc("mistake_fix", { p_src: m.src, p_ref: String(m.ref), p_n: m.n });
+      if (error) return toast(translateError(error), "err");
+      fixedNow++;
+      if (good) toast("Düzgün! Səhv dəftərdən silindi 🎉", "ok");
+      el.classList.add("gone");
+      setTimeout(() => {
+        items = items.filter((x) => x !== m);
+        if (!items.length) { render(); confetti(120); return; }
+        el.remove();
+        // yalnız sayğacları yenilə — digər kartlardakı yazılar itməsin
+        const tests = items.filter((x) => x.src === "test").length;
+        const lbl = { all: `Hamısı (${items.length})`, test: `📝 Sınaqlar (${tests})`, daily: `🔥 Məşq (${items.length - tests})` };
+        app.querySelectorAll("[data-f]").forEach((b) => { b.textContent = lbl[b.dataset.f]; });
+        const p = app.querySelector(".welcome p");
+        if (p) p.textContent = `${items.length} səhv səni gözləyir. Düzgün həll etdikcə dəftərdən silinir. Bu gün ${fixedNow} səhv düzəltdin 💪`;
+      }, 420);
+    }
+
+    function attempt(k, v) {
+      const m = items.find((x) => keyOf(x) === k);
+      const el = app.querySelector(`.mk[data-key="${CSS.escape(k)}"]`);
+      if (!m || !el || !String(v).trim()) return;
+      const msg = el.querySelector(".mk-msg");
+      el.querySelectorAll("[data-v]").forEach((b) => b.classList.toggle(b.classList.contains("pq-opt") ? "on" : "on", b.dataset.v === v));
+      if (check(m, String(v))) {
+        el.querySelectorAll(".pq-opt").forEach((b) => { if (b.dataset.v === v) b.classList.add("ok"); });
+        msg.innerHTML = '<b style="color:var(--ok)">✓ Düzgün!</b>';
+        fix(m, el, true);
+      } else {
+        el.querySelectorAll(".pq-opt").forEach((b) => { if (b.dataset.v === v) b.classList.add("bad"); });
+        msg.innerHTML = `<span style="color:var(--bad)">✗ Yenə səhv.</span> Düzgün cavab: <b style="color:var(--ok)">${esc(showKey(m))}</b>
+          <button class="btn btn-ghost btn-sm" data-got="${esc(k)}" style="margin-left:.4rem">Başa düşdüm ✓</button>`;
+        msg.querySelector("[data-got]").onclick = () => fix(m, el, false);
+      }
+    }
+
+    function render() {
+      const tests = items.filter((m) => m.src === "test").length, daily = items.length - tests;
+      const list = items.filter((m) => filter === "all" || m.src === filter);
+      const sel = (v, label) => `<button class="tab ${filter === v ? "active" : ""}" data-f="${v}">${label}</button>`;
+      app.innerHTML = `
+        <section class="welcome" style="margin-bottom:12px"><h1>📕 Səhvlərim dəftəri</h1>
+          <p>${items.length ? `${items.length} səhv səni gözləyir. Düzgün həll etdikcə dəftərdən silinir.` : ""}${fixedNow ? ` Bu gün ${fixedNow} səhv düzəltdin 💪` : ""}</p></section>
+        ${items.length ? `<div class="tabs">${sel("all", `Hamısı (${items.length})`)}${sel("test", `📝 Sınaqlar (${tests})`)}${sel("daily", `🔥 Məşq (${daily})`)}</div>
+          <div style="display:grid;gap:10px">${list.map(card).join("") || '<div class="card empty">Bu bölmədə səhv yoxdur.</div>'}</div>`
+          : `<div class="card empty" style="font-size:1.05rem">🎉 Dəftər boşdur!<br><span class="muted small">Sınaq nəticələri açılanda və ya gündəlik məşqdə səhv etsən, burada görünəcək.</span><br><br><a class="btn btn-primary" href="practice.html">🔥 Gündəlik məşqə keç</a></div>`}`;
+      app.querySelectorAll("[data-f]").forEach((b) => b.onclick = () => { filter = b.dataset.f; render(); });
+      app.querySelectorAll("button[data-v]").forEach((b) => b.onclick = () => attempt(b.dataset.k, b.dataset.v));
+      app.querySelectorAll("form.mk-row").forEach((f) => f.onsubmit = (e) => { e.preventDefault(); attempt(f.dataset.k, f.querySelector("input").value); });
+    }
+
+    async function start() {
+      if (!configured) return;
+      me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.status !== "approved") { location.href = "portal.html"; return; }
+      startGuard({ me, page: "səhvlərim" });
+      const { data, error } = await sb.rpc("my_mistakes");
+      if (error) { app.innerHTML = `<div class="card empty">${/my_mistakes/.test(error.message || "") ? "Bu bölmə tezliklə açılacaq 🙂" : esc(translateError(error))}</div>`; return; }
+      items = data || [];
+      render();
+    }
+    start();
+  </script>
+</body>
+</html>

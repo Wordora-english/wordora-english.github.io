@@ -16,7 +16,7 @@ function fitText(ctx, text, maxW, size, weight, family) {
   do { ctx.font = `${weight} ${s}px ${family}`; s -= 4; } while (ctx.measureText(text).width > maxW && s > 20);
 }
 
-export async function drawCertificate({ name, className, title, percent, date, code, serial }) {
+export async function drawCertificate({ name, className, title, percent, date, code, serial, lines, big }) {
   try { await Promise.all(["700 80px Outfit", "600 40px Outfit", "500 30px Inter", "400 30px Inter"].map((f) => document.fonts.load(f))); } catch {}
   const c = document.createElement("canvas");
   c.width = W; c.height = H;
@@ -52,11 +52,12 @@ export async function drawCertificate({ name, className, title, percent, date, c
   x.strokeStyle = "#f5b400"; x.lineWidth = 5; x.beginPath(); x.moveTo(W / 2 - 520, 955); x.lineTo(W / 2 + 520, 955); x.stroke();
   if (className) { x.fillStyle = "#6b6f86"; x.font = "500 34px Inter, Arial"; x.fillText(className, W / 2, 1005); }
 
+  const L = lines || ["ingilis dili üzrə", `«${title}»`, "sınağında göstərdiyi yüksək nəticəyə görə"];
   x.fillStyle = "#26365a"; x.font = "400 38px Inter, Arial";
-  x.fillText("ingilis dili üzrə", W / 2, 1090);
-  x.fillStyle = "#0e1f3d"; fitText(x, `«${title}»`, W - 500, 50, "600", "Outfit, Arial"); x.fillText(`«${title}»`, W / 2, 1160);
-  x.fillStyle = "#26365a"; x.font = "400 38px Inter, Arial"; x.fillText("sınağında göstərdiyi yüksək nəticəyə görə", W / 2, 1225);
-  x.fillStyle = "#12925c"; x.font = "700 70px Outfit, Arial"; x.fillText(`${Math.round(percent)}%`, W / 2, 1320);
+  x.fillText(L[0], W / 2, 1090);
+  x.fillStyle = "#0e1f3d"; fitText(x, L[1], W - 500, 50, "600", "Outfit, Arial"); x.fillText(L[1], W / 2, 1160);
+  x.fillStyle = "#26365a"; fitText(x, L[2], W - 500, 38, "400", "Inter, Arial"); x.fillText(L[2], W / 2, 1225);
+  x.fillStyle = "#12925c"; fitText(x, big ?? `${Math.round(percent)}%`, W - 600, 70, "700", "Outfit, Arial"); x.fillText(big ?? `${Math.round(percent)}%`, W / 2, 1320);
 
   // alt hissə
   x.fillStyle = "#0e1f3d"; x.font = "600 34px Inter, Arial";
@@ -72,21 +73,28 @@ export async function drawCertificate({ name, className, title, percent, date, c
   return c;
 }
 
-export async function downloadCertificate(info) {
-  const canvas = await drawCertificate(info);
-  const png = await new Promise((r) => canvas.toBlob(r, "image/png"));
+// Bir və ya bir neçə sertifikat — bir PDF faylında (hər biri ayrıca səhifə)
+export async function downloadCertificates(list, filename) {
   const doc = await PDFDocument.create();
-  const img = await doc.embedPng(new Uint8Array(await png.arrayBuffer()));
-  const page = doc.addPage([841.89, 595.28]);   // A4 üfüqi (pt)
-  page.drawImage(img, { x: 0, y: 0, width: 841.89, height: 595.28 });
-  doc.setTitle(`Sertifikat — ${info.name}`);
+  for (const info of list) {
+    const canvas = await drawCertificate(info);
+    const png = await new Promise((r) => canvas.toBlob(r, "image/png"));
+    const img = await doc.embedPng(new Uint8Array(await png.arrayBuffer()));
+    const page = doc.addPage([841.89, 595.28]);   // A4 üfüqi (pt)
+    page.drawImage(img, { x: 0, y: 0, width: 841.89, height: 595.28 });
+  }
+  doc.setTitle(list.length === 1 ? `Sertifikat — ${list[0].name}` : "Sertifikatlar");
   doc.setAuthor(TEACHER_NAME);
   doc.setCreator("Wordora");
   const bytes = await doc.save();
   const blob = new Blob([bytes], { type: "application/pdf" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `Sertifikat_${info.name.replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`;
+  a.download = filename || `Sertifikat_${list[0].name.replace(/[^\p{L}\p{N}]+/gu, "_")}.pdf`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+}
+
+export async function downloadCertificate(info) {
+  return downloadCertificates([info]);
 }

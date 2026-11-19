@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gündəlik məşq — Wordora</title>
+  <meta name="theme-color" content="#3a32b5">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="portal.html">← Portal</a></nav>
+    </div>
+  </header>
+  <main class="container" style="max-width:640px" id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, toast, translateError } from "./assets/js/app.js";
+    import { startGuard } from "./assets/js/guard.js";
+    import { confetti } from "./assets/js/live-audio.js";
+
+    const app = document.getElementById("app");
+    const L = "ABCDE";
+    const WD = ["B.", "B.e", "Ç.a", "Ç", "C.a", "C", "Ş"];
+    let me, data, idx = 0, answers = [], sending = false;
+
+    function hero(s) {
+      const today = s.week?.[s.week.length - 1]?.day;
+      return `<div class="streak-hero">
+        <div class="flame">${s.current ? "🔥" : "🌱"}</div>
+        <div class="big">${s.current} gün</div>
+        <div class="sub">${s.current ? "ardıcıl məşq seriyası" : "Bu gün başla — seriya yarat!"} · ən uzun: ${s.best} gün · cəmi: ${s.total}</div>
+        <div class="week">${(s.week || []).map((d) => {
+          const dt = new Date(d.day + "T12:00:00");
+          return `<span class="${d.done ? "on" : ""} ${d.day === today ? "today" : ""}"><b>${d.done ? "🔥" : ""}</b>${WD[dt.getDay()]}</span>`;
+        }).join("")}</div></div>`;
+    }
+
+    function render() {
+      const s = data.streak || { current: 0, best: 0, total: 0, week: [] };
+      if (data.empty) {
+        app.innerHTML = hero(s) + '<div class="card empty">Müəllim hələ söz və ya sual əlavə etməyib. Tezliklə burada hər gün 5 sual olacaq 🙂</div>';
+        return;
+      }
+      if (data.done) return results(s);
+      const q = data.questions[idx];
+      const n = data.questions.length;
+      const isText = !Array.isArray(q.opts);
+      app.innerHTML = hero(s) + `
+        <div class="pq-card">
+          <div class="pq-top"><span>Sual ${idx + 1} / ${n}</span><span>${esc(q.topic || "")}</span></div>
+          <div class="pq-bar"><i style="width:${(idx / n) * 100}%"></i></div>
+          <div class="pq-text">${esc(q.text)}</div>
+          ${isText
+            ? `<form id="tf"><input class="pq-input" id="ti" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Cavabı yaz…" value="${esc(answers[idx] || "")}">
+                 <button class="btn btn-primary btn-block" style="margin-top:10px">${idx + 1 < n ? "Növbəti →" : "Bitir ✓"}</button></form>`
+            : `<div class="pq-opts">${q.opts.map((o, i) => `<button class="pq-opt" data-i="${i}"><b>${L[i]}</b><span>${esc(o)}</span></button>`).join("")}</div>`}
+        </div>`;
+      if (isText) {
+        const ti = document.getElementById("ti");
+        ti.focus();
+        document.getElementById("tf").onsubmit = (e) => { e.preventDefault(); if (!ti.value.trim()) return toast("Cavabı yaz", "err"); next(ti.value.trim()); };
+      } else {
+        app.querySelectorAll(".pq-opt").forEach((b) => b.onclick = () => { b.classList.add("on"); setTimeout(() => next(b.dataset.i), 180); });
+      }
+    }
+
+    async function next(v) {
+      answers[idx] = String(v);
+      if (idx + 1 < data.questions.length) { idx++; render(); return; }
+      if (sending) return;
+      sending = true;
+      const before = data.streak?.current || 0;
+      const { data: r, error } = await sb.rpc("daily_submit", { p_answers: answers });
+      sending = false;
+      if (error) return toast(translateError(error), "err");
+      data = r;
+      render();
+      if (r.correct === r.total) confetti(120);
+      else if ((r.streak?.current || 0) > before) confetti(50);
+    }
+
+    function results(s) {
+      const qs = data.questions;
+      const ans = (q, v) => (Array.isArray(q.opts) ? (v !== null && v !== undefined && v !== "" ? `${L[Number(v)]}) ${q.opts[Number(v)] ?? ""}` : "—") : (v || "—"));
+      const wrong = qs.filter((q) => !q.ok).length;
+      app.innerHTML = hero(s) + `
+        <div class="card" style="text-align:center;margin-bottom:12px">
+          <div style="font-size:2.4rem">${data.correct === data.total ? "🏆" : data.correct >= data.total - 1 ? "🎉" : "💪"}</div>
+          <h2 style="margin:.2rem 0">Bugünkü nəticə: ${data.correct} / ${data.total}</h2>
+          <p class="muted" style="margin:0">${data.correct === data.total ? "Əla! Hamısı düzgündür!" : "Yaxşı iş! Səhvlərinə aşağıda bax."} Sabah yeni 5 sual olacaq 🌅</p>
+        </div>
+        <div class="card">${qs.map((q) => `
+          <div class="pq-res"><span class="ic">${q.ok ? "✅" : "❌"}</span><div>
+            <b>${esc(q.text)}</b><span class="pq-tag">${esc(q.topic || "")}</span><br>
+            ${q.ok ? `<span style="color:var(--ok)">${esc(ans(q, q.my))}</span>`
+                   : `<span class="muted">Sənin cavabın: <s>${esc(ans(q, q.my))}</s></span><br><span style="color:var(--ok)">Düzgün: <b>${esc(ans(q, q.ans).replace(/\//g, " / "))}</b></span>`}
+          </div></div>`).join("")}</div>
+        ${wrong ? `<p class="center" style="margin-top:14px"><a class="btn btn-primary" href="mistakes.html">📕 Səhvlərimi təkrar et (${wrong})</a></p>` : ""}`;
+    }
+
+    async function start() {
+      if (!configured) return;
+      me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.status !== "approved") { location.href = "portal.html"; return; }
+      startGuard({ me, page: "gündəlik məşq" });
+      const { data: d, error } = await sb.rpc("daily_get");
+      if (error) { app.innerHTML = `<div class="card empty">${/daily_get/.test(error.message || "") ? "Gündəlik məşq tezliklə açılacaq 🙂" : esc(translateError(error))}</div>`; return; }
+      data = d;
+      render();
+    }
+    start();
+  </script>
+</body>
+</html>

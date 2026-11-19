@@ -91,6 +91,8 @@
             <td class="r">${a.status === "in_progress" || !total(a) ? "" : `<span class="pct ${cls(pct(a))}">${Math.round(pct(a))}%</span>`}</td></tr>`).join("")}
         </table>` : '<div class="empty small">Hələ sınaq yazmayıb.</div>'}</div>
 
+        <div id="topics-x"></div>
+
         <div class="section-title"><h2>Davamiyyət</h2></div>
         <div class="card">${(days || []).length ? (() => {
           const c = (k) => days.filter((d) => d.status === k).length;
@@ -113,6 +115,21 @@
         <div class="card">${(views || []).length ? `<table class="res-table"><tr><th>Material</th><th>Nə edib</th><th>Vaxt</th></tr>
           ${views.map((v) => `<tr><td>${esc(v.materials?.title || "silinib")}</td><td>${v.kind === "download" ? "⬇ yükləyib" : "👁 baxıb"}</td><td class="muted">${formatDate(v.viewed_at)}</td></tr>`).join("")}</table>`
           : '<div class="empty small">Material açmayıb.</div>'}</div>`;
+
+      // 🎯 mövzular və 🔥 gündəlik məşq (32-ci SQL)
+      Promise.all([sb.rpc("admin_student_topics", { p_user: id }), sb.from("daily_sets").select("day, correct, total, done_at").eq("user_id", id).not("done_at", "is", null).order("day", { ascending: false }).limit(60)])
+        .then(([tp, dl]) => {
+          const box = document.getElementById("topics-x");
+          if (!box) return;
+          const col = (x) => (x >= 75 ? "var(--ok)" : x >= 50 ? "#d69e2e" : "var(--bad)");
+          let html = "";
+          if (!tp.error && tp.data?.length) html += `<div class="section-title"><h2>🎯 Mövzular üzrə</h2></div><div class="card">${tp.data.map((t) => `<div class="tp-row"><span>${esc(t.topic)} <span class="muted small">(${t.n})</span></span><span class="tp-bar"><i style="width:${Math.max(3, t.pct)}%;background:${col(t.pct)}"></i></span><span class="tp-pct" style="color:${col(t.pct)}">${t.pct}%</span></div>`).join("")}</div>`;
+          if (!dl.error && dl.data?.length) {
+            const c = dl.data.reduce((a, d) => a + (d.correct || 0), 0), t = dl.data.reduce((a, d) => a + (d.total || 0), 0);
+            html += `<div class="section-title"><h2>🔥 Gündəlik məşq</h2></div><div class="card">Son 60 gündə <b>${dl.data.length}</b> gün məşq edib · düzgün: <b>${t ? Math.round((c / t) * 100) : 0}%</b> · son dəfə: ${dl.data[0].day.split("-").reverse().join(".")}</div>`;
+          }
+          box.innerHTML = html;
+        }, () => {});
 
       document.getElementById("pcode").onclick = async () => {
         let code = p.parent_code;

@@ -80,13 +80,18 @@
         fetchAll("live_players", "session_id, user_id, score, joined_at", inMonth("joined_at")),
         fetchAll("paper_entries", "id, test_id, user_id, score, status, created_at", inMonth("created_at")),   // kağız sınaqlar
       ]);
+      const [daily, topicsR] = await Promise.all([
+        fetchAll("daily_sets", "user_id, day, correct, total, done_at", inMonth("done_at")),
+        sb.rpc("admin_topics", { p_from: from, p_to: to }),
+      ]);
       attempts.push(...paper.filter((p) => p.user_id).map((p) => ({ ...p, submitted_at: p.created_at })));
-      data = { y, m, profiles, tests, attempts: attempts.filter((a) => a.status !== "in_progress"), violations, views, sessions, players };
+      data = { y, m, profiles, tests, attempts: attempts.filter((a) => a.status !== "in_progress"), violations, views, sessions, players,
+        daily: daily.filter((d) => d.done_at), topics: topicsR.error ? [] : topicsR.data || [] };
       render();
     }
 
     function compute() {
-      const { profiles, tests, attempts, violations, views, sessions, players, y, m } = data;
+      const { profiles, tests, attempts, violations, views, sessions, players, daily, y, m } = data;
       const students = profiles.filter((p) => p.role === "student");
       const byId = Object.fromEntries(students.map((p) => [p.id, p]));
       const tById = Object.fromEntries(tests.map((t) => [t.id, t]));
@@ -132,6 +137,9 @@
         liveN: sessions.length, livePlayers: new Set(livePlayers.map((p) => p.user_id)).size,
         liveTop: Object.entries(livePlayers.reduce((acc, p) => { (acc[p.user_id] ||= { pts: 0, n: 0 }); acc[p.user_id].pts += p.score; acc[p.user_id].n++; return acc; }, {}))
           .map(([id, v]) => ({ p: byId[id], ...v })).filter((x) => x.p && x.pts > 0).sort((a, b) => b.pts - a.pts).slice(0, 10),
+        dailyUsers: new Set(daily.map((d) => d.user_id)).size, dailyN: daily.length,
+        dailyTop: Object.entries(daily.reduce((acc, d) => { (acc[d.user_id] ||= { days: 0, c: 0, t: 0 }); acc[d.user_id].days++; acc[d.user_id].c += d.correct || 0; acc[d.user_id].t += d.total || 0; return acc; }, {}))
+          .map(([id, v]) => ({ p: byId[id], ...v })).filter((x) => x.p).sort((a, b) => b.days - a.days || b.c - a.c).slice(0, 10),
       };
     }
 
@@ -150,11 +158,36 @@
         if (top.length) lines.push(`Ən yüksək nəticə göstərən şagirdlər: ${top.join(", ")}.`);
       } else lines.push("Bu ay sınaq keçirilməmişdir.");
       if (r.liveN) lines.push(`Dərslərdə ${r.liveN} canlı viktorina təşkil olunmuş, ${r.livePlayers} şagird iştirak etmişdir.${r.liveTop[0] ? ` Ayın viktorina çempionu ${r.liveTop[0].p.full_name} (${classLabel(r.liveTop[0].p.class_name)}) olmuşdur.` : ""}`);
+      if (r.dailyN) lines.push(`${r.dailyUsers} şagird ay ərzində ${r.dailyN} dəfə gündəlik məşq etmişdir.`);
+      const weakT = (data.topics || []).filter((t) => t.pct < 60).slice(0, 3);
+      if (weakT.length) lines.push(`Ən çətin mövzular: ${weakT.map((t) => `${t.topic} (${t.pct}%)`).join(", ")} — bu mövzular üzrə təkrar dərslər planlaşdırılır.`);
       if (r.views || r.downloads) lines.push(`Dərs materiallarına ${r.materialUsers} şagird tərəfindən ${r.views} dəfə baxılmış, ${r.downloads} dəfə yüklənmişdir.`);
       const weak = r.attention.filter((x) => x.avg !== null && x.avg < 50).length;
       if (weak) lines.push(`${weak} şagirdin orta nəticəsi 50%-dən aşağı olduğu üçün onlarla əlavə iş aparılması planlaşdırılır.`);
       lines.push(r.violN ? `Onlayn qaydaların pozulması ilə bağlı ${r.violN} hal qeydə alınmış${r.blocked ? `, ${r.blocked} hesab müvəqqəti bloklanmış` : ""}dır.` : "Onlayn qaydaların pozulması halı qeydə alınmamışdır.");
       return lines.join(" ");
+    }
+
+    // Ayın sertifikat alanları
+    function certList(r) {
+      const out = [];
+      const R = (x) => Math.round(x);
+      const mon = `${MONTHS_CAP[data.m - 1]} ${data.y}`;
+      r.perStudent.filter((x) => x.n >= 1).slice(0, 3).forEach((x, i) => out.push({ p: x.p, icon: ["🥇", "🥈", "🥉"][i],
+        why: `Ayın ən yüksək nəticəsi — ${i + 1}-ci yer (orta ${R(x.avg)}%, ${x.n} sınaq)`,
+        lines: ["ingilis dili üzrə", `${mon} ayının ən yüksək nəticəsinə görə`, `${x.n} sınaqda orta nəticə`], big: `${i + 1}-ci yer · ${R(x.avg)}%` }));
+      if (r.liveTop[0]) out.push({ p: r.liveTop[0].p, icon: "🎮", why: `Ayın viktorina çempionu — ${r.liveTop[0].pts.toLocaleString("az")} bal`,
+        lines: ["ingilis dili dərslərində", `${mon} ayının viktorina çempionu`, `${r.liveTop[0].n} canlı viktorinada toplanan bal`], big: `${r.liveTop[0].pts.toLocaleString("az")} bal` });
+      const d = r.dailyTop[0];
+      if (d && d.days >= 5) out.push({ p: d.p, icon: "🔥", why: `Ən çalışqan şagird — ${d.days} gün gündəlik məşq`,
+        lines: ["ingilis dili üzrə", `${mon} ayının ən çalışqan şagirdi`, "gündəlik məşqdə göstərdiyi səbirə görə"], big: `${d.days} gün məşq` });
+      return out;
+    }
+    function certInfo(c) {
+      const last = new Date(data.y, data.m, 0);
+      return { name: c.p.full_name, className: classLabel(c.p.class_name), lines: c.lines, big: c.big,
+        date: `${String(last.getDate()).padStart(2, "0")}.${String(data.m).padStart(2, "0")}.${data.y}`,
+        code: c.p.student_code || "", serial: `${data.y}${String(data.m).padStart(2, "0")}-${c.p.id.slice(0, 6).toUpperCase()}` };
     }
 
     function render() {
@@ -204,6 +237,19 @@
         <div class="card"><table class="res-table"><tr><th>#</th><th>Şagird</th><th>Sinif</th><th class="r">Oyun</th><th class="r">Bal</th></tr>
           ${r.liveTop.map((x, i) => `<tr><td>${i === 0 ? "👑" : i + 1}</td><td>${esc(x.p.full_name)}</td><td class="muted">${esc(classLabel(x.p.class_name))}</td><td class="r">${x.n}</td><td class="r"><b>${x.pts.toLocaleString("az")}</b></td></tr>`).join("")}</table></div>` : ""}
 
+        ${(data.topics || []).length ? `<div class="section-title"><h2>🎯 Mövzular üzrə nəticə</h2><span class="muted small">zəifdən güclüyə</span></div>
+        <div class="card"><table class="res-table"><tr><th>Mövzu</th><th class="r">Ümumi</th><th>Siniflər üzrə</th><th class="r">Şagird</th></tr>
+          ${data.topics.map((t) => `<tr><td>${t.pct < 50 ? "⚠️ " : ""}${esc(t.topic)}</td><td class="r"><span class="pct ${cls(t.pct)}">${t.pct}%</span></td>
+            <td class="muted small">${Object.entries(t.classes || {}).sort((a, b) => a[1] - b[1]).map(([c, p]) => `${esc(classLabel(c))}: ${p}%`).join(" · ")}</td><td class="r">${t.students}</td></tr>`).join("")}</table></div>` : ""}
+
+        ${r.dailyTop.length ? `<div class="section-title"><h2>🔥 Gündəlik məşq</h2><span class="muted small">${r.dailyUsers} şagird · ${r.dailyN} məşq</span></div>
+        <div class="card"><table class="res-table"><tr><th>#</th><th>Şagird</th><th>Sinif</th><th class="r">Gün</th><th class="r">Düzgün</th></tr>
+          ${r.dailyTop.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.p.full_name)}</td><td class="muted">${esc(classLabel(x.p.class_name))}</td><td class="r"><b>${x.days}</b></td><td class="r">${x.t ? Math.round((x.c / x.t) * 100) : 0}%</td></tr>`).join("")}</table></div>` : ""}
+
+        <div class="section-title"><h2>🏅 Ayın sertifikatları</h2><button class="btn btn-primary btn-sm no-print" id="cert-all">⬇ Hamısı (PDF)</button></div>
+        <div class="card" id="cert-box">${certList(r).length ? `<table class="res-table">${certList(r).map((c, i) => `<tr><td style="width:2em">${c.icon}</td><td><b>${esc(c.p.full_name)}</b> <span class="muted small">${esc(classLabel(c.p.class_name))}</span><br><span class="small">${esc(c.why)}</span></td>
+          <td class="r no-print"><button class="btn btn-ghost btn-sm" data-cert="${i}">⬇ PDF</button></td></tr>`).join("")}</table>` : '<div class="empty small">Bu ay üçün sertifikat namizədi yoxdur.</div>'}</div>
+
         <div class="section-title"><h2>Diqqət tələb edənlər</h2><span class="muted small">orta nəticə &lt; 50% və ya 2+ pozuntu</span></div>
         <div class="card">${r.attention.length ? `<table class="res-table"><tr><th>Şagird</th><th>Sinif</th><th class="r">Orta</th><th class="r">Pozuntu</th></tr>
           ${r.attention.map((x) => `<tr><td><a href="student.html?id=${x.p.id}">${esc(x.p.full_name)}</a></td><td class="muted">${esc(classLabel(x.p.class_name))}</td><td class="r">${x.avg === null ? "—" : `<span class="pct ${cls(x.avg)}">${R(x.avg)}</span>`}</td><td class="r">${x.viol || ""}</td></tr>`).join("")}</table>`
@@ -220,6 +266,15 @@
 
       document.getElementById("month").onchange = (e) => { month = e.target.value || month; app.innerHTML = '<div class="spinner"></div>'; load(); };
       document.getElementById("print").onclick = () => print();
+      const certs = certList(r);
+      const dl = async (list, btn, fname) => {
+        btn.disabled = true;
+        try { const { downloadCertificates } = await import("./assets/js/certificate.js"); await downloadCertificates(list.map(certInfo), fname); toast("Sertifikat yükləndi 🏅", "ok"); }
+        catch (err) { toast(translateError(err), "err"); }
+        btn.disabled = false;
+      };
+      app.querySelectorAll("[data-cert]").forEach((b) => b.onclick = () => dl([certs[Number(b.dataset.cert)]], b));
+      document.getElementById("cert-all").onclick = (e) => { if (!certs.length) return toast("Sertifikat namizədi yoxdur", "err"); dl(certs, e.target, `Sertifikatlar_${y}_${String(m).padStart(2, "0")}.pdf`); };
       document.getElementById("copy").onclick = async () => {
         try { await navigator.clipboard.writeText(text); toast("Mətn kopyalandı ✓", "ok"); }
         catch { const sel = getSelection(), rg = document.createRange(); rg.selectNodeContents(document.getElementById("summary")); sel.removeAllRanges(); sel.addRange(rg); toast("Mətni seçdim — Ctrl+C bas", "ok"); }
