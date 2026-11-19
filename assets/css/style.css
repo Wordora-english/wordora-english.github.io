@@ -528,3 +528,6 @@ body[data-group="mag"] .group-switch button.on { color: #8a5a00; }
 .cam-shot:disabled { opacity: .4; }
 .ess-exam { border: 2px dashed var(--line); border-radius: 14px; padding: 12px 14px; margin-top: 8px; }
 .cam-bar [data-c="again"] { grid-column: 1; } .cam-bar [data-c="use"] { grid-column: 3; }
+/* Portal: "Qrupuna qoşul" */
+.join-card { color: var(--text); text-align: left; margin: .7rem 0 0; padding: 14px 16px; }
+.join-list { display: flex; flex-wrap: wrap; gap: .4rem; }

@@ -464,6 +464,8 @@ Write about your favourite hobby.
             const g = [...document.querySelectorAll("#sgroups input:checked")].map((i) => i.value);
             return g.length || (current && "target_groups" in current) ? { target_groups: g.length ? g : null } : {};
           })(),
+          // fayllar silinmişdi, amma sınaqda yenə PDF var (yenidən yüklənib) — "silinib" qeydini götür
+          ...(current?.files_cleaned_at && (pdf_path || vOut.some((v) => v.pdf_path)) ? { files_cleaned_at: null } : {}),
           results_mode: document.querySelector("input[name=rmode]:checked").value,
           is_published: published,
           content: { ...(mode === "online" ? { mode: "online", shuffle: $("shuffle").checked } : {}), ...(sec.sections.length ? { sections: sec.sections } : {}) },

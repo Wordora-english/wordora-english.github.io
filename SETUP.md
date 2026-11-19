@@ -90,6 +90,7 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 25. `supabase/26-ai-essay.sql` — esseləri bir düymə ilə Claude yoxlayır (Anthropic API açarı lazımdır)
 26. `supabase/27-exit-analysis.sql` — sınaqdan çıxışın təhlili (təsadüf / şübhəli / qəsdən, şagirdin səbəbi)
 27. `supabase/28-offline-guard.sql` — interneti söndürüb çıxmaq açığı bağlanır (növbə + server əlaqə boşluqları)
+28. `supabase/29-group-join-names.sql` — şagird öz qrupuna qoşulur, müəllim ad-soyadı dəyişir, açıq sınağın faylları silinmir
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 

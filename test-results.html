@@ -819,6 +819,9 @@
       app.querySelectorAll("[data-fix]").forEach((el) => (el.onclick = () => fixAnswer(el.dataset.fix, el.dataset.n)));
       const cleanBtn = document.getElementById("clean-files");
       if (cleanBtn) cleanBtn.onclick = async () => {
+        // Sınaq hələ açıqdırsa, silmək olmaz — şagirdlər PDF-i aça və esse şəkli göndərə bilməz
+        const open = test.is_published && (!test.ends_at || new Date(test.ends_at) > new Date());
+        if (open) return toast("Sınaq hələ açıqdır — şagirdlər yaza bilər. Əvvəlcə sınağı bağla (bitmə vaxtı qoy və ya gizlət), sonra faylları sil.", "err");
         const n = fileInfo.essays?.length || 0;
         if (!confirm(`Bu sınağın faylları silinsin?\n\n• Sınağın PDF-i və dinləmə faylı\n${n ? `• ${n} esse şəkli\n` : ""}\nBallar, cavablar, şərhlər və PDF hesabatlar QALIR.\nŞagirdlər daha sınağı yükləyə bilməyəcək. Faylları geri qaytarmaq olmur.`)) return;
         try {

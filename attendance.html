@@ -151,12 +151,16 @@
       }).join("");
     };
 
+    let joinOn = null;   // şagird özü qrupa qoşula bilərmi (29-cu SQL işə salınıbsa)
+
     function shell() {
       const classes = [...new Set(students.map((s) => s.class_name))].sort((a, b) => classOrder(a) - classOrder(b));
       const g = curGroup();
       const dates = nav.mode === "group" ? lessonDates() : [];
       app.innerHTML = `
         <h1 style="font-size:1.6rem">✅ Davamiyyət</h1>
+        ${joinOn !== null ? `<label class="chk" style="width:max-content;max-width:100%;margin:-4px 0 12px" title="Heç bir qrupda olmayan şagirdlərə portalda &quot;Qrupuna qoşul&quot; təklifi çıxır">
+          <input type="checkbox" id="join-on" ${joinOn ? "checked" : ""}> 🙋 Şagirdlər öz qrupunu özü seçə bilsin <span class="muted small">(yalnız qrupsuz şagirdlərə görünür)</span></label>` : ""}
         <div class="sched-tabs">
           ${SCHEDULES.map((x) => `<button data-sched="${x.id}" class="${nav.mode === "group" && nav.sched === x.id ? "on" : ""}">${x.label} <small>(${groupsOf(x.id).length})</small></button>`).join("")}
           <button data-sched="class" class="${nav.mode === "class" ? "on" : ""}">🏫 Siniflər</button>
@@ -190,6 +194,12 @@
         dirty = false; remember(); shell(); load();
       });
       app.querySelectorAll("[data-grp]").forEach((b) => b.onclick = () => { if (!confirmLose()) return; nav.group = b.dataset.grp; dirty = false; remember(); shell(); load(); });
+      document.getElementById("join-on")?.addEventListener("change", async (e) => {
+        const { error } = await sb.rpc("admin_set_group_join", { p_on: e.target.checked });
+        if (error) { e.target.checked = !e.target.checked; return toast(translateError(error), "err"); }
+        joinOn = e.target.checked;
+        toast(joinOn ? "Şagirdlər qrupa özləri qoşula bilər ✓" : "Özü qoşulma bağlandı", "ok");
+      });
       document.getElementById("grp-new")?.addEventListener("click", newGroup);
       document.getElementById("grp-members")?.addEventListener("click", pickMembers);
       document.getElementById("grp-rename")?.addEventListener("click", renameGroup);
@@ -393,7 +403,7 @@
       const me = await getMyProfile().catch(() => null);
       if (!me) { location.href = "login.html"; return; }
       if (me.role !== "admin") { location.href = "portal.html"; return; }
-      await loadBase();
+      await Promise.all([loadBase(), sb.rpc("admin_get_group_join").then(({ data, error }) => { if (!error) joinOn = !!data; }, () => {})]);
       if (nav.mode === "group") date = lessonDates(1)[0] || today();
       shell(); load();
       addEventListener("beforeunload", (e) => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });

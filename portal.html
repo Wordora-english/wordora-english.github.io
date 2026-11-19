@@ -135,12 +135,37 @@
     const DAYNAME = { 1: "bazar ertəsi", 2: "çərşənbə axşamı", 3: "çərşənbə", 4: "cümə axşamı", 5: "cümə", 6: "şənbə", 7: "bazar" };
     async function loadGroups() {
       const { data, error } = await sb.rpc("get_my_groups");
-      if (error || !data?.length) return;
+      if (error) return;
+      if (!data?.length) return offerJoin();
       const lbl = (sch) => { const d = [...sch].map(Number); return `${d.map((x) => ORD[x]).join(" və ")} gün`; };
-      const days = (sch) => [...sch].map((x) => DAYNAME[x]).join(", ");
       document.getElementById("my-groups").innerHTML = data.map((g) =>
         `<span class="grp-chip" title="${esc(days(g.schedule))}">📅 Sənin qrupun: <b>${esc(lbl(g.schedule))}</b> · ${esc(g.name)}</span>`).join("");
     }
+
+    // Qrupsuz şagird: "Qrupuna qoşul" — siyahıdan öz qrupunu seçir (yalnız bir dəfə; dəyişmək müəllimdən)
+    async function offerJoin() {
+      const { data, error } = await sb.rpc("my_join_options");
+      if (error || !data?.show || !data.groups?.length) return;
+      const lbl = (sch) => `${[...sch].map((x) => ORD[x]).join(" və ")} gün`;
+      const bySched = {};
+      for (const g of data.groups) (bySched[g.schedule] ||= []).push(g);
+      const box = document.getElementById("my-groups");
+      box.innerHTML = `<div class="card join-card">
+        <b>👥 Qrupuna qoşul</b>
+        <div class="small muted" style="margin:.2rem 0 .7rem">Hansı günlərdə və saatda dərsə gəlirsənsə, o qrupu seç. Davamiyyət və qrup chatı buna görə olacaq.</div>
+        ${Object.entries(bySched).map(([sch, gs]) => `<div class="join-sched"><div class="small" style="font-weight:700;margin:.4rem 0 .3rem">📅 ${esc(lbl(sch))} <span class="muted">(${esc(days(sch))})</span></div>
+          <div class="join-list">${gs.map((g) => `<button type="button" class="btn btn-ghost btn-sm" data-join="${g.id}" data-label="${esc(lbl(sch))} · ${esc(g.name)}">${esc(g.name)} <span class="muted small">(${g.count})</span></button>`).join("")}</div></div>`).join("")}
+      </div>`;
+      box.querySelectorAll("[data-join]").forEach((b) => b.onclick = async () => {
+        if (!confirm(`Qrupun: ${b.dataset.label}\n\nDüzdür? Sonra qrupu yalnız müəllim dəyişə bilər.`)) return;
+        box.querySelectorAll("[data-join]").forEach((x) => (x.disabled = true));
+        const { error: e } = await sb.rpc("join_study_group", { p_group: b.dataset.join });
+        if (e) { box.querySelectorAll("[data-join]").forEach((x) => (x.disabled = false)); return toast(translateError(e), "err"); }
+        toast("✓ Qrupa qoşuldun", "ok");
+        loadGroups();
+      });
+    }
+    const days = (sch) => [...sch].map((x) => DAYNAME[x]).join(", ");
 
     async function loadQuick() {
       const [{ data: msgs }, { data: att }, { data: hw }, { data: hws }] = await Promise.all([

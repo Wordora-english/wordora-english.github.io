@@ -310,6 +310,7 @@ seed"></textarea>
           ${p.warnings > 0 ? `<button class="btn btn-ghost btn-sm" data-vreset="${p.id}">Xəbərdarlığı sıfırla</button>` : ""}
           <a class="btn btn-ghost btn-sm" href="student.html?id=${p.id}">📈 Profil</a>
           <button class="btn btn-ghost btn-sm" data-pwd="${p.id}">🔑 Şifrə</button>
+          <button class="btn btn-ghost btn-sm" data-act="name" data-id="${p.id}">✏️ Ad-soyad</button>
           <button class="btn btn-ghost btn-sm" data-act="class" data-id="${p.id}">Sinfi dəyiş</button>
           <button class="btn btn-bad btn-sm" data-act="blocked" data-id="${p.id}">🔒 Blokla</button>
           <button class="btn btn-bad btn-sm" data-act="delete" data-id="${p.id}" title="Hesabı və bütün nəticələri tamamilə sil">🗑 Sil</button>`;
@@ -407,6 +408,17 @@ seed"></textarea>
       const { error } = await sb.rpc("admin_delete_student", { p_user: id });
       if (error) return toast(/function|schema cache/i.test(error.message || "") ? "Əvvəlcə 15-delete-retake.sql faylını Supabase-də işə sal" : translateError(error), "err");
       toast(`${p.full_name} silindi`, "ok");
+      loadPeople();
+    }
+
+    // Ad-soyadı düzəlt (bəzi şagirdlər ad yerinə ləqəb yazır)
+    async function changeName(id) {
+      const p = people.find((x) => x.id === id);
+      const val = prompt(`Yeni ad-soyad (@${p.username}):`, p.full_name);
+      if (val === null || !val.trim() || val.trim() === p.full_name) return;
+      const { error } = await sb.rpc("admin_set_name", { p_user: id, p_name: val.trim() });
+      if (error) return toast(/admin_set_name/.test(error.message || "") ? "Əvvəlcə 29-group-join-names.sql faylını Supabase-də işə sal" : translateError(error), "err");
+      toast("Ad-soyad dəyişdirildi ✓", "ok");
       loadPeople();
     }
 
@@ -1414,6 +1426,7 @@ seed"></textarea>
         const b = e.target.closest("button");
         if (!b) return;
         if (b.dataset.act === "class") return changeClass(b.dataset.id);
+        if (b.dataset.act === "name") return changeName(b.dataset.id);
         if (b.dataset.act === "delete") return deleteStudent(b.dataset.id);
         if (b.dataset.act) return setStatus(b.dataset.id, b.dataset.act);
         if (b.hasAttribute("data-refresh")) return loadPeople();
