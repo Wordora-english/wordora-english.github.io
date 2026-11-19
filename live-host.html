@@ -24,27 +24,79 @@
   </div>
   <main class="live-wrap" id="app"><div class="spinner"></div></main>
 
+  <div class="live-bg" aria-hidden="true"></div>
+  <button class="sound-btn" id="snd" title="Musiqi və səslər">🔇</button>
   <script type="module">
     import { sb, configured, getMyProfile, esc, toast, translateError } from "./assets/js/app.js";
     import { OPTION_STYLE } from "./assets/js/live-common.js";
+    import { LiveAudio, confetti } from "./assets/js/live-audio.js";
 
     const app = document.getElementById("app");
     const sid = new URLSearchParams(location.search).get("s");
-    let st = null, busy = false, lastKey = "", leftAt = 0, autoRevealed = -1;
+    let st = null, busy = false, lastKey = "", leftAt = 0, autoRevealed = -1, lastReact = 0, prevStatus = "", lastTick = -1, counting = false;
     const siteUrl = location.origin + location.pathname.replace(/[^/]*$/, "");
+    const audio = new LiveAudio({ music: true });
+
+    // fonda üzən formalar
+    const bg = document.querySelector(".live-bg");
+    ["✏️", "📚", "⭐", "🎵", "✨", "❓", "💡", "🏆", "🔤", "🌍"].forEach((e, k) => {
+      const sp = document.createElement("span");
+      sp.textContent = e; sp.style.left = `${(k * 10 + 3) % 100}%`;
+      sp.style.animationDuration = `${18 + (k % 5) * 5}s`; sp.style.animationDelay = `${-k * 3}s`;
+      bg.appendChild(sp);
+    });
+
+    // Səs düyməsi — brauzer musiqini yalnız toxunandan sonra açır
+    const snd = document.getElementById("snd");
+    const sndUi = () => { const on = audio.ready && audio.musicOn; snd.textContent = on ? "🔊" : "🔇"; snd.classList.toggle("off", !on); snd.classList.toggle("sound-hint", !audio.ready); };
+    snd.onclick = () => {
+      if (!audio.ready) { audio.unlock(); audio.setMusic(true); audio.setSfx(true); }
+      else { const on = !audio.musicOn; audio.setMusic(on); audio.setSfx(on); }
+      syncMusic(); sndUi();
+    };
+    document.addEventListener("pointerdown", () => { if (!audio.ready) { audio.unlock(); syncMusic(); sndUi(); } }, { once: true });
+    sndUi();
 
     document.getElementById("fs").onclick = () => {
       if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.().catch(() => {});
     };
 
+    function syncMusic() {
+      if (!audio.ready || !st) return;
+      if (st.status === "lobby") audio.play("lobby");
+      else if (st.status === "question") audio.play("question");
+      else audio.stop();
+    }
+
+    // 3-2-1 — hamı hazır olsun, sonra sual açılır
+    async function countIn(label) {
+      if (counting) return;
+      counting = true;
+      audio.stop();
+      const ov = document.createElement("div");
+      ov.className = "count-in";
+      document.body.appendChild(ov);
+      for (const n of [3, 2, 1]) {
+        ov.innerHTML = `<small>${esc(label)}</small><b>${n}</b>`;
+        audio.countdown(n);
+        await new Promise((r) => setTimeout(r, 900));
+      }
+      audio.countdown(0);
+      ov.remove();
+      counting = false;
+    }
+
     async function control(action) {
       if (busy) return;
       busy = true;
+      if (action === "next" && st && st.q_index + 1 < st.total) await countIn(st.q_index < 0 ? "Hazır olun!" : `Sual ${st.q_index + 2}`);
       const { error } = await sb.rpc("live_control", { p_session: sid, p_action: action });
       busy = false;
       if (error) return toast(translateError(error), "err");
       poll(true);
     }
+
+    const ava = (p, cls = "") => `<span class="ava ${cls}" style="background:${esc(p.color || "#7b4fe0")}">${esc(p.avatar || "🙂")}</span>`;
 
     function optsHtml(q, reveal, dist) {
       return `<div class="opts">${q.options.map((o, i) => {
@@ -56,41 +108,64 @@
 
     function boardHtml(top, n = 5) {
       return `<div class="board">${top.slice(0, n).map((p, i) =>
-        `<div class="board-row"><span class="pos">${i + 1}.</span><span class="nm">${esc(p.name)}</span><span class="pt">${p.score}</span></div>`).join("")}</div>`;
+        `<div class="board-row"><span class="pos">${i + 1}.</span>${ava(p, "sm")}<span class="nm">${esc(p.name)}${p.streak >= 3 ? ` <span class="fire">🔥${p.streak}</span>` : ""}</span><span class="pt">${p.score}</span></div>`).join("")}</div>`;
+    }
+
+    function lobbyRender() {
+      // Artıq otaq çəkilibsə — yalnız yeni gələnləri əlavə et (animasiya hamıda təkrarlanmasın)
+      const room = document.getElementById("room");
+      if (room) {
+        room.classList.toggle("dense", st.players.length > 12);
+        const have = room.children.length;
+        if (st.players.length > have) {
+          room.insertAdjacentHTML("beforeend", st.players.slice(have).map((p) => `<div class="room-p">${ava(p, "xl")}<span class="nm">${esc(p.name.split(" ")[0])}</span></div>`).join(""));
+          audio.pop();
+        }
+        // personaj dəyişibsə — yenilə
+        st.players.forEach((p, k) => { const a = room.children[k]?.querySelector(".ava"); if (a && a.textContent !== p.avatar) { a.textContent = p.avatar || "🙂"; a.style.background = p.color; } });
+        document.getElementById("cnt").textContent = st.players.length;
+        document.getElementById("go").disabled = !st.players.length;
+        return;
+      }
+      app.innerHTML = `
+        <div class="lobby">
+          <div class="join-hint">Telefonda saytı aç → <b>Portal</b> → <b>Canlı viktorina</b> → kodu yaz</div>
+          <div class="join-hint" style="opacity:.7;font-size:.95rem;margin-top:.3rem">${esc(siteUrl.replace(/^https?:\/\//, ""))}</div>
+          <div class="big-code">${st.code.slice(0, 3)} ${st.code.slice(3)}</div>
+          <h1 style="font-size:clamp(1.3rem,3vw,2rem)">${esc(st.title)}</h1>
+          <div class="lobby-count">👥 <span id="cnt">${st.players.length}</span> nəfər otaqda</div>
+          <div class="room${st.players.length > 12 ? " dense" : ""}" id="room">${st.players.map((p) => `<div class="room-p">${ava(p, "xl")}<span class="nm">${esc(p.name.split(" ")[0])}</span></div>`).join("")}</div>
+          <button class="live-btn gold" id="go" ${st.players.length ? "" : "disabled"}>Başla ▶</button>
+          ${audio.ready ? "" : '<p class="join-hint" style="margin-top:2vh;font-size:.95rem">🔊 Musiqi üçün sağ altdakı düyməyə və ya ekrana toxun</p>'}
+        </div>`;
+      document.getElementById("go").onclick = () => control("next");
     }
 
     function render(force) {
-      const key = `${st.status}|${st.q_index}|${st.players.length}|${st.answered}|${st.status === "reveal" || st.status === "finished" ? JSON.stringify(st.top) : ""}`;
+      const key = `${st.status}|${st.q_index}|${st.status === "lobby" ? JSON.stringify(st.players) : st.players.length}|${st.answered}|${st.status === "reveal" || st.status === "finished" ? JSON.stringify(st.top) : ""}`;
       if (!force && key === lastKey) return;
       lastKey = key;
+      const changed = prevStatus !== `${st.status}|${st.q_index}`;
+      prevStatus = `${st.status}|${st.q_index}`;
+      if (changed) syncMusic();
 
-      if (st.status === "lobby") {
-        app.innerHTML = `
-          <div class="lobby">
-            <div class="join-hint">Telefonda saytı aç → <b>Portal</b> → <b>Canlı viktorina</b> → kodu yaz</div>
-            <div class="join-hint" style="opacity:.7;font-size:.95rem;margin-top:.3rem">${esc(siteUrl.replace(/^https?:\/\//, ""))}</div>
-            <div class="big-code">${st.code.slice(0, 3)} ${st.code.slice(3)}</div>
-            <h1 style="font-size:clamp(1.3rem,3vw,2rem)">${esc(st.title)}</h1>
-            <div class="join-hint">Qoşulanlar: <b>${st.players.length}</b></div>
-            <div class="players">${st.players.map((p) => `<span class="player-chip">${esc(p.name)}</span>`).join("")}</div>
-            <button class="live-btn gold" id="go" ${st.players.length ? "" : "disabled"}>Başla ▶</button>
-          </div>`;
-        document.getElementById("go").onclick = () => control("next");
-        return;
-      }
+      if (st.status === "lobby") return lobbyRender();
 
       if (st.status === "question" || st.status === "reveal") {
         const reveal = st.status === "reveal";
         const q = st.question;
+        if (changed && reveal) { audio.whoosh(); setTimeout(() => audio.correct(), 250); }
         app.innerHTML = `
           <div class="q-head">
             <span class="q-count">Sual ${st.q_index + 1} / ${st.total}</span>
             ${reveal ? `<span class="q-count">${st.answered} / ${st.players.length} cavab</span>` : `<div class="countdown" id="cd">–</div>`}
           </div>
+          ${reveal ? "" : '<div class="time-bar"><i id="tbar" style="width:100%"></i></div>'}
           <div class="q-text">${esc(q.text)}</div>
           ${optsHtml(q, reveal, st.dist || {})}
           ${reveal
-            ? `<h2 style="text-align:center;margin-top:3vh">🏆 İlk 5</h2>${boardHtml(st.top)}
+            ? `${st.fastest ? `<div class="fastest">⚡ Ən sürətli: ${ava(st.fastest, "sm")} <b>${esc(st.fastest.name)}</b> — ${(st.fastest.ms / 1000).toFixed(1)} san</div>` : ""}
+               <h2 style="text-align:center;margin-top:3vh">🏆 İlk 5</h2>${boardHtml(st.top)}
                <div class="host-actions"><button class="live-btn gold" id="next">${st.q_index + 1 >= st.total ? "Nəticələr 🏆" : "Növbəti sual ▶"}</button></div>`
             : `<div class="answered-info">Cavab verən: <b>${st.answered}</b> / ${st.players.length}</div>
                <div class="host-actions"><button class="live-btn" id="reveal">Cavabı göstər</button></div>`}`;
@@ -101,8 +176,9 @@
       }
 
       // finished
+      if (changed) { audio.fanfare(); setTimeout(() => confetti(), 1700); }
       const t = st.top;
-      const pod = (p, i) => p ? `<div class="pod p${i + 1}"><div class="nm">${esc(p.name)}</div><div class="block">${i + 1}</div><div class="pt">${p.score} bal</div></div>` : "";
+      const pod = (p, i) => p ? `<div class="pod p${i + 1}">${ava(p, i === 0 ? "xl" : "lg")}<div class="nm">${esc(p.name)}</div><div class="block">${i + 1}</div><div class="pt">${p.score} bal</div></div>` : "";
       app.innerHTML = `
         <div class="lobby">
           <h1 style="font-size:clamp(1.6rem,4vw,2.6rem)">🏆 ${esc(st.title)} — nəticələr</h1>
@@ -115,17 +191,43 @@
     function tickCountdown() {
       const el = document.getElementById("cd");
       if (!el || st.status !== "question") return;
-      const left = Math.max(0, Math.ceil((leftAt - Date.now()) / 1000));
+      const ms = Math.max(0, leftAt - Date.now());
+      const left = Math.ceil(ms / 1000);
       el.textContent = left;
       el.classList.toggle("low", left <= 5);
+      const bar = document.getElementById("tbar");
+      if (bar && st.time) bar.style.width = `${Math.min(100, ms / (st.time * 10))}%`;
+      audio.setIntensity(left <= 5 ? 1 : left <= 10 ? 0.4 : 0);
+      if (left <= 5 && left > 0 && left !== lastTick) { lastTick = left; audio.tick(left <= 3); }
     }
     setInterval(tickCountdown, 250);
 
+    function flyReactions(list) {
+      for (const r of list || []) {
+        if (r.id <= lastReact) continue;
+        lastReact = r.id;
+        const el = document.createElement("div");
+        el.className = "react-fly";
+        el.textContent = r.emoji;
+        el.style.left = `${8 + Math.random() * 84}%`;
+        document.body.appendChild(el);
+        setTimeout(() => el.remove(), 3300);
+      }
+    }
+
     async function poll(force = false) {
-      const { data, error } = await sb.rpc("live_host_state", { p_session: sid });
-      if (error) { app.innerHTML = `<div class="lobby"><p>${esc(translateError(error))}</p></div>`; return; }
-      st = data;
+      const { data, error } = await sb.rpc("live_host_state", { p_session: sid, p_after: lastReact });
+      if (error) {
+        if (/p_after|live_host_state/.test(error.message || "")) {   // 30-cu SQL hələ işə salınmayıb — köhnə üsul
+          const r = await sb.rpc("live_host_state", { p_session: sid });
+          if (r.error) { app.innerHTML = `<div class="lobby"><p>${esc(translateError(r.error))}</p></div>`; return; }
+          st = r.data;
+        } else { app.innerHTML = `<div class="lobby"><p>${esc(translateError(error))}</p></div>`; return; }
+      } else st = data;
       if (st.status === "question") leftAt = Date.now() + (st.left_ms || 0);
+      if (lastReact === 0 && st.reactions?.length) lastReact = Math.max(...st.reactions.map((r) => r.id));   // köhnələri uçurma
+      else flyReactions(st.reactions);
+      if (counting && !force) return;
       render(force);
       // Vaxt bitəndə və ya hamı cavab verəndə cavabı avtomatik göstər
       if (st.status === "question" && autoRevealed !== st.q_index &&
