@@ -19,8 +19,7 @@ begin
   if public.get_setting('group_join', 'on') <> 'on' then return json_build_object('show', false); end if;
   if exists (select 1 from public.study_group_members where user_id = v_p.id) then return json_build_object('show', false); end if;
   return json_build_object('show', true, 'groups', coalesce((
-    select json_agg(json_build_object('id', g.id, 'schedule', g.schedule, 'name', g.name,
-                                      'count', (select count(*) from public.study_group_members m where m.group_id = g.id))
+    select json_agg(json_build_object('id', g.id, 'schedule', g.schedule, 'name', g.name)
                     order by g.schedule, g.sort, g.created_at)
       from public.study_groups g), '[]'::json));
 end;

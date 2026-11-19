@@ -154,7 +154,7 @@
         <b>👥 Qrupuna qoşul</b>
         <div class="small muted" style="margin:.2rem 0 .7rem">Hansı günlərdə və saatda dərsə gəlirsənsə, o qrupu seç. Davamiyyət və qrup chatı buna görə olacaq.</div>
         ${Object.entries(bySched).map(([sch, gs]) => `<div class="join-sched"><div class="small" style="font-weight:700;margin:.4rem 0 .3rem">📅 ${esc(lbl(sch))} <span class="muted">(${esc(days(sch))})</span></div>
-          <div class="join-list">${gs.map((g) => `<button type="button" class="btn btn-ghost btn-sm" data-join="${g.id}" data-label="${esc(lbl(sch))} · ${esc(g.name)}">${esc(g.name)} <span class="muted small">(${g.count})</span></button>`).join("")}</div></div>`).join("")}
+          <div class="join-list">${gs.map((g) => `<button type="button" class="btn btn-ghost btn-sm" data-join="${g.id}" data-label="${esc(lbl(sch))} · ${esc(g.name)}">${esc(g.name)}</button>`).join("")}</div></div>`).join("")}
       </div>`;
       box.querySelectorAll("[data-join]").forEach((b) => b.onclick = async () => {
         if (!confirm(`Qrupun: ${b.dataset.label}\n\nDüzdür? Sonra qrupu yalnız müəllim dəyişə bilər.`)) return;
