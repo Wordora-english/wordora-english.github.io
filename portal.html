@@ -30,6 +30,7 @@
   </main>
 
   <script type="module">
+    import { examCountdown } from "./assets/js/countdown.js";
     import { downloadMaterial } from "./assets/js/materials.js";
     import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
     import { testState, fmtNum, fmtDuration } from "./assets/js/tests-common.js";
@@ -422,6 +423,7 @@
           <div id="my-groups"></div>
         </section>
 
+        ${me.class_name === "Magistratura" ? "" : '<div id="exam-cd"></div>'}
         <div id="install-box" style="margin-bottom:12px"></div>
         <div id="wotd" style="margin-bottom:12px"></div>
 
@@ -466,6 +468,7 @@
         if (codeInp.value.length !== 6) return toast("Kod 6 rəqəmdir", "err");
         location.href = `live.html?code=${codeInp.value}`;
       });
+      examCountdown(document.getElementById("exam-cd"));
       renderInstall();
       loadWotd();
       loadQuick(); loadGroups(); loadLiveMe();

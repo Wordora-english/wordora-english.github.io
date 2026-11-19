@@ -40,6 +40,7 @@
         <a class="btn btn-primary" href="register.html">Qeydiyyatdan keç</a>
         <a class="btn btn-ghost" href="login.html">Hesabım var</a>
       </div>
+      <div id="exam-cd"></div>
     </section>
 
     <section class="container">
@@ -67,6 +68,8 @@
 
   <script type="module">
     import { getMyProfile, configured, esc } from "./assets/js/app.js";
+    import { examCountdown } from "./assets/js/countdown.js";
+    examCountdown(document.getElementById("exam-cd"));
     document.getElementById("year").textContent = new Date().getFullYear();
     if (configured) {
       try {
