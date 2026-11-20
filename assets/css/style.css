@@ -643,3 +643,18 @@ body[data-group="mag"] .group-switch button.on { color: #8a5a00; }
 .pq-expl { font-size: .86rem; background: var(--soft); border-radius: 10px; padding: 6px 10px; margin-top: 6px; }
 .wm-layer { position: fixed; inset: 0; z-index: 50; pointer-events: none; background-repeat: repeat; opacity: .1; }
 :root[data-theme=dark] .wm-layer { opacity: .16; }
+/* Seriya səviyyələri */
+.flame-i { display: inline-block; line-height: 1; }
+.streak-hero .tier-name { font-weight: 800; font-size: 1.05rem; letter-spacing: .02em; margin-top: 2px; }
+.tier-next { margin-top: 12px; font-size: .85rem; font-weight: 600; }
+.tn-bar { height: 8px; max-width: 260px; margin: 0 auto 5px; border-radius: 99px; background: rgba(255,255,255,.25); overflow: hidden; }
+.tn-bar i { display: block; height: 100%; background: #fff; border-radius: 99px; }
+.ladder { display: flex; justify-content: center; gap: 4px; margin-top: 10px; flex-wrap: wrap; }
+.ladder span { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; min-height: 44px; font-size: 1.15rem; padding: 4px 6px; border-radius: 10px; background: rgba(0,0,0,.14); opacity: .45; }
+.ladder span.got { opacity: 1; background: rgba(255,255,255,.22); }
+.ladder small { font-size: .62rem; font-weight: 700; }
+.streak-hero.tier-king { background-size: 300% 300% !important; animation: dia 6s ease infinite; }
+.streak-hero.tier-star, .streak-hero.tier-king { box-shadow: 0 0 40px rgba(245, 180, 0, .45); }
+@keyframes dia { 50% { background-position: 100% 50%; } }
+.streak-hero.tier-gold { color: #3b2400; }
+.streak-hero.tier-gold .week b, .streak-hero.tier-gold .ladder span { background: rgba(255,255,255,.35); }

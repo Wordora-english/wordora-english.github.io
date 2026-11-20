@@ -27,6 +27,7 @@
     import { sb, configured, getMyProfile, esc, toast, translateError } from "./assets/js/app.js";
     import { startGuard } from "./assets/js/guard.js";
     import { confetti } from "./assets/js/live-audio.js";
+    import { TIERS, tierOf, flame, nextText, tierUp } from "./assets/js/streak.js";
 
     const app = document.getElementById("app");
     const L = "ABCDE";
@@ -41,14 +42,20 @@
 
     function hero(s) {
       const today = s.week?.[s.week.length - 1]?.day;
-      return `<div class="streak-hero">
-        <div class="flame">${s.current ? "🔥" : "🌱"}</div>
+      const t = tierOf(s.current);
+      const span = t.next ? t.next.from - t.from : 1, done = t.next ? s.current - t.from : 1;
+      return `<div class="streak-hero tier-${t.key}" style="background:${t.grad}">
+        <div class="flame">${flame(s.current)}</div>
         <div class="big">${s.current} gün</div>
-        <div class="sub">${s.current ? "ardıcıl məşq seriyası" : "Bu gün başla — seriya yarat!"} · ən uzun: ${s.best} gün · cəmi: ${s.total}</div>
+        <div class="tier-name">${s.current ? esc(t.name) : "Bu gün başla — seriya yarat!"}</div>
+        <div class="sub">ən uzun: ${s.best} gün · cəmi: ${s.total} gün</div>
         <div class="week">${(s.week || []).map((d) => {
           const dt = new Date(d.day + "T12:00:00");
-          return `<span class="${d.done ? "on" : ""} ${d.day === today ? "today" : ""}"><b>${d.done ? "🔥" : ""}</b>${WD[dt.getDay()]}</span>`;
-        }).join("")}</div></div>`;
+          return `<span class="${d.done ? "on" : ""} ${d.day === today ? "today" : ""}"><b>${d.done ? flame(Math.max(s.current, 1)) : ""}</b>${WD[dt.getDay()]}</span>`;
+        }).join("")}</div>
+        <div class="tier-next">${t.next ? `<div class="tn-bar"><i style="width:${Math.round((done / span) * 100)}%"></i></div>` : ""}<span>${esc(nextText(s.current))}</span></div>
+        <div class="ladder">${TIERS.slice(1).map((x) => `<span class="${s.current >= x.from ? "got" : ""}" title="${esc(x.name)} — ${x.from} gün">${flame(x.from)}<small>${x.label}</small></span>`).join("")}</div>
+      </div>`;
     }
     const voidBanner = () => `<div class="void-banner"><span class="ic">⛔</span><div><b>Bugünkü məşq 0 bal ilə bağlandı.</b><br>
       Səbəb: ${esc(data.void_reason || "qayda pozuntusu")}.<br><span class="small">Məşq zamanı səhifədən çıxmaq, başqa proqrama keçmək, ekran şəkli çəkmək və köçürmək qadağandır. Hesabın bloklanmayıb — <b>sabah yenidən iştirak edə bilərsən.</b></span></div></div>`;
@@ -135,8 +142,18 @@
       ls.del(KS()); ls.del(KA());
       data = r;
       render();
-      if (!r.voided && r.correct === r.total) confetti(120);
-      else if (!r.voided && (r.streak?.current || 0) > before) confetti(50);
+      const after = r.streak?.current || 0;
+      if (!r.voided && tierUp(before, after)) {
+        const t = tierOf(after);
+        confetti(160);
+        const box = document.createElement("div");
+        box.className = "wd-modal";
+        box.innerHTML = `<div class="wd-modal-box"><div style="font-size:4rem">${flame(after)}</div><h2>Yeni səviyyə: ${esc(t.name)}!</h2>
+          <p>${after} gün ara vermədən məşq etdin — alovun rəngi dəyişdi! 🎉<br>${esc(nextText(after))}.</p><button class="btn btn-primary">Əla! 💪</button></div>`;
+        box.querySelector("button").onclick = () => box.remove();
+        document.body.appendChild(box);
+      } else if (!r.voided && r.correct === r.total) confetti(120);
+      else if (!r.voided && after > before) confetti(50);
     }
 
     function results(s) {
