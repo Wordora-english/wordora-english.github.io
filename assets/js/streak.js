@@ -38,3 +38,25 @@ export function nextText(n) {
 
 // Bu gün yeni səviyyəyə keçdimi?
 export const tierUp = (before, after) => tierOf(after).index > tierOf(before).index && tierOf(after).index > 1;
+
+// ---------- Gündəlik sual sayı (seriyanın gününə görə) — SQL: daily_count ----------
+export const PLAN = [
+  { from: 1, to: 1, n: 5, label: "1-ci gün" }, { from: 2, to: 2, n: 7, label: "2-ci gün" }, { from: 3, to: 3, n: 8, label: "3-cü gün" },
+  { from: 4, to: 4, n: 9, label: "4-cü gün" }, { from: 5, to: 7, n: 10, label: "5–7-ci gün" }, { from: 8, to: 14, n: 20, label: "2-ci həftə" },
+  { from: 15, to: 29, n: 25, label: "3–4-cü həftə" }, { from: 30, to: Infinity, n: 30, label: "1 aydan sonra" },
+];
+export const countFor = (day) => (PLAN.find((p) => day >= p.from && day <= p.to) || PLAN[0]).n;
+
+// Azərbaycan dilində sıra şəkilçisi: 1-ci, 3-cü, 6-cı, 9-cu, 10-cu, 40-cı ...
+export function ord(n) {
+  n = Math.abs(Math.round(n));
+  const last = n % 10, tens = n % 100;
+  if (last) return `${n}-${{ 1: "ci", 2: "ci", 3: "cü", 4: "cü", 5: "ci", 6: "cı", 7: "ci", 8: "ci", 9: "cu" }[last]}`;
+  if (n % 100 === 0 && n) return `${n}-cü`;
+  return `${n}-${{ 10: "cu", 20: "ci", 30: "cu", 40: "cı", 50: "ci", 60: "cı", 70: "ci", 80: "ci", 90: "cı" }[tens]}`;
+}
+
+// Plan pilləsi (cari pillə vurğulanır)
+export function planHtml(day) {
+  return `<div class="plan">${PLAN.map((p) => `<span class="${day >= p.from && day <= p.to ? "on" : day > p.to ? "got" : ""}"><b>${p.n}</b><small>${p.label}</small></span>`).join("")}</div>`;
+}

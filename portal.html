@@ -30,7 +30,7 @@
   </main>
 
   <script type="module">
-    import { tierOf, flame, nextText } from "./assets/js/streak.js";
+    import { tierOf, flame, nextText, ord } from "./assets/js/streak.js";
     import { examCountdown } from "./assets/js/countdown.js";
     import { downloadMaterial } from "./assets/js/materials.js";
     import { startGuard, isTorError, torScreen } from "./assets/js/guard.js";
@@ -238,15 +238,15 @@
       if (s.today_voided) {
         // ən başda xəbərdarlıq
         document.getElementById("daily-void").innerHTML = `<div class="void-banner"><span class="ic">⛔</span><div><b>Bugünkü gündəlik məşq 0 bal ilə bağlandı.</b><br>Səbəb: ${esc(s.void_reason || "qayda pozuntusu")}.<br><span class="small">Məşq zamanı səhifədən çıxmaq, başqa proqrama keçmək, ekran şəkli çəkmək və köçürmək qadağandır. Hesabın bloklanmayıb — sabah yenidən iştirak edə bilərsən.</span></div></div>`;
-        el.innerHTML = `<span class="fl">⛔</span><span class="tx"><b>Bugünkü məşq: 0 bal</b><small>Qayda pozuldu. Sabah yeni 5 sual olacaq.</small></span><span>›</span>`;
+        el.innerHTML = `<span class="fl">⛔</span><span class="tx"><b>Bugünkü məşq: 0 bal</b><small>Qayda pozuldu. Seriya sıfırlandı — sabah 5 sualdan başlayırsan.</small></span><span>›</span>`;
         el.classList.remove("hidden");
         return;
       }
       el.innerHTML = s.in_progress
         ? `<span class="fl">⏳</span><span class="tx"><b>Gündəlik məşq başlanıb</b><small>Tez davam et — vaxt gedir!</small></span><span class="btn btn-primary btn-sm">Davam et</span>`
         : s.today
-        ? `<span class="fl">${flame(s.current)}</span><span class="tx"><b>${s.current} günlük seriya · ${tierOf(s.current).name}</b><small>Bugünkü məşq edildi ✓ ${nextText(s.current)}</small></span><span>›</span>`
-        : `<span class="fl">${flame(s.current)}</span><span class="tx"><b>Gündəlik məşq — 5 sual</b><small>${s.current ? `Seriyan: ${s.current} gün (${tierOf(s.current).name}) — bu gün də et, itirmə!` : "5 sual, 6 dəqiqə. Bu gün seriyaya başla!"}</small></span><span class="btn btn-primary btn-sm">Başla</span>`;
+        ? `<span class="fl">${flame(s.current)}</span><span class="tx"><b>${s.current} günlük seriya · ${tierOf(s.current).name}</b><small>Bugünkü məşq edildi ✓ Sabah ${s.count_next || 5} sual · ${nextText(s.current)}</small></span><span>›</span>`
+        : `<span class="fl">${flame(s.current)}</span><span class="tx"><b>Gündəlik məşq — ${s.count_today || 5} sual</b><small>${s.current ? `Seriyanın ${ord(s.current + 1)} günü — bu gün də et, itirmə!` : "Bu gün seriyaya başla! Hər gün suallar artır 🚀"}</small></span><span class="btn btn-primary btn-sm">Başla</span>`;
       el.style.borderLeftColor = s.current >= 7 ? ({ week: "#c2185b", blue: "#2f7ce0", purple: "#7b4fe0", green: "#12925c", gold: "#f5b400", diamond: "#2fb4e0", star: "#3a32b5", king: "#e0529c" }[tierOf(s.current).key] || "#f97316") : "#f97316";
       el.classList.remove("hidden");
     }

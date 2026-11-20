@@ -27,7 +27,7 @@
     import { sb, configured, getMyProfile, esc, toast, translateError } from "./assets/js/app.js";
     import { startGuard } from "./assets/js/guard.js";
     import { confetti } from "./assets/js/live-audio.js";
-    import { TIERS, tierOf, flame, nextText, tierUp } from "./assets/js/streak.js";
+    import { TIERS, tierOf, flame, nextText, tierUp, countFor, ord, planHtml } from "./assets/js/streak.js";
 
     const app = document.getElementById("app");
     const L = "ABCDE";
@@ -64,7 +64,7 @@
     function render() {
       const s = data.streak || { current: 0, best: 0, total: 0, week: [] };
       if (data.empty) { app.innerHTML = hero(s) + '<div class="card empty">Müəllim hələ sual əlavə etməyib. Tezliklə burada hər gün 5 sual olacaq 🙂</div>'; return; }
-      if (data.done && data.voided) { stopRun(); app.innerHTML = voidBanner() + hero(s) + '<div class="card empty">Sabah yeni 5 sual olacaq. Qaydalara əməl et — seriyanı itirmə! 💪</div>'; return; }
+      if (data.done && data.voided) { stopRun(); app.innerHTML = voidBanner() + hero(s) + '<div class="card empty">Seriya sıfırlandı — sabah yenidən 5 sualdan başlayacaqsan. Qaydalara əməl et! 💪</div>'; return; }
       if (data.done) return results(s);
       if (!data.started_at) return intro(s);
       return question();
@@ -76,7 +76,10 @@
         <div class="pq-card" style="text-align:center">
           <div style="font-size:2.2rem">📝</div>
           <h2 style="margin:.3rem 0">Bugünkü məşq hazırdır</h2>
-          <p class="muted" style="margin:0">${data.count} sual · ${Math.round(data.limit / 60)} dəqiqə · ${lv.filter((x) => x === "easy").length} asan, ${lv.filter((x) => x !== "easy").length} orta və çətin</p>
+          <p class="muted" style="margin:0">Seriyanın <b>${ord(data.streak_day || 1)} günü</b> · ${data.count} sual · ${Math.round(data.limit / 60)} dəqiqə · ${lv.filter((x) => x === "easy").length} asan, ${lv.filter((x) => x !== "easy").length} orta və çətin</p>
+          ${(data.streak_day || 1) > 1 && data.count > countFor((data.streak_day || 1) - 1) ? `<div class="grow-note">🚀 Suallar artdı! Dünən ${countFor(data.streak_day - 1)} idi, bu gün ${data.count}.${data.count >= countFor(data.streak_day - 1) * 2 ? " Yeni həftə — 2 qat!" : ""}</div>` : ""}
+          ${planHtml(data.streak_day || 1)}
+          <p class="small muted" style="margin:2px 0 0">Seriya uzandıqca suallar artır. Bir gün buraxsan — yenidən 5 sualdan başlayırsan.</p>
           <ul class="rules">
             <li>⏱ Vaxt "Başla" düyməsini basan kimi gedir. Vaxt bitəndə cavablar özü göndərilir.</li>
             <li>📵 Məşq zamanı <b>səhifədən çıxma</b>, başqa proqrama və ya taba keçmə.</li>
@@ -164,7 +167,7 @@
         <div class="card" style="text-align:center;margin-bottom:12px">
           <div style="font-size:2.4rem">${data.correct === data.total ? "🏆" : data.correct >= data.total - 1 ? "🎉" : "💪"}</div>
           <h2 style="margin:.2rem 0">Bugünkü nəticə: ${data.correct} / ${data.total}</h2>
-          <p class="muted" style="margin:0">${data.correct === data.total ? "Əla! Hamısı düzgündür!" : "Səhvlərinə və izahlara aşağıda bax."} Sabah yeni 5 sual olacaq 🌅</p>
+          <p class="muted" style="margin:0">${data.correct === data.total ? "Əla! Hamısı düzgündür!" : "Səhvlərinə və izahlara aşağıda bax."} Sabah ${data.next_count || 5} sual olacaq${(data.next_count || 5) > data.total ? " 🚀" : " 🌅"}</p>
         </div>
         <div class="card">${qs.map((q) => `
           <div class="pq-res"><span class="ic">${q.ok ? "✅" : "❌"}</span><div style="flex:1">

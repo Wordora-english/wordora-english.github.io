@@ -658,3 +658,11 @@ body[data-group="mag"] .group-switch button.on { color: #8a5a00; }
 @keyframes dia { 50% { background-position: 100% 50%; } }
 .streak-hero.tier-gold { color: #3b2400; }
 .streak-hero.tier-gold .week b, .streak-hero.tier-gold .ladder span { background: rgba(255,255,255,.35); }
+/* Gündəlik sual sayı planı */
+.plan { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin: 10px 0 4px; }
+.plan span { display: flex; flex-direction: column; align-items: center; min-width: 58px; padding: 5px 6px; border-radius: 10px; background: var(--soft); opacity: .55; }
+.plan span b { font-size: 1rem; }
+.plan span small { font-size: .62rem; white-space: nowrap; }
+.plan span.got { opacity: .8; }
+.plan span.on { opacity: 1; background: linear-gradient(135deg, #f97316, #e5484d); color: #fff; transform: scale(1.06); }
+.grow-note { background: linear-gradient(90deg, rgba(249,115,22,.16), transparent); border-radius: 12px; padding: 8px 12px; font-weight: 700; margin: 8px 0; }
