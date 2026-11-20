@@ -45,7 +45,7 @@
   <main class="container" id="app"><div class="spinner"></div></main>
 
   <script type="module">
-    import { sb, configured, getMyProfile, esc, toast, translateError, classLabel, formatDate } from "./assets/js/app.js";
+    import { sb, configured, getMyProfile, esc, toast, translateError, classLabel, formatDate, qHtml } from "./assets/js/app.js";
 
     const app = document.getElementById("app");
     const L = "ABCDE";
@@ -53,9 +53,13 @@
     let shown = 100, Q = [], stat = {}, day = new Date(Date.now() + 4 * 3600e3).toISOString().slice(0, 10), fTopic = "", fLevel = "", fText = "";
 
     async function loadQuestions() {
-      const { data, error } = await sb.from("daily_questions").select("*").order("code", { nullsFirst: false }).order("id");
-      if (error) throw error;
-      Q = data;
+      Q = [];
+      for (let from = 0; ; from += 1000) {   // Supabase bir sorğuda ən çox 1000 sətir qaytarır
+        const { data, error } = await sb.from("daily_questions").select("*").order("sort").order("id").range(from, from + 999);
+        if (error) throw error;
+        Q.push(...data);
+        if (data.length < 1000) break;
+      }
       // hər sualın düzgün cavab faizi (son 90 gün)
       const from = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
       const { data: sets } = await sb.from("daily_sets").select("questions, results, voided").gte("day", from).not("done_at", "is", null).limit(5000);
@@ -94,7 +98,7 @@
       const list = Q.filter((q) => (!fTopic || q.topic === fTopic) && (!fLevel || q.level === fLevel) && (!fText || (q.text + q.opts.join(" ")).toLowerCase().includes(fText.toLowerCase())));
       const cnt = (l) => Q.filter((q) => q.active && q.level === l).length;
       return `
-        <p class="small muted" style="margin:0 0 8px">Aktiv: ${Q.filter((q) => q.active).length} sual — 🟢 ${cnt("easy")} asan · 🟡 ${cnt("medium")} orta · 🔴 ${cnt("hard")} çətin. Hər gün hər şagirdə 1 asan + 2 orta + 2 çətin düşür (əvvəl ən az gördüyü suallardan).</p>
+        <p class="small muted" style="margin:0 0 8px">Aktiv: ${Q.filter((q) => q.active).length} sual — 🟢 ${cnt("easy")} asan · 🟡 ${cnt("medium")} orta · 🔴 ${cnt("hard")} çətin. Bu suallar həm <a href="bank.html">sual bankında</a>, həm gündəlik məşqdə istifadə olunur.</p>
         <div class="flt">
           <select id="ft"><option value="">Bütün mövzular</option>${topics.map((t) => `<option ${t === fTopic ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
           <select id="fl"><option value="">Bütün səviyyələr</option>${Object.entries(LV).map(([k, v]) => `<option value="${k}" ${k === fLevel ? "selected" : ""}>${v}</option>`).join("")}</select>
@@ -105,11 +109,11 @@
         <div class="card">${list.slice(0, shown).map((q) => {
           const st = stat[q.id];
           return `<div class="qx ${q.active ? "" : "off"}">
-            <div class="qx-h"><b>${esc(q.code || "#" + q.id)}</b><span class="lvl ${q.level}">${LV[q.level]}</span><span>${esc(q.topic)}</span>
+            <div class="qx-h"><b>${esc(q.code || "#" + q.id)}</b><span class="lvl ${q.level}">${LV[q.level]}</span><span>${q.section ? esc(q.section) + " › " : ""}${esc(q.topic)}</span>
               ${st ? `<span title="son 90 gündə">📊 ${st.n} dəfə · ${Math.round(st.ok / st.n * 100)}% düzgün</span>` : '<span>📊 hələ düşməyib</span>'}
               ${q.active ? "" : "<span>⏸ söndürülüb</span>"}
               <span style="margin-left:auto;display:flex;gap:4px"><button class="btn btn-ghost btn-sm" data-ed="${q.id}">✏️</button><button class="btn btn-ghost btn-sm" data-tg="${q.id}">${q.active ? "⏸" : "▶"}</button><button class="btn btn-ghost btn-sm" data-del="${q.id}">🗑</button></span></div>
-            <div class="qx-t">${esc(q.text)}</div>
+            <div class="qx-t">${qHtml(q.text)}</div>
             <div class="qx-o">${q.opts.map((o, i) => `<span class="${i === q.ans ? "ok" : ""}">${L[i]}) ${esc(o)}${i === q.ans ? " ✓" : ""}</span>`).join("")}</div>
             ${q.expl ? `<div class="small muted" style="margin-top:3px">💡 ${esc(q.expl)}</div>` : ""}
           </div>`;
@@ -125,11 +129,12 @@
       box.className = "ed";
       box.innerHTML = `<form class="ed-box">
         <h2 style="margin-top:0">${q ? "Sualı redaktə et" : "Yeni sual"}</h2>
-        <div class="field"><label>Sual</label><textarea id="e-text" required maxlength="400" style="min-height:70px">${esc(q?.text || "")}</textarea></div>
+        <div class="field"><label>Bölmə</label><input id="e-sec" list="e-sl" value="${esc(q?.section || "")}" placeholder="məs. Feilin zamanları (Tenses)"><datalist id="e-sl">${[...new Set(Q.map((x) => x.section).filter(Boolean))].map((t) => `<option>${esc(t)}</option>`).join("")}</datalist></div>
+        <div class="field"><label>Sual</label><textarea id="e-text" required maxlength="1500" style="min-height:70px">${esc(q?.text || "")}</textarea></div>
         <div class="field" style="display:flex;gap:8px"><div style="flex:2"><label>Mövzu</label><input id="e-topic" list="e-tl" required value="${esc(q?.topic || "")}"><datalist id="e-tl">${topics.map((t) => `<option>${esc(t)}</option>`).join("")}</datalist></div>
           <div style="flex:1"><label>Səviyyə</label><select id="e-level">${Object.entries(LV).map(([k, v]) => `<option value="${k}" ${k === (q?.level || "medium") ? "selected" : ""}>${v}</option>`).join("")}</select></div></div>
         <div class="field"><label>Variantlar (düzgünü seç)</label>
-          ${opts.map((o, i) => `<div class="optrow"><input type="radio" name="e-ans" value="${i}" ${i === (q?.ans ?? 0) ? "checked" : ""}><b>${L[i]}</b><input type="text" class="e-opt" value="${esc(o)}" maxlength="150" placeholder="${i < 2 ? "məcburi" : "istəyə görə"}"></div>`).join("")}</div>
+          ${opts.map((o, i) => `<div class="optrow"><input type="radio" name="e-ans" value="${i}" ${i === (q?.ans ?? 0) ? "checked" : ""}><b>${L[i]}</b><input type="text" class="e-opt" value="${esc(o)}" maxlength="200" placeholder="${i < 2 ? "məcburi" : "istəyə görə"}"></div>`).join("")}</div>
         <div class="field"><label>İzah (cavabdan sonra şagirdə göstərilir)</label><textarea id="e-expl" maxlength="300" style="min-height:56px">${esc(q?.expl || "")}</textarea></div>
         <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-ghost" id="e-no">Ləğv et</button><button class="btn btn-primary">Yadda saxla</button></div>
       </form>`;
@@ -145,7 +150,7 @@
         const optsN = keep.map(([v]) => v);
         ans = keep.findIndex(([, i]) => i === ans);
         if (new Set(optsN.map((x) => x.toLowerCase())).size !== optsN.length) return toast("Eyni variant iki dəfə yazılıb", "err");
-        const row = { text: box.querySelector("#e-text").value.trim(), topic: box.querySelector("#e-topic").value.trim(), level: box.querySelector("#e-level").value,
+        const row = { subject: "en", section: box.querySelector("#e-sec").value.trim() || null, text: box.querySelector("#e-text").value.trim(), topic: box.querySelector("#e-topic").value.trim(), level: box.querySelector("#e-level").value,
           opts: optsN, ans, expl: box.querySelector("#e-expl").value.trim() || null };
         const { error } = q ? await sb.from("daily_questions").update(row).eq("id", q.id) : await sb.from("daily_questions").insert(row);
         if (error) return toast(translateError(error), "err");
@@ -204,7 +209,7 @@
         return;
       }
       app.innerHTML = `
-        <section class="welcome" style="margin-bottom:12px"><h1>🔥 Gündəlik məşq</h1><p>Hər gün hər şagirdə 5 sual · 6 dəqiqə · qayda pozulsa həmin günün məşqi 0 bal (hesab bloklanmır)</p></section>
+        <section class="welcome" style="margin-bottom:12px"><h1>🔥 Gündəlik məşq</h1><p>Seriya uzandıqca suallar artır · qayda pozulsa həmin günün məşqi 0 bal (hesab bloklanmır)</p></section>
         <div class="section-title"><h2>📅 Gün üzrə nəticələr</h2><input type="date" id="dpick" value="${day}" style="width:auto"></div>
         <div id="day"></div>
         <div class="section-title"><h2>🗂 Sual bazası</h2></div>

@@ -133,6 +133,13 @@ export function esc(value) {
     .replaceAll("'", "&#39;");
 }
 
+// Sual mətni: ``` ... ``` arasındakı hissə kod bloku kimi göstərilir
+export function qHtml(text) {
+  return String(text ?? "").split("```").map((part, i) => i % 2
+    ? `<pre class="q-code">${esc(part.replace(/^\n/, "").replace(/\n$/, ""))}</pre>`
+    : esc(part).replace(/\n/g, "<br>")).join("");
+}
+
 // "9" → "9-cu sinif", "Magistratura" → "Magistratura"
 const CLASS_SUFFIX = { 1: "1-ci", 2: "2-ci", 3: "3-cü", 4: "4-cü", 5: "5-ci", 6: "6-cı", 7: "7-ci", 8: "8-ci", 9: "9-cu", 10: "10-cu", 11: "11-ci" };
 export function classLabel(c) {

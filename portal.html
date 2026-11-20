@@ -251,6 +251,17 @@
       el.classList.remove("hidden");
     }
 
+    // ---------- 📚 Sual bankı ----------
+    async function loadBank() {
+      const el = document.getElementById("bank-card");
+      const [{ data: subs, error }, { data: st }] = await Promise.all([sb.rpc("bank_subjects"), sb.rpc("bank_stats")]);
+      if (error || !subs?.length) return;
+      const total = subs.reduce((a, x) => a + x.total, 0);
+      const done = subs.reduce((a, x) => a + x.done, 0);
+      el.innerHTML = `<span class="fl">📚</span><span class="tx"><b>Sual bankı — ${total.toLocaleString("az")} sual</b><small>${st?.today ? `Bu gün ${st.today} sual həll etdin · cəmi ${done}` : "Mövzu seç, istədiyin qədər həll et — cavab dərhal yoxlanır"}</small></span><span class="btn btn-primary btn-sm">Aç</span>`;
+      el.classList.remove("hidden");
+    }
+
     // ---------- 🎯 Mövzular ----------
     async function loadTopics() {
       const { data, error } = await sb.rpc("my_topics");
@@ -479,6 +490,7 @@
 
         ${me.class_name === "Magistratura" ? "" : '<div id="exam-cd"></div>'}
         <a class="card daily-card hidden" href="practice.html" id="daily-card"></a>
+        <a class="card bank-card hidden" href="bank.html" id="bank-card"></a>
         <div id="install-box" style="margin-bottom:12px"></div>
         <div id="push-box"></div>
         <div id="wotd" style="margin-bottom:12px"></div>
@@ -531,7 +543,7 @@
       examCountdown(document.getElementById("exam-cd"));
       renderInstall();
       loadWotd();
-      loadQuick(); loadGroups(); loadLiveMe(); loadDaily(); loadTopics(); loadPush();
+      loadQuick(); loadGroups(); loadLiveMe(); loadDaily(); loadBank(); loadTopics(); loadPush();
       if (me.class_name !== "Magistratura") loadRank();   // magistrantlar üçün reytinq yoxdur
       addEventListener("wd-installable", renderInstall);
       loadTests();

@@ -25,3 +25,7 @@ export const CERT_MIN_PERCENT = 85;
 
 // Esse yoxlanarkən meyarlar (esse balı bunlara bərabər bölünür)
 export const RUBRIC = ["Məzmun", "Qrammatika", "Lüğət", "Quruluş"];
+
+// Sual bankındakı fənlər (Wordora — yalnız ingilis dili)
+export const SUBJECTS = [{ id: "en", name: "İngilis dili", icon: "🇬🇧", color: "#7b4fe0" }];
+export const subjectOf = (id) => SUBJECTS.find((s) => s.id === id) || null;

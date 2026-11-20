@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sual bankı — Wordora</title>
+  <meta name="theme-color" content="#3a32b5">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="practice.html">🔥 Gündəlik</a><a class="btn btn-ghost btn-sm" href="portal.html">← Portal</a></nav>
+    </div>
+  </header>
+  <main class="container" style="max-width:760px" id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, toast, translateError, qHtml } from "./assets/js/app.js";
+    import { startGuard } from "./assets/js/guard.js";
+    import { subjectOf } from "./assets/js/config.js";
+
+    const app = document.getElementById("app");
+    const L = "ABCDE";
+    const LV = { easy: "🟢 Asan", medium: "🟡 Orta", hard: "🔴 Çətin" };
+    const MODES = { new: "Yeni suallar", all: "Hamısı", wrong: "Səhvlərim" };
+    const ls = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+    let me, subjects = [], tree = [], stats = null;
+    let subj = ls.get("bk_subj") || "", level = ls.get("bk_level") || "", mode = ls.get("bk_mode") || "new";
+    let openSec = ls.get("bk_open") || "";
+    // həll sessiyası
+    let run = null;   // { scope: {section, topic}, qs: [], i, ok, bad, combo, best, answered, wrongIds: [] }
+
+    const subjMeta = (id) => subjectOf(id) || { id, name: id, icon: "📘", color: "#0d7d84" };
+    const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
+    const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+    // ================= Əsas ekran =================
+    async function loadHome() {
+      const [s, st] = await Promise.all([sb.rpc("bank_subjects"), sb.rpc("bank_stats")]);
+      if (s.error) { app.innerHTML = `<div class="card empty">${/bank_subjects/.test(s.error.message || "") ? "Sual bankı tezliklə açılacaq 🙂" : esc(translateError(s.error))}</div>`; return; }
+      subjects = s.data || [];
+      stats = st.data;
+      if (!subjects.length) { app.innerHTML = '<div class="card empty">Sual bankında hələ sual yoxdur.</div>'; return; }
+      if (!subjects.some((x) => x.subject === subj)) subj = subjects[0].subject;
+      await loadTree();
+      home();
+    }
+    async function loadTree() {
+      const { data, error } = await sb.rpc("bank_tree", { p_subject: subj });
+      if (error) { toast(translateError(error), "err"); tree = []; return; }
+      tree = data || [];
+    }
+
+    function home() {
+      run = null;
+      const sm = subjMeta(subj);
+      const secs = [];
+      for (const t of tree) {
+        let s = secs.find((x) => x.name === t.section);
+        if (!s) secs.push(s = { name: t.section, topics: [], total: 0, done: 0, ok: 0, wrong: 0 });
+        s.topics.push(t); s.total += t.total; s.done += t.done; s.ok += t.ok; s.wrong += t.wrong;
+      }
+      const cur = subjects.find((x) => x.subject === subj) || { total: 0, done: 0, ok: 0 };
+      const lvCount = (t) => (level ? t[level] : t.total);
+      app.innerHTML = `
+        <div class="bk-head">
+          <div><h1>Sual bankı</h1><div class="muted small">İstədiyin qədər həll et — cavab dərhal yoxlanır</div></div>
+          ${stats ? `<div class="bk-today"><span><b>${stats.today}</b>bu gün</span><span><b>${stats.total}</b>cəmi həll</span><span><b>${pct(stats.ok, stats.total)}%</b>düzgün</span></div>` : ""}
+        </div>
+        ${subjects.length < 2 ? "" : `<div class="bk-subjs" role="tablist" aria-label="Fənlər">${subjects.map((x) => {
+          const m = subjMeta(x.subject);
+          return `<button class="bk-subj ${x.subject === subj ? "on" : ""}" style="--subj:${m.color}" data-s="${esc(x.subject)}" role="tab" aria-selected="${x.subject === subj}">
+            <span class="nm">${m.icon} ${esc(m.name)}</span><span class="ct">${x.done} / ${x.total} həll · ${pct(x.ok, x.done)}% düzgün</span>
+            <span class="bk-mini"><i style="width:${pct(x.done, x.total)}%"></i></span></button>`;
+        }).join("")}</div>`}
+        <div class="bk-flt">
+          <span><span class="lbl">Səviyyə</span> <span class="bk-seg" id="f-level">${[["", "Hamısı"], ["easy", LV.easy], ["medium", LV.medium], ["hard", LV.hard]].map(([k, v]) => `<button data-v="${k}" class="${k === level ? "on" : ""}">${v}</button>`).join("")}</span></span>
+          <span><span class="lbl">Suallar</span> <span class="bk-seg" id="f-mode">${Object.entries(MODES).map(([k, v]) => `<button data-v="${k}" class="${k === mode ? "on" : ""}">${v}</button>`).join("")}</span></span>
+        </div>
+        <div class="card" style="display:flex;align-items:center;gap:12px;margin-bottom:12px;border-left:5px solid ${sm.color}">
+          <span style="font-size:1.8rem">${sm.icon}</span>
+          <span style="flex:1"><b>${esc(sm.name)} — bütün mövzular qarışıq</b><span class="muted small" style="display:block">${cur.total} sual · ${secs.length} bölmə</span></span>
+          <button class="btn btn-primary btn-sm" data-go="all">Başla ▶</button>
+        </div>
+        ${secs.map((s, si) => `
+          <details class="bk-sec" data-sec="${esc(s.name)}" ${openSec === s.name ? "open" : ""}>
+            <summary><span class="t">${esc(s.name)}</span><span class="n">${s.done}/${s.total}${s.wrong ? ` · <span style="color:var(--bad)">${s.wrong} səhv</span>` : ""}</span>
+              <span class="bk-mini" style="--subj:${sm.color}"><i style="width:${pct(s.done, s.total)}%"></i></span></summary>
+            <div class="bk-topics">
+              <div class="bk-top"><span class="tn"><b>Bütün bölmə qarışıq</b></span><span class="tm">${s.total} sual</span><button class="btn btn-ghost btn-sm" data-go="sec" data-si="${si}">Həll et</button></div>
+              ${s.topics.map((t, ti) => `<div class="bk-top">
+                <span class="tn">${esc(t.topic)}</span>
+                <span class="tm"><span>${t.total} sual</span><span>🟢${t.easy} 🟡${t.medium} 🔴${t.hard}</span><span>✓ ${t.done} həll</span>${t.wrong ? `<span class="w">✗ ${t.wrong} səhv</span>` : ""}</span>
+                <button class="btn ${lvCount(t) ? "btn-primary" : "btn-ghost"} btn-sm" data-go="topic" data-si="${si}" data-ti="${ti}" ${lvCount(t) ? "" : "disabled"}>Həll et</button>
+              </div>`).join("")}
+            </div>
+          </details>`).join("")}`;
+      app.querySelectorAll(".bk-subj").forEach((b) => b.onclick = async () => {
+        subj = b.dataset.s; ls.set("bk_subj", subj); openSec = "";
+        app.querySelector(".bk-subjs").style.opacity = ".6";
+        await loadTree(); home();
+      });
+      app.querySelectorAll("#f-level button").forEach((b) => b.onclick = () => { level = b.dataset.v; ls.set("bk_level", level); home(); });
+      app.querySelectorAll("#f-mode button").forEach((b) => b.onclick = () => { mode = b.dataset.v; ls.set("bk_mode", mode); home(); });
+      app.querySelectorAll(".bk-sec").forEach((d) => d.addEventListener("toggle", () => { if (d.open) { openSec = d.dataset.sec; ls.set("bk_open", openSec); } }));
+      app.querySelectorAll("[data-go]").forEach((b) => b.onclick = () => {
+        const g = b.dataset.go;
+        const s = secs[Number(b.dataset.si)];
+        const scope = g === "all" ? { label: `${sm.name} — qarışıq` }
+          : g === "sec" ? { section: s.name, label: s.name }
+          : { section: s.name, topic: s.topics[Number(b.dataset.ti)].topic, label: s.topics[Number(b.dataset.ti)].topic };
+        startRun(scope, mode);
+      });
+    }
+
+    // ================= Həll =================
+    async function startRun(scope, m) {
+      app.innerHTML = '<div class="spinner"></div>';
+      const { data, error } = await sb.rpc("bank_next", { p_subject: subj, p_section: scope.section || null, p_topic: scope.topic || null,
+        p_level: level || null, p_mode: m, p_limit: 20 });
+      if (error) { toast(translateError(error), "err"); return home(); }
+      if (!data.length) {
+        const msg = m === "new" ? "Bu seçimdə yeni sual qalmayıb 🎉 Hamısını həll etmisən!" : m === "wrong" ? "Burada səhvin yoxdur 👏" : "Bu seçimdə sual tapılmadı.";
+        app.innerHTML = `<div class="pq-card" style="text-align:center"><div style="font-size:2.4rem">${m === "new" ? "🏆" : "✨"}</div><h2 style="margin:.3rem 0">${msg}</h2>
+          <p class="muted">${m === "new" ? "Təkrar üçün <b>Hamısı</b> və ya <b>Səhvlərim</b> rejimini seç." : "Başqa mövzu və ya səviyyə seç."}</p>
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${m !== "all" ? '<button class="btn btn-primary" id="r-all">Hamısından həll et</button>' : ""}<button class="btn btn-ghost" id="r-back">← Mövzulara qayıt</button></div></div>`;
+        document.getElementById("r-back").onclick = () => loadHome();
+        document.getElementById("r-all")?.addEventListener("click", () => startRun(scope, "all"));
+        return;
+      }
+      const prev = run && run.scope === scope ? run : null;
+      run = { scope, mode: m, qs: data.map((q) => ({ ...q, order: shuffle(q.opts.map((_, i) => i)) })), i: 0,
+              ok: prev?.ok || 0, bad: prev?.bad || 0, combo: prev?.combo || 0, best: prev?.best || 0, wrongIds: [], answered: false, res: null };
+      question();
+    }
+
+    function question() {
+      const q = run.qs[run.i];
+      if (!q) return summary();
+      run.answered = false; run.res = null;
+      const n = run.qs.length;
+      app.innerHTML = `
+        <div class="bk-run">
+          <button class="btn btn-ghost btn-sm" id="q-exit">← Mövzular</button>
+          <span class="sc"><span class="g">✓ ${run.ok}</span><span class="r">✗ ${run.bad}</span>${run.combo >= 3 ? `<span class="bk-combo">🔥 ${run.combo} ardıcıl</span>` : ""}</span>
+        </div>
+        <div class="pq-card" id="qcard">
+          <div class="pq-top"><span>Sual ${run.i + 1} / ${n} · <span class="lvl ${q.level}">${LV[q.level]}</span></span><span>${esc(subjMeta(subj).icon)} ${q.seen ? "təkrar" : "yeni"}</span></div>
+          <div class="pq-bar"><i style="width:${(run.i / n) * 100}%;background:linear-gradient(90deg,var(--violet),var(--violet-soft))"></i></div>
+          <div class="bk-where">${esc(q.section || "")} › ${esc(q.topic || "")}</div>
+          <div class="pq-text">${qHtml(q.text)}</div>
+          <div class="pq-opts">${q.order.map((oi, k) => `<button class="pq-opt" data-oi="${oi}"><b>${L[k]}</b><span>${esc(q.opts[oi])}</span></button>`).join("")}</div>
+          <div id="fb"></div>
+          <div class="bk-next">
+            <span class="bk-kbd">Klaviatura: A–${L[q.opts.length - 1]} və ya 1–${q.opts.length} · Enter — növbəti</span>
+            <span style="display:flex;gap:6px;margin-left:auto"><button class="btn btn-ghost btn-sm" id="q-skip">Keç</button><button class="btn btn-primary btn-sm hidden" id="q-next">${run.i + 1 === n ? "Nəticə" : "Növbəti →"}</button></span>
+          </div>
+        </div>`;
+      document.getElementById("q-exit").onclick = () => loadHome();
+      document.getElementById("q-skip").onclick = () => { run.i++; question(); };
+      document.getElementById("q-next").onclick = () => { run.i++; question(); };
+      app.querySelectorAll(".pq-opt").forEach((b) => b.onclick = () => answer(Number(b.dataset.oi), b));
+      window.scrollTo({ top: 0 });
+    }
+
+    async function answer(oi, btn) {
+      if (run.answered) return;
+      run.answered = true;
+      const q = run.qs[run.i];
+      const opts = [...app.querySelectorAll(".pq-opt")];
+      opts.forEach((b) => (b.disabled = true));
+      btn.classList.add("on");
+      const { data: r, error } = await sb.rpc("bank_check", { p_qid: q.id, p_choice: oi });
+      if (error) { run.answered = false; opts.forEach((b) => (b.disabled = false)); btn.classList.remove("on"); return toast(translateError(error), "err"); }
+      run.res = r;
+      btn.classList.remove("on");
+      opts.forEach((b) => {
+        const k = Number(b.dataset.oi);
+        if (k === r.ans) b.classList.add("ok");
+        else if (k === oi) b.classList.add("bad");
+        else b.classList.add("dim");
+      });
+      if (r.ok) { btn.classList.add("mine"); run.ok++; run.combo++; run.best = Math.max(run.best, run.combo); }
+      else { run.bad++; run.combo = 0; run.wrongIds.push(q.id); }
+      const right = opts.find((b) => Number(b.dataset.oi) === r.ans);
+      document.getElementById("fb").innerHTML = `<div class="pq-fb ${r.ok ? "ok" : "bad"}">
+        <b>${r.ok ? (run.combo >= 5 ? `Əla! ${run.combo} ardıcıl düzgün 🔥` : "Düzgündür ✓") : `Səhvdir ✗ Düzgün cavab: ${right ? right.querySelector("b").textContent + ") " + esc(q.opts[r.ans]) : ""}`}</b>
+        ${r.expl ? `<div class="ex">💡 ${esc(r.expl)}</div>` : ""}</div>`;
+      document.getElementById("q-skip").classList.add("hidden");
+      const nx = document.getElementById("q-next");
+      nx.classList.remove("hidden");
+      nx.focus({ preventScroll: true });
+      document.querySelector(".bk-run .sc").innerHTML = `<span class="g">✓ ${run.ok}</span><span class="r">✗ ${run.bad}</span>${run.combo >= 3 ? `<span class="bk-combo">🔥 ${run.combo} ardıcıl</span>` : ""}`;
+    }
+
+    function summary() {
+      const tot = run.ok + run.bad;
+      const p = pct(run.ok, tot);
+      app.innerHTML = `
+        <div class="pq-card" style="text-align:center">
+          <div style="font-size:2.6rem">${p >= 90 ? "🏆" : p >= 70 ? "🎉" : p >= 50 ? "💪" : "📚"}</div>
+          <h2 style="margin:.2rem 0">${run.ok} / ${tot} düzgün · ${p}%</h2>
+          <p class="muted" style="margin:.2rem 0 1rem">${esc(run.scope.label)}${run.best >= 3 ? ` · ən uzun seriya: 🔥 ${run.best}` : ""}</p>
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+            <button class="btn btn-primary" id="s-more">Daha 20 sual ▶</button>
+            ${run.wrongIds.length ? `<button class="btn btn-ghost" id="s-wrong">Səhvləri təkrarla (${run.wrongIds.length})</button>` : ""}
+            <button class="btn btn-ghost" id="s-back">← Mövzular</button>
+          </div>
+        </div>`;
+      const sc = run.scope;
+      document.getElementById("s-more").onclick = () => startRun(sc, run.mode);
+      document.getElementById("s-back").onclick = () => loadHome();
+      document.getElementById("s-wrong")?.addEventListener("click", () => {
+        const ids = new Set(run.wrongIds);
+        const qs = run.qs.filter((q) => ids.has(q.id)).map((q) => ({ ...q, seen: true, order: shuffle([...q.order]) }));
+        run = { ...run, qs, i: 0, ok: 0, bad: 0, combo: 0, best: 0, wrongIds: [] };
+        question();
+      });
+    }
+
+    document.addEventListener("keydown", (e) => {
+      if (!run || e.ctrlKey || e.metaKey || e.altKey || /input|textarea|select/i.test(e.target.tagName)) return;
+      const q = run.qs[run.i];
+      if (!q) return;
+      if (e.key === "Enter" && run.answered) { e.preventDefault(); run.i++; question(); return; }
+      if (run.answered) return;
+      let k = "abcde".indexOf(e.key.toLowerCase());
+      if (k < 0) k = "12345".indexOf(e.key);
+      const b = app.querySelectorAll(".pq-opt")[k];
+      if (b) { e.preventDefault(); answer(Number(b.dataset.oi), b); }
+    });
+
+    async function start() {
+      if (!configured) return;
+      me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.status !== "approved" && me.role !== "admin") { location.href = "portal.html"; return; }
+      startGuard({ me, page: "sual bankı", onBlocked: () => location.reload() });
+      loadHome();
+    }
+    start();
+  </script>
+</body>
+</html>
