@@ -81,11 +81,12 @@
           <div class="stat"><div class="n">${rows.filter((r) => !r.done_at).length}</div><div class="l">⏳ Hazırda yazır</div></div>
         </div>
         <div class="card" style="overflow-x:auto;margin-top:12px">${rows.length ? `<table class="res-table">
-          <tr><th>Şagird</th><th>Sinif</th><th class="r">Nəticə</th><th>Qeyd</th><th>Vaxt</th></tr>
+          <tr><th>Şagird</th><th>Sinif</th><th class="r">Nəticə</th><th>Qeyd</th><th>Vaxt</th><th></th></tr>
           ${rows.map((r) => `<tr class="${r.voided ? "void" : ""}"><td>${esc(r.profiles?.full_name || "—")}</td><td class="muted">${esc(classLabel(r.profiles?.class_name || ""))}</td>
             <td class="r"><b>${r.done_at ? `${r.correct}/${r.total}` : "…"}</b></td>
             <td class="small">${r.voided ? `⛔ ${esc(r.void_reason || "")}` : r.void_reason ? `⏰ ${esc(r.void_reason)}` : r.done_at ? "✓" : "⏳ yazır"}</td>
-            <td class="muted small">${formatDate(r.done_at || r.started_at)}</td></tr>`).join("")}</table>` : '<div class="empty">Bu gün hələ heç kim məşq etməyib.</div>'}</div>`;
+            <td class="muted small">${formatDate(r.done_at || r.started_at)}</td>
+            <td class="r"><button class="btn btn-ghost btn-sm" data-reset="${r.user_id}" data-nm="${esc(r.profiles?.full_name || "")}" title="Nəticəni sil — şagird bu gün yenidən yaza bilər">🗑 Sil</button></td></tr>`).join("")}</table>` : '<div class="empty">Bu gün hələ heç kim məşq etməyib.</div>'}</div>`;
     }
 
     function bankHtml() {
@@ -179,6 +180,14 @@
       const el = document.getElementById("day");
       el.innerHTML = '<div class="spinner"></div>';
       el.innerHTML = await dayHtml();
+      el.querySelectorAll("[data-reset]").forEach((b) => b.onclick = async () => {
+        if (!confirm(`${b.dataset.nm} — ${day.split("-").reverse().join(".")} tarixli məşq nəticəsi silinsin?\n\nŞagird bu gün məşqi yenidən (yeni suallarla) yaza biləcək.`)) return;
+        b.disabled = true;
+        const { error } = await sb.rpc("admin_daily_reset", { p_user: b.dataset.reset, p_day: day });
+        if (error) { b.disabled = false; return toast(/admin_daily_reset/.test(error.message || "") ? "Əvvəlcə supabase/34-daily-reset.sql faylını işə salın" : translateError(error), "err"); }
+        toast("Nəticə silindi ✓", "ok");
+        renderDay(); loadQuestions().then(renderBank, () => {});
+      });
     }
 
     async function start() {
