@@ -50,7 +50,7 @@
     const app = document.getElementById("app");
     const L = "ABCDE";
     const LV = { easy: "🟢 Asan", medium: "🟡 Orta", hard: "🔴 Çətin" };
-    let Q = [], stat = {}, day = new Date(Date.now() + 4 * 3600e3).toISOString().slice(0, 10), fTopic = "", fLevel = "", fText = "";
+    let shown = 100, Q = [], stat = {}, day = new Date(Date.now() + 4 * 3600e3).toISOString().slice(0, 10), fTopic = "", fLevel = "", fText = "";
 
     async function loadQuestions() {
       const { data, error } = await sb.from("daily_questions").select("*").order("code", { nullsFirst: false }).order("id");
@@ -101,7 +101,8 @@
           <input id="fx" placeholder="Axtar…" value="${esc(fText)}">
           <button class="btn btn-primary btn-sm" id="add">+ Yeni sual</button>
         </div>
-        <div class="card">${list.map((q) => {
+        <p class="small muted" style="margin:0 0 6px">Tapıldı: ${list.length} sual${list.length > shown ? ` · ilk ${shown} göstərilir` : ""}</p>
+        <div class="card">${list.slice(0, shown).map((q) => {
           const st = stat[q.id];
           return `<div class="qx ${q.active ? "" : "off"}">
             <div class="qx-h"><b>${esc(q.code || "#" + q.id)}</b><span class="lvl ${q.level}">${LV[q.level]}</span><span>${esc(q.topic)}</span>
@@ -112,7 +113,8 @@
             <div class="qx-o">${q.opts.map((o, i) => `<span class="${i === q.ans ? "ok" : ""}">${L[i]}) ${esc(o)}${i === q.ans ? " ✓" : ""}</span>`).join("")}</div>
             ${q.expl ? `<div class="small muted" style="margin-top:3px">💡 ${esc(q.expl)}</div>` : ""}
           </div>`;
-        }).join("") || '<div class="empty">Sual tapılmadı.</div>'}</div>`;
+        }).join("") || '<div class="empty">Sual tapılmadı.</div>'}</div>
+        ${list.length > shown ? '<p class="center" style="margin-top:10px"><button class="btn btn-ghost" id="more">Daha 100 sual göstər</button></p>' : ""}`;
     }
 
     function editor(q) {
@@ -156,10 +158,11 @@
     function renderBank() {
       const el = document.getElementById("bank");
       el.innerHTML = bankHtml();
-      el.querySelector("#ft").onchange = (e) => { fTopic = e.target.value; renderBank(); };
-      el.querySelector("#fl").onchange = (e) => { fLevel = e.target.value; renderBank(); };
+      el.querySelector("#ft").onchange = (e) => { fTopic = e.target.value; shown = 100; renderBank(); };
+      el.querySelector("#fl").onchange = (e) => { fLevel = e.target.value; shown = 100; renderBank(); };
       el.querySelector("#fx").oninput = (e) => { fText = e.target.value; clearTimeout(window.__fx); window.__fx = setTimeout(() => { renderBank(); document.getElementById("fx").focus(); document.getElementById("fx").setSelectionRange(fText.length, fText.length); }, 300); };
       el.querySelector("#add").onclick = () => editor(null);
+      el.querySelector("#more")?.addEventListener("click", () => { shown += 100; renderBank(); });
       el.querySelectorAll("[data-ed]").forEach((b) => b.onclick = () => editor(Q.find((q) => q.id === +b.dataset.ed)));
       el.querySelectorAll("[data-tg]").forEach((b) => b.onclick = async () => {
         const q = Q.find((x) => x.id === +b.dataset.tg);
