@@ -31,7 +31,13 @@
     const app = document.getElementById("app");
     const L = "ABCDE";
     const WD = ["B.", "B.e", "Ç.a", "Ç", "C.a", "C", "Ş"];
-    let me, data, idx = 0, answers = [], sending = false;
+    const LV = { easy: "🟢 Asan", medium: "🟡 Orta", hard: "🔴 Çətin" };
+    let me, data, idx = 0, answers = [], sending = false, deadline = 0, tickT = null, aliveT = null;
+    let running = false;        // məşq gedir (qaydalar işləyir)
+    let hiddenAt = 0, blurAt = 0, warned = false;
+    const KA = () => `wd_daily_alive_${me.id}`;
+    const KS = () => `wd_daily_ans_${me.id}_${data?.day}`;
+    const ls = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} }, del(k) { try { localStorage.removeItem(k); } catch {} } };
 
     function hero(s) {
       const today = s.week?.[s.week.length - 1]?.day;
@@ -44,79 +50,195 @@
           return `<span class="${d.done ? "on" : ""} ${d.day === today ? "today" : ""}"><b>${d.done ? "🔥" : ""}</b>${WD[dt.getDay()]}</span>`;
         }).join("")}</div></div>`;
     }
+    const voidBanner = () => `<div class="void-banner"><span class="ic">⛔</span><div><b>Bugünkü məşq 0 bal ilə bağlandı.</b><br>
+      Səbəb: ${esc(data.void_reason || "qayda pozuntusu")}.<br><span class="small">Məşq zamanı səhifədən çıxmaq, başqa proqrama keçmək, ekran şəkli çəkmək və köçürmək qadağandır. Hesabın bloklanmayıb — <b>sabah yenidən iştirak edə bilərsən.</b></span></div></div>`;
+    const fmt = (ms) => { const s = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
 
     function render() {
       const s = data.streak || { current: 0, best: 0, total: 0, week: [] };
-      if (data.empty) {
-        app.innerHTML = hero(s) + '<div class="card empty">Müəllim hələ söz və ya sual əlavə etməyib. Tezliklə burada hər gün 5 sual olacaq 🙂</div>';
-        return;
-      }
+      if (data.empty) { app.innerHTML = hero(s) + '<div class="card empty">Müəllim hələ sual əlavə etməyib. Tezliklə burada hər gün 5 sual olacaq 🙂</div>'; return; }
+      if (data.done && data.voided) { stopRun(); app.innerHTML = voidBanner() + hero(s) + '<div class="card empty">Sabah yeni 5 sual olacaq. Qaydalara əməl et — seriyanı itirmə! 💪</div>'; return; }
       if (data.done) return results(s);
-      const q = data.questions[idx];
-      const n = data.questions.length;
-      const isText = !Array.isArray(q.opts);
-      app.innerHTML = hero(s) + `
-        <div class="pq-card">
-          <div class="pq-top"><span>Sual ${idx + 1} / ${n}</span><span>${esc(q.topic || "")}</span></div>
-          <div class="pq-bar"><i style="width:${(idx / n) * 100}%"></i></div>
-          <div class="pq-text">${esc(q.text)}</div>
-          ${isText
-            ? `<form id="tf"><input class="pq-input" id="ti" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Cavabı yaz…" value="${esc(answers[idx] || "")}">
-                 <button class="btn btn-primary btn-block" style="margin-top:10px">${idx + 1 < n ? "Növbəti →" : "Bitir ✓"}</button></form>`
-            : `<div class="pq-opts">${q.opts.map((o, i) => `<button class="pq-opt" data-i="${i}"><b>${L[i]}</b><span>${esc(o)}</span></button>`).join("")}</div>`}
-        </div>`;
-      if (isText) {
-        const ti = document.getElementById("ti");
-        ti.focus();
-        document.getElementById("tf").onsubmit = (e) => { e.preventDefault(); if (!ti.value.trim()) return toast("Cavabı yaz", "err"); next(ti.value.trim()); };
-      } else {
-        app.querySelectorAll(".pq-opt").forEach((b) => b.onclick = () => { b.classList.add("on"); setTimeout(() => next(b.dataset.i), 180); });
-      }
+      if (!data.started_at) return intro(s);
+      return question();
     }
 
-    async function next(v) {
-      answers[idx] = String(v);
-      if (idx + 1 < data.questions.length) { idx++; render(); return; }
+    function intro(s) {
+      const lv = data.levels || [];
+      app.innerHTML = hero(s) + `
+        <div class="pq-card" style="text-align:center">
+          <div style="font-size:2.2rem">📝</div>
+          <h2 style="margin:.3rem 0">Bugünkü məşq hazırdır</h2>
+          <p class="muted" style="margin:0">${data.count} sual · ${Math.round(data.limit / 60)} dəqiqə · ${lv.filter((x) => x === "easy").length} asan, ${lv.filter((x) => x !== "easy").length} orta və çətin</p>
+          <ul class="rules">
+            <li>⏱ Vaxt "Başla" düyməsini basan kimi gedir. Vaxt bitəndə cavablar özü göndərilir.</li>
+            <li>📵 Məşq zamanı <b>səhifədən çıxma</b>, başqa proqrama və ya taba keçmə.</li>
+            <li>📸 <b>Ekran şəkli çəkmə</b>, mətni kopyalama, F12 basma.</li>
+            <li>⛔ Qayda pozulsa, <b>bugünkü məşq 0 bal</b> olur. Hesab bloklanmır, sabah yenidən iştirak edə bilərsən.</li>
+          </ul>
+          <button class="btn btn-primary btn-block" id="go" style="font-size:1.1rem;padding:.9rem">Başla ▶</button>
+        </div>`;
+      document.getElementById("go").onclick = async (e) => {
+        e.target.disabled = true;
+        const { data: r, error } = await sb.rpc("daily_start");
+        if (error) { e.target.disabled = false; return toast(translateError(error), "err"); }
+        data = r; idx = 0; answers = [];
+        ls.set(KA(), String(Date.now()));
+        startRun();
+        render();
+      };
+    }
+
+    function question() {
+      const n = data.questions.length;
+      const q = data.questions[idx];
+      if (!q) return submit();
+      app.innerHTML = `
+        <div class="pq-card no-select" id="qcard">
+          <div class="pq-top"><span>Sual ${idx + 1} / ${n} · <span class="lvl ${q.level || "medium"}">${LV[q.level] || LV.medium}</span></span><span class="pq-timer" id="tm">${fmt(deadline - Date.now())}</span></div>
+          <div class="pq-bar"><i id="tbar" style="width:${Math.max(0, (deadline - Date.now()) / (data.limit * 10))}%"></i></div>
+          <div class="pq-text">${esc(q.text)}</div>
+          <div class="small muted" style="margin:-6px 0 10px">${esc(q.topic || "")}</div>
+          ${Array.isArray(q.opts)
+            ? `<div class="pq-opts">${q.opts.map((o, i) => `<button class="pq-opt ${answers[idx] === String(i) ? "on" : ""}" data-i="${i}"><b>${L[i]}</b><span>${esc(o)}</span></button>`).join("")}</div>`
+            : `<form id="tf"><input class="pq-input" id="ti" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Cavabı yaz…"><button class="btn btn-primary btn-block" style="margin-top:10px">Növbəti →</button></form>`}
+          <div style="display:flex;justify-content:space-between;margin-top:12px">
+            <button class="btn btn-ghost btn-sm" id="back" ${idx === 0 ? "disabled" : ""}>← Geri</button>
+            ${idx + 1 === n ? '<button class="btn btn-primary btn-sm" id="fin">Bitir ✓</button>' : '<button class="btn btn-ghost btn-sm" id="skip">Keç →</button>'}
+          </div>
+        </div>`;
+      app.querySelectorAll(".pq-opt").forEach((b) => b.onclick = () => {
+        app.querySelectorAll(".pq-opt").forEach((x) => x.classList.toggle("on", x === b));
+        answers[idx] = b.dataset.i; save();
+        setTimeout(() => { if (idx + 1 < n) { idx++; save(); question(); } }, 220);
+      });
+      const tf = document.getElementById("tf");
+      if (tf) { const ti = document.getElementById("ti"); ti.value = answers[idx] || ""; tf.onsubmit = (e) => { e.preventDefault(); answers[idx] = ti.value.trim(); save(); if (idx + 1 < n) { idx++; question(); } else submit(); }; }
+      document.getElementById("back").onclick = () => { if (idx > 0) { idx--; save(); question(); } };
+      document.getElementById("skip")?.addEventListener("click", () => { idx++; save(); question(); });
+      document.getElementById("fin")?.addEventListener("click", (e) => {
+        const empty = data.questions.filter((_, i) => !answers[i]).length;
+        if (empty && !e.target.dataset.sure) { e.target.dataset.sure = "1"; e.target.textContent = `${empty} sual boşdur — yenə bas`; return; }
+        submit();
+      });
+    }
+    const save = () => ls.set(KS(), JSON.stringify({ a: answers, i: idx }));
+
+    async function submit() {
       if (sending) return;
       sending = true;
+      stopRun();
       const before = data.streak?.current || 0;
-      const { data: r, error } = await sb.rpc("daily_submit", { p_answers: answers });
+      const { data: r, error } = await sb.rpc("daily_submit", { p_answers: data.questions.map((_, i) => answers[i] ?? "") });
       sending = false;
-      if (error) return toast(translateError(error), "err");
+      if (error) { toast(translateError(error), "err"); startRun(); return; }
+      ls.del(KS()); ls.del(KA());
       data = r;
       render();
-      if (r.correct === r.total) confetti(120);
-      else if ((r.streak?.current || 0) > before) confetti(50);
+      if (!r.voided && r.correct === r.total) confetti(120);
+      else if (!r.voided && (r.streak?.current || 0) > before) confetti(50);
     }
 
     function results(s) {
-      const qs = data.questions;
+      const qs = data.questions || [];
       const ans = (q, v) => (Array.isArray(q.opts) ? (v !== null && v !== undefined && v !== "" ? `${L[Number(v)]}) ${q.opts[Number(v)] ?? ""}` : "—") : (v || "—"));
       const wrong = qs.filter((q) => !q.ok).length;
-      app.innerHTML = hero(s) + `
+      app.innerHTML = (data.void_reason ? `<div class="late-banner">⏰ <b>${esc(data.void_reason)}.</b> Bugünkü nəticə 0 bal. Sabah vaxtına diqqət et!</div>` : "") + hero(s) + `
         <div class="card" style="text-align:center;margin-bottom:12px">
           <div style="font-size:2.4rem">${data.correct === data.total ? "🏆" : data.correct >= data.total - 1 ? "🎉" : "💪"}</div>
           <h2 style="margin:.2rem 0">Bugünkü nəticə: ${data.correct} / ${data.total}</h2>
-          <p class="muted" style="margin:0">${data.correct === data.total ? "Əla! Hamısı düzgündür!" : "Yaxşı iş! Səhvlərinə aşağıda bax."} Sabah yeni 5 sual olacaq 🌅</p>
+          <p class="muted" style="margin:0">${data.correct === data.total ? "Əla! Hamısı düzgündür!" : "Səhvlərinə və izahlara aşağıda bax."} Sabah yeni 5 sual olacaq 🌅</p>
         </div>
         <div class="card">${qs.map((q) => `
-          <div class="pq-res"><span class="ic">${q.ok ? "✅" : "❌"}</span><div>
-            <b>${esc(q.text)}</b><span class="pq-tag">${esc(q.topic || "")}</span><br>
+          <div class="pq-res"><span class="ic">${q.ok ? "✅" : "❌"}</span><div style="flex:1">
+            <b>${esc(q.text)}</b> <span class="lvl ${q.level || "medium"}">${LV[q.level] || ""}</span><span class="pq-tag">${esc(q.topic || "")}</span><br>
             ${q.ok ? `<span style="color:var(--ok)">${esc(ans(q, q.my))}</span>`
                    : `<span class="muted">Sənin cavabın: <s>${esc(ans(q, q.my))}</s></span><br><span style="color:var(--ok)">Düzgün: <b>${esc(ans(q, q.ans).replace(/\//g, " / "))}</b></span>`}
+            ${q.expl ? `<div class="pq-expl">💡 ${esc(q.expl)}</div>` : ""}
           </div></div>`).join("")}</div>
         ${wrong ? `<p class="center" style="margin-top:14px"><a class="btn btn-primary" href="mistakes.html">📕 Səhvlərimi təkrar et (${wrong})</a></p>` : ""}`;
     }
+
+    // ================= Qaydalar (yalnız məşq gedərkən) =================
+    async function voidNow(reason) {
+      if (!running) return;
+      running = false;
+      stopRun();
+      const { data: r, error } = await sb.rpc("daily_void", { p_reason: reason });
+      ls.del(KS()); ls.del(KA());
+      if (!error && r) data = r; else if (data) { data.done = true; data.voided = true; data.void_reason = reason; }
+      render();
+      window.scrollTo(0, 0);
+    }
+    function warnOnce(msg) { if (warned) return; warned = true; toast(msg, "err"); }
+
+    function addWatermark() {
+      if (document.querySelector(".wm-layer")) return;
+      const txt = `${me.full_name || ""} · ${new Date().toLocaleDateString("az")}`.replace(/[<>&"]/g, "");
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="340" height="190"><text x="170" y="100" text-anchor="middle" transform="rotate(-24 170 95)" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#7a7a8c">${txt}</text></svg>`;
+      const el = document.createElement("div");
+      el.className = "wm-layer";
+      el.style.backgroundImage = `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
+      document.body.appendChild(el);
+    }
+
+    function startRun() {
+      running = true;
+      deadline = Date.now() + (data.left_ms ?? data.limit * 1000);
+      addWatermark();
+      clearInterval(tickT); clearInterval(aliveT);
+      tickT = setInterval(() => {
+        const left = deadline - Date.now();
+        const tm = document.getElementById("tm"), bar = document.getElementById("tbar");
+        if (tm) { tm.textContent = fmt(left); tm.classList.toggle("low", left < 60000); }
+        if (bar) bar.style.width = `${Math.max(0, left / (data.limit * 10))}%`;
+        // başqa pəncərəyə keçid (kompüterdə): 4 saniyədən çox fokus yoxdursa
+        if (running && document.visibilityState === "visible" && !document.hasFocus()) {
+          if (!blurAt) blurAt = Date.now();
+          else if (Date.now() - blurAt > 4000) voidNow("Başqa pəncərəyə / proqrama keçdin");
+        } else blurAt = 0;
+        if (left <= 0 && running) { toast("Vaxt bitdi — cavablar göndərilir", "err"); submit(); }
+      }, 300);
+      aliveT = setInterval(() => ls.set(KA(), String(Date.now())), 1000);
+      ls.set(KA(), String(Date.now()));
+    }
+    function stopRun() {
+      clearInterval(tickT); clearInterval(aliveT);
+      document.querySelector(".wm-layer")?.remove();
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (!running) return;
+      if (document.visibilityState === "hidden") { hiddenAt = Date.now(); return; }
+      const away = hiddenAt ? Date.now() - hiddenAt : 0;
+      hiddenAt = 0;
+      if (away >= 2000) voidNow(`Məşq zamanı səhifədən çıxdın (${Math.round(away / 1000)} san)`);
+      else if (away > 0) warnOnce("⚠️ Diqqət! Səhifədən çıxsan, bugünkü məşq 0 bal olacaq.");
+    });
+    ["copy", "cut"].forEach((ev) => document.addEventListener(ev, (e) => { if (!running) return; e.preventDefault(); voidNow("Mətni kopyalamağa cəhd etdin"); }));
+    document.addEventListener("selectstart", (e) => { if (running) e.preventDefault(); });
+    window.addEventListener("beforeunload", (e) => { if (running) { e.preventDefault(); e.returnValue = ""; } });
 
     async function start() {
       if (!configured) return;
       me = await getMyProfile().catch(() => null);
       if (!me) { location.href = "login.html"; return; }
       if (me.status !== "approved") { location.href = "portal.html"; return; }
-      startGuard({ me, page: "gündəlik məşq" });
+      // Bu səhifədə pozuntular hesabı bloklamır — yalnız bugünkü məşqi 0 edir
+      startGuard({ me, page: "gündəlik məşq", onViolation: (kind, details, label) => { if (running) voidNow(label); } });
       const { data: d, error } = await sb.rpc("daily_get");
       if (error) { app.innerHTML = `<div class="card empty">${/daily_get/.test(error.message || "") ? "Gündəlik məşq tezliklə açılacaq 🙂" : esc(translateError(error))}</div>`; return; }
       data = d;
+      // Məşq yarımçıq qalıb (səhifə bağlanıb və ya başqa cihaz)?
+      if (data.started_at && !data.done) {
+        const alive = Number(ls.get(KA()) || 0);
+        if (!alive || Date.now() - alive > 15000) {
+          running = true;
+          return voidNow("Məşq yarımçıq qaldı — səhifə bağlanmışdı və ya başqa cihazdan açıldı");
+        }
+        try { const st = JSON.parse(ls.get(KS()) || "{}"); answers = st.a || []; idx = Math.min(st.i || 0, data.questions.length - 1); } catch {}
+        startRun();
+      }
       render();
     }
     start();

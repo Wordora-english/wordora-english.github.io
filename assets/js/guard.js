@@ -42,7 +42,9 @@ function modal({ icon, title, text, button = "Anladım", danger = false, onClose
   el.querySelector("button").addEventListener("click", () => { el.remove(); onClose?.(); });
 }
 
-export function startGuard({ me, page = location.pathname.split("/").pop(), tabSwitch = false, onBlocked } = {}) {
+// onViolation(kind, details, label): verilsə, pozuntu müəllimə "xəbərdarlıq" kimi getmir (hesab bloklanmır) —
+// səhifə özü qərar verir (məs. gündəlik məşq: bugünkü məşq 0 bal).
+export function startGuard({ me, page = location.pathname.split("/").pop(), tabSwitch = false, onBlocked, onViolation } = {}) {
   if (!sb || !me || me.role === "admin" || me.status !== "approved") return { stop() {} };
 
   let lastReport = 0;
@@ -87,6 +89,7 @@ export function startGuard({ me, page = location.pathname.split("/").pop(), tabS
 
   async function report(kind, details = "", label = "") {
     if (stopped) return;
+    if (onViolation && kind !== "second_device") { onViolation(kind, details, label || VIOLATION_LABELS[kind] || kind); return; }
     const now = Date.now();
     if (kind !== "second_device" && now - lastReport < 4000) return;   // eyni anda təkrar siqnal
     lastReport = now;

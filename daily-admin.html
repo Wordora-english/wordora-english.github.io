@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gündəlik məşq — Admin — Wordora</title>
+  <meta name="theme-color" content="#0e1f3d">
+  <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem("wd_theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")}catch(e){}</script>
+  <style>
+    .stats.four { grid-template-columns: repeat(4, 1fr); }
+    @media (max-width: 700px) { .stats.four { grid-template-columns: repeat(2, 1fr); } }
+    .flt { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .flt select, .flt input { width: auto; flex: 1 1 160px; }
+    .qx { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .qx:last-child { border-bottom: 0; }
+    .qx-h { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: .8rem; color: var(--muted); }
+    .qx-t { font-weight: 600; margin: 4px 0; }
+    .qx-o { font-size: .85rem; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+    .qx-o .ok { color: var(--ok); font-weight: 700; }
+    .qx.off { opacity: .45; }
+    .ed { position: fixed; inset: 0; background: rgba(10, 15, 35, .55); z-index: 1000; display: grid; place-items: center; padding: 16px; overflow: auto; }
+    .ed-box { background: var(--card); border-radius: 18px; max-width: 560px; width: 100%; padding: 20px; }
+    .optrow { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+    .optrow input[type=radio] { width: 20px; height: 20px; flex: none; margin: 0; }
+    .optrow input[type=text] { flex: 1; width: auto; min-width: 0; }
+    .optrow b { width: 1.2em; }
+    tr.void td { background: var(--bad-bg); }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="wordmark" href="index.html"><img src="assets/img/logo-icon.png" alt=""><span>WORD<span class="ora">ORA</span></span></a>
+      <nav class="topbar-actions"><a class="btn btn-ghost btn-sm" href="admin.html">← Admin panel</a></nav>
+    </div>
+  </header>
+  <main class="container" id="app"><div class="spinner"></div></main>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, toast, translateError, classLabel, formatDate } from "./assets/js/app.js";
+
+    const app = document.getElementById("app");
+    const L = "ABCDE";
+    const LV = { easy: "🟢 Asan", medium: "🟡 Orta", hard: "🔴 Çətin" };
+    let Q = [], stat = {}, day = new Date(Date.now() + 4 * 3600e3).toISOString().slice(0, 10), fTopic = "", fLevel = "", fText = "";
+
+    async function loadQuestions() {
+      const { data, error } = await sb.from("daily_questions").select("*").order("code", { nullsFirst: false }).order("id");
+      if (error) throw error;
+      Q = data;
+      // hər sualın düzgün cavab faizi (son 90 gün)
+      const from = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
+      const { data: sets } = await sb.from("daily_sets").select("questions, results, voided").gte("day", from).not("done_at", "is", null).limit(5000);
+      stat = {};
+      for (const s of sets || []) {
+        if (s.voided || !Array.isArray(s.results)) continue;
+        (s.questions || []).forEach((q, i) => { if (!q.id) return; const x = (stat[q.id] ||= { n: 0, ok: 0 }); x.n++; if (s.results[i]) x.ok++; });
+      }
+    }
+
+    async function dayHtml() {
+      const { data, error } = await sb.from("daily_sets").select("user_id, correct, total, started_at, done_at, voided, void_reason, profiles(full_name, class_name)").eq("day", day);
+      if (error) return `<div class="card empty">${esc(translateError(error))}</div>`;
+      const rows = (data || []).filter((r) => r.started_at || r.done_at).sort((a, b) => (b.voided - a.voided) || ((b.correct ?? -1) - (a.correct ?? -1)));
+      const done = rows.filter((r) => r.done_at && !r.voided && !r.void_reason);
+      const voided = rows.filter((r) => r.voided);
+      const avg = done.length ? Math.round(done.reduce((s, r) => s + r.correct / (r.total || 5), 0) / done.length * 100) : null;
+      return `
+        <div class="stats four">
+          <div class="stat"><div class="n">${done.length}</div><div class="l">Bitirdi</div></div>
+          <div class="stat"><div class="n">${avg === null ? "—" : avg + "%"}</div><div class="l">Orta nəticə</div></div>
+          <div class="stat"><div class="n" style="color:${voided.length ? "var(--bad)" : "inherit"}">${voided.length}</div><div class="l">⛔ Qayda pozuntusu (0 bal)</div></div>
+          <div class="stat"><div class="n">${rows.filter((r) => !r.done_at).length}</div><div class="l">⏳ Hazırda yazır</div></div>
+        </div>
+        <div class="card" style="overflow-x:auto;margin-top:12px">${rows.length ? `<table class="res-table">
+          <tr><th>Şagird</th><th>Sinif</th><th class="r">Nəticə</th><th>Qeyd</th><th>Vaxt</th></tr>
+          ${rows.map((r) => `<tr class="${r.voided ? "void" : ""}"><td>${esc(r.profiles?.full_name || "—")}</td><td class="muted">${esc(classLabel(r.profiles?.class_name || ""))}</td>
+            <td class="r"><b>${r.done_at ? `${r.correct}/${r.total}` : "…"}</b></td>
+            <td class="small">${r.voided ? `⛔ ${esc(r.void_reason || "")}` : r.void_reason ? `⏰ ${esc(r.void_reason)}` : r.done_at ? "✓" : "⏳ yazır"}</td>
+            <td class="muted small">${formatDate(r.done_at || r.started_at)}</td></tr>`).join("")}</table>` : '<div class="empty">Bu gün hələ heç kim məşq etməyib.</div>'}</div>`;
+    }
+
+    function bankHtml() {
+      const topics = [...new Set(Q.map((q) => q.topic))].sort();
+      const list = Q.filter((q) => (!fTopic || q.topic === fTopic) && (!fLevel || q.level === fLevel) && (!fText || (q.text + q.opts.join(" ")).toLowerCase().includes(fText.toLowerCase())));
+      const cnt = (l) => Q.filter((q) => q.active && q.level === l).length;
+      return `
+        <p class="small muted" style="margin:0 0 8px">Aktiv: ${Q.filter((q) => q.active).length} sual — 🟢 ${cnt("easy")} asan · 🟡 ${cnt("medium")} orta · 🔴 ${cnt("hard")} çətin. Hər gün hər şagirdə 1 asan + 2 orta + 2 çətin düşür (əvvəl ən az gördüyü suallardan).</p>
+        <div class="flt">
+          <select id="ft"><option value="">Bütün mövzular</option>${topics.map((t) => `<option ${t === fTopic ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+          <select id="fl"><option value="">Bütün səviyyələr</option>${Object.entries(LV).map(([k, v]) => `<option value="${k}" ${k === fLevel ? "selected" : ""}>${v}</option>`).join("")}</select>
+          <input id="fx" placeholder="Axtar…" value="${esc(fText)}">
+          <button class="btn btn-primary btn-sm" id="add">+ Yeni sual</button>
+        </div>
+        <div class="card">${list.map((q) => {
+          const st = stat[q.id];
+          return `<div class="qx ${q.active ? "" : "off"}">
+            <div class="qx-h"><b>${esc(q.code || "#" + q.id)}</b><span class="lvl ${q.level}">${LV[q.level]}</span><span>${esc(q.topic)}</span>
+              ${st ? `<span title="son 90 gündə">📊 ${st.n} dəfə · ${Math.round(st.ok / st.n * 100)}% düzgün</span>` : '<span>📊 hələ düşməyib</span>'}
+              ${q.active ? "" : "<span>⏸ söndürülüb</span>"}
+              <span style="margin-left:auto;display:flex;gap:4px"><button class="btn btn-ghost btn-sm" data-ed="${q.id}">✏️</button><button class="btn btn-ghost btn-sm" data-tg="${q.id}">${q.active ? "⏸" : "▶"}</button><button class="btn btn-ghost btn-sm" data-del="${q.id}">🗑</button></span></div>
+            <div class="qx-t">${esc(q.text)}</div>
+            <div class="qx-o">${q.opts.map((o, i) => `<span class="${i === q.ans ? "ok" : ""}">${L[i]}) ${esc(o)}${i === q.ans ? " ✓" : ""}</span>`).join("")}</div>
+            ${q.expl ? `<div class="small muted" style="margin-top:3px">💡 ${esc(q.expl)}</div>` : ""}
+          </div>`;
+        }).join("") || '<div class="empty">Sual tapılmadı.</div>'}</div>`;
+    }
+
+    function editor(q) {
+      const topics = [...new Set(Q.map((x) => x.topic))].sort();
+      const opts = q?.opts ? [...q.opts] : ["", "", "", "", ""];
+      while (opts.length < 5) opts.push("");
+      const box = document.createElement("div");
+      box.className = "ed";
+      box.innerHTML = `<form class="ed-box">
+        <h2 style="margin-top:0">${q ? "Sualı redaktə et" : "Yeni sual"}</h2>
+        <div class="field"><label>Sual</label><textarea id="e-text" required maxlength="400" style="min-height:70px">${esc(q?.text || "")}</textarea></div>
+        <div class="field" style="display:flex;gap:8px"><div style="flex:2"><label>Mövzu</label><input id="e-topic" list="e-tl" required value="${esc(q?.topic || "")}"><datalist id="e-tl">${topics.map((t) => `<option>${esc(t)}</option>`).join("")}</datalist></div>
+          <div style="flex:1"><label>Səviyyə</label><select id="e-level">${Object.entries(LV).map(([k, v]) => `<option value="${k}" ${k === (q?.level || "medium") ? "selected" : ""}>${v}</option>`).join("")}</select></div></div>
+        <div class="field"><label>Variantlar (düzgünü seç)</label>
+          ${opts.map((o, i) => `<div class="optrow"><input type="radio" name="e-ans" value="${i}" ${i === (q?.ans ?? 0) ? "checked" : ""}><b>${L[i]}</b><input type="text" class="e-opt" value="${esc(o)}" maxlength="150" placeholder="${i < 2 ? "məcburi" : "istəyə görə"}"></div>`).join("")}</div>
+        <div class="field"><label>İzah (cavabdan sonra şagirdə göstərilir)</label><textarea id="e-expl" maxlength="300" style="min-height:56px">${esc(q?.expl || "")}</textarea></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-ghost" id="e-no">Ləğv et</button><button class="btn btn-primary">Yadda saxla</button></div>
+      </form>`;
+      document.body.appendChild(box);
+      box.querySelector("#e-no").onclick = () => box.remove();
+      box.querySelector("form").onsubmit = async (e) => {
+        e.preventDefault();
+        const raw = [...box.querySelectorAll(".e-opt")].map((x) => x.value.trim());
+        let ans = Number(box.querySelector("input[name=e-ans]:checked")?.value ?? 0);
+        if (!raw[ans]) return toast("Düzgün variant boş ola bilməz", "err");
+        const keep = raw.map((v, i) => [v, i]).filter(([v]) => v);
+        if (keep.length < 2) return toast("Ən azı 2 variant yaz", "err");
+        const optsN = keep.map(([v]) => v);
+        ans = keep.findIndex(([, i]) => i === ans);
+        if (new Set(optsN.map((x) => x.toLowerCase())).size !== optsN.length) return toast("Eyni variant iki dəfə yazılıb", "err");
+        const row = { text: box.querySelector("#e-text").value.trim(), topic: box.querySelector("#e-topic").value.trim(), level: box.querySelector("#e-level").value,
+          opts: optsN, ans, expl: box.querySelector("#e-expl").value.trim() || null };
+        const { error } = q ? await sb.from("daily_questions").update(row).eq("id", q.id) : await sb.from("daily_questions").insert(row);
+        if (error) return toast(translateError(error), "err");
+        box.remove();
+        toast("Yadda saxlandı ✓", "ok");
+        await loadQuestions(); renderBank();
+      };
+    }
+
+    function renderBank() {
+      const el = document.getElementById("bank");
+      el.innerHTML = bankHtml();
+      el.querySelector("#ft").onchange = (e) => { fTopic = e.target.value; renderBank(); };
+      el.querySelector("#fl").onchange = (e) => { fLevel = e.target.value; renderBank(); };
+      el.querySelector("#fx").oninput = (e) => { fText = e.target.value; clearTimeout(window.__fx); window.__fx = setTimeout(() => { renderBank(); document.getElementById("fx").focus(); document.getElementById("fx").setSelectionRange(fText.length, fText.length); }, 300); };
+      el.querySelector("#add").onclick = () => editor(null);
+      el.querySelectorAll("[data-ed]").forEach((b) => b.onclick = () => editor(Q.find((q) => q.id === +b.dataset.ed)));
+      el.querySelectorAll("[data-tg]").forEach((b) => b.onclick = async () => {
+        const q = Q.find((x) => x.id === +b.dataset.tg);
+        const { error } = await sb.from("daily_questions").update({ active: !q.active }).eq("id", q.id);
+        if (error) return toast(translateError(error), "err");
+        q.active = !q.active; renderBank();
+      });
+      el.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
+        const q = Q.find((x) => x.id === +b.dataset.del);
+        if (!confirm(`Bu sual silinsin?\n\n${q.text}\n\n(Söndürmək üçün ⏸ düyməsi daha yaxşıdır — statistikası qalır.)`)) return;
+        const { error } = await sb.from("daily_questions").delete().eq("id", q.id);
+        if (error) return toast(translateError(error), "err");
+        Q = Q.filter((x) => x !== q); renderBank();
+      });
+    }
+
+    async function renderDay() {
+      const el = document.getElementById("day");
+      el.innerHTML = '<div class="spinner"></div>';
+      el.innerHTML = await dayHtml();
+    }
+
+    async function start() {
+      if (!configured) return;
+      const me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (me.role !== "admin") { location.href = "portal.html"; return; }
+      try { await loadQuestions(); }
+      catch (err) {
+        app.innerHTML = `<div class="card empty">${/daily_questions/.test(err.message || "") ? "Əvvəlcə <b>supabase/33-daily-bank.sql</b> faylını Supabase-də işə salın." : esc(translateError(err))}</div>`;
+        return;
+      }
+      app.innerHTML = `
+        <section class="welcome" style="margin-bottom:12px"><h1>🔥 Gündəlik məşq</h1><p>Hər gün hər şagirdə 5 sual · 6 dəqiqə · qayda pozulsa həmin günün məşqi 0 bal (hesab bloklanmır)</p></section>
+        <div class="section-title"><h2>📅 Gün üzrə nəticələr</h2><input type="date" id="dpick" value="${day}" style="width:auto"></div>
+        <div id="day"></div>
+        <div class="section-title"><h2>🗂 Sual bazası</h2></div>
+        <div id="bank"></div>`;
+      document.getElementById("dpick").onchange = (e) => { day = e.target.value; renderDay(); };
+      renderDay(); renderBank();
+    }
+    start();
+  </script>
+</body>
+</html>

@@ -234,9 +234,18 @@
       const el = document.getElementById("daily-card");
       const { data: s, error } = await sb.rpc("daily_status");
       if (error || !s) return;
-      el.innerHTML = s.today
+      if (s.today_voided) {
+        // ən başda xəbərdarlıq
+        document.getElementById("daily-void").innerHTML = `<div class="void-banner"><span class="ic">⛔</span><div><b>Bugünkü gündəlik məşq 0 bal ilə bağlandı.</b><br>Səbəb: ${esc(s.void_reason || "qayda pozuntusu")}.<br><span class="small">Məşq zamanı səhifədən çıxmaq, başqa proqrama keçmək, ekran şəkli çəkmək və köçürmək qadağandır. Hesabın bloklanmayıb — sabah yenidən iştirak edə bilərsən.</span></div></div>`;
+        el.innerHTML = `<span class="fl">⛔</span><span class="tx"><b>Bugünkü məşq: 0 bal</b><small>Qayda pozuldu. Sabah yeni 5 sual olacaq.</small></span><span>›</span>`;
+        el.classList.remove("hidden");
+        return;
+      }
+      el.innerHTML = s.in_progress
+        ? `<span class="fl">⏳</span><span class="tx"><b>Gündəlik məşq başlanıb</b><small>Tez davam et — vaxt gedir!</small></span><span class="btn btn-primary btn-sm">Davam et</span>`
+        : s.today
         ? `<span class="fl">🔥</span><span class="tx"><b>${s.current} günlük seriya!</b><small>Bugünkü məşq edildi ✓ Sabah yeni 5 sual olacaq</small></span><span>›</span>`
-        : `<span class="fl">${s.current ? "🔥" : "🌱"}</span><span class="tx"><b>Gündəlik məşq — 5 sual</b><small>${s.current ? `Seriyan: ${s.current} gün — bu gün də et, itirmə!` : "2 dəqiqə çəkir. Bu gün seriyaya başla!"}</small></span><span class="btn btn-primary btn-sm">Başla</span>`;
+        : `<span class="fl">${s.current ? "🔥" : "🌱"}</span><span class="tx"><b>Gündəlik məşq — 5 sual</b><small>${s.current ? `Seriyan: ${s.current} gün — bu gün də et, itirmə!` : "5 sual, 6 dəqiqə. Bu gün seriyaya başla!"}</small></span><span class="btn btn-primary btn-sm">Başla</span>`;
       el.classList.remove("hidden");
     }
 
@@ -457,6 +466,7 @@
 
       const firstName = me.full_name.split(" ")[0];
       app.innerHTML = `
+        <div id="daily-void"></div>
         <section class="welcome">
           <span class="star">${STAR_SVG}</span>
           ${me.class_name === "Magistratura" ? '<span class="mag-chip">🎓 Magistratura bölməsi</span>' : ""}

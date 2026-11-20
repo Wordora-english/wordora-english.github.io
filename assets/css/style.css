@@ -624,3 +624,22 @@ body[data-group="mag"] .group-switch button.on { color: #8a5a00; }
 .daily-card .tx { flex: 1; }
 .daily-card .tx small { display: block; color: var(--muted); }
 @media print { .no-print { display: none !important; } }
+
+/* Gündəlik məşq 2.0 */
+.void-banner { background: var(--bad-bg); border: 2px solid var(--bad); color: var(--text); border-radius: 18px; padding: 16px 18px; margin-bottom: 14px; display: flex; gap: 12px; align-items: flex-start; }
+.void-banner .ic { font-size: 2rem; line-height: 1; }
+.void-banner b { color: var(--bad); }
+.late-banner { background: #fff7e6; border: 2px solid #f5a400; color: #5c4400; border-radius: 18px; padding: 14px 16px; margin-bottom: 14px; }
+:root[data-theme=dark] .late-banner { background: #3a2e10; color: #ffe2a3; }
+.rules { background: var(--soft); border-radius: 14px; padding: 12px 14px; font-size: .92rem; margin: 12px 0; text-align: left; }
+.rules li { margin: .25rem 0 .25rem 1.1rem; }
+.lvl { display: inline-block; font-size: .75rem; font-weight: 700; padding: .12rem .55rem; border-radius: 99px; }
+.lvl.easy { background: rgba(18,146,92,.15); color: #0d7a4c; }
+.lvl.medium { background: rgba(245,164,0,.18); color: #9a6700; }
+.lvl.hard { background: rgba(229,72,77,.15); color: #c0353a; }
+.pq-timer { font-weight: 800; font-variant-numeric: tabular-nums; }
+.pq-timer.low { color: var(--bad); }
+.no-select, .no-select * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.pq-expl { font-size: .86rem; background: var(--soft); border-radius: 10px; padding: 6px 10px; margin-top: 6px; }
+.wm-layer { position: fixed; inset: 0; z-index: 50; pointer-events: none; background-repeat: repeat; opacity: .1; }
+:root[data-theme=dark] .wm-layer { opacity: .16; }

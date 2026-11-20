@@ -94,6 +94,7 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 29. `supabase/30-live-fun.sql` — canlı viktorina 2.0 (personaj, otaq, musiqi, seriya bonusu, emoji reaksiyalar)
 30. `supabase/31-live-more.sql` — canlı viktorina 3.0 (komandalar, ikiqat bal, şəkilli/səsli və yazmalı suallar, hesabat, nişanlar)
 31. `supabase/32-practice-push.sql` — gündəlik məşq, səhvlərim dəftəri, mövzular, valideynə aylıq hesabat, telefona bildirişlər (göndərən: `.github/workflows/push.yml`, BACKUP_SECRET ilə)
+32. `supabase/33-daily-bank.sql` — gündəlik məşq 2.0: 100 suallıq baza (hər gün 1 asan + 2 orta + 2 çətin), 6 dəqiqə, qayda pozulsa günün məşqi 0 bal
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 

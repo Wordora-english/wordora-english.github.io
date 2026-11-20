@@ -104,7 +104,7 @@
       } else {
         el.querySelectorAll(".pq-opt").forEach((b) => { if (b.dataset.v === v) b.classList.add("bad"); });
         msg.innerHTML = `<span style="color:var(--bad)">✗ Yenə səhv.</span> Düzgün cavab: <b style="color:var(--ok)">${esc(showKey(m))}</b>
-          <button class="btn btn-ghost btn-sm" data-got="${esc(k)}" style="margin-left:.4rem">Başa düşdüm ✓</button>`;
+          <button class="btn btn-ghost btn-sm" data-got="${esc(k)}" style="margin-left:.4rem">Başa düşdüm ✓</button>${m.expl ? `<div class="pq-expl">💡 ${esc(m.expl)}</div>` : ""}`;
         msg.querySelector("[data-got]").onclick = () => fix(m, el, false);
       }
     }
