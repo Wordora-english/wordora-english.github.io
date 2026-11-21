@@ -28,6 +28,15 @@
     .who { font-size: .85rem; color: var(--muted); margin-top: 6px; }
     .who span { display: inline-block; background: var(--ok-bg); color: var(--ok); border-radius: 99px; padding: .1rem .55rem; margin: 2px 3px 0 0; }
     .who span.aw { background: var(--bad-bg); color: var(--bad); }
+    .vl-sum { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+    .chipb { border: 1px solid var(--line); background: var(--soft); color: var(--text); border-radius: 99px; padding: .15rem .6rem; font-size: .8rem; font-weight: 600; cursor: pointer; }
+    .chipw { background: var(--bad-bg); color: var(--bad); border-radius: 99px; padding: .15rem .6rem; font-size: .8rem; font-weight: 700; }
+    .icb { border: 0; background: transparent; cursor: pointer; font-size: 1rem; padding: .2rem .35rem; border-radius: 8px; color: var(--text); }
+    .icb:hover { background: var(--soft); }
+    .icb.sure, .vl-tools .sure { background: var(--bad); color: #fff; font-size: .8rem; font-weight: 700; }
+    .vl-tools { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; padding-bottom: 6px; }
+    .vl-tools:empty { display: none; }
+    @media (max-width: 600px) { .vl-sum { margin-left: 0; width: 100%; } }
     .tip { background: var(--soft); border-radius: 14px; padding: 12px 14px; font-size: .9rem; }
     .tip li { margin: .3rem 0 .3rem 1.1rem; }
     details summary { cursor: pointer; font-weight: 600; }
@@ -48,6 +57,7 @@
     const app = document.getElementById("app");
     const $ = (id) => document.getElementById(id);
     let me, groups = [], members = {}, names = {}, when = "now";
+    const open = new Set(), closed = new Set();   // hansı dərslərin siyahısı açıqdır
     const fmt = (iso) => { const d = new Date(new Date(iso).getTime() + 4 * 3600e3), p = (n) => String(n).padStart(2, "0"); return `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`; };
     const isLive = (v) => !v.ended_at && new Date(v.starts_at) <= Date.now() + 15 * 60e3 && new Date(v.starts_at) > Date.now() - 4 * 3600e3;
     const isPlanned = (v) => !v.ended_at && new Date(v.starts_at) > Date.now() + 15 * 60e3;
@@ -68,17 +78,51 @@
         return;
       }
       if (!data.length) { box.innerHTML = '<div class="empty muted">Hələ dərs yoxdur. Yuxarıdan ilk dərsi başladın.</div>'; return; }
-      box.innerHTML = data.map((v) => {
+      const done = data.filter((v) => !(isLive(v) || isPlanned(v)));
+      const warnTotal = data.reduce((a, v) => a + (v.video_joins || []).filter((x) => x.away_n).length, 0);
+      const tools = `<div class="vl-tools">${warnTotal ? `<button class="btn btn-ghost btn-sm" id="clear-all">🧹 Bütün xəbərdarlıqları sil (${warnTotal})</button>` : ""}${done.length ? `<button class="btn btn-ghost btn-sm" id="del-done">🗑 Bitmiş dərsləri sil (${done.length})</button>` : ""}</div>`;
+      box.innerHTML = tools + data.map((v) => {
         const st = isLive(v) ? '<span class="pill live">● CANLI</span>' : isPlanned(v) ? '<span class="pill">📅 Planlaşdırılıb</span>' : '<span class="pill">Bitib</span>';
         const j = (v.video_joins || []).sort((a, b) => (names[a.user_id] || "").localeCompare(names[b.user_id] || "", "az"));
         const acts = !v.ended_at && (isLive(v) || isPlanned(v)) ? `<div class="vl-acts">
             <a class="btn btn-primary btn-sm" href="lesson.html?id=${v.id}">🎥 Dərsə gir</a>
             <button class="btn btn-ghost btn-sm" data-copy="${v.id}">🔗 Linki kopyala</button>
             <button class="btn btn-ghost btn-sm" data-end="${v.id}">⏹ Dərsi bitir</button></div>` : "";
-        return `<div class="vl"><div class="vl-h">${st}<b>${esc(v.title)}</b><span class="muted small">${fmt(v.starts_at)} · ${esc(audience(v))}</span></div>
-          <div class="who">Qoşulanlar: <b>${j.length}</b> ${j.map((x) => `<span title="${fmt(x.first_at)}"${x.away_n ? ' class="aw"' : ""}>${esc(names[x.user_id] || "?")}${x.away_n ? ` · ⚠️ ${x.away_n} dəfə çıxıb (${x.away_sec >= 60 ? Math.round(x.away_sec / 60) + " dəq" : x.away_sec + " san"})` : ""}</span>`).join("")}</div>${acts}</div>`;
+        const warn = j.filter((x) => x.away_n);
+        const live = isLive(v) || isPlanned(v);
+        const isOpen = open.has(v.id) || (live && !closed.has(v.id));
+        const ppl = j.map((x) => `<span title="${fmt(x.first_at)}"${x.away_n ? ' class="aw"' : ""}>${esc(names[x.user_id] || "?")}${x.away_n ? ` · ⚠️ ${x.away_n} dəfə (${x.away_sec >= 60 ? Math.round(x.away_sec / 60) + " dəq" : x.away_sec + " san"})` : ""}</span>`).join("");
+        return `<div class="vl"><div class="vl-h">${st}<b>${esc(v.title)}</b><span class="muted small">${fmt(v.starts_at)} · ${esc(audience(v))}</span>
+            <span class="vl-sum">${j.length ? `<button class="chipb" data-tog="${v.id}">👥 ${j.length} ${isOpen ? "▴" : "▾"}</button>` : '<span class="muted small">heç kim qoşulmayıb</span>'}${warn.length ? `<span class="chipw">⚠️ ${warn.length}</span>` : ""}
+            ${warn.length ? `<button class="icb" data-clear="${v.id}" title="Bu dərsin xəbərdarlıqlarını sil">🧹</button>` : ""}${live ? "" : `<button class="icb" data-del="${v.id}" title="Dərsi siyahıdan sil">🗑</button>`}</span></div>
+          ${j.length && isOpen ? `<div class="who">${ppl}</div>` : ""}${acts}</div>`;
       }).join("");
       const byId = Object.fromEntries(data.map((v) => [v.id, v]));
+      const sure = (b, label, fn) => b.addEventListener("click", async () => {   // iki dəfə basmaqla təsdiq
+        if (b.dataset.sure !== "1") { const old = b.innerHTML; b.dataset.sure = "1"; b.innerHTML = label; b.classList.add("sure"); setTimeout(() => { if (b.isConnected) { b.dataset.sure = ""; b.innerHTML = old; b.classList.remove("sure"); } }, 4000); return; }
+        b.disabled = true; await fn(); loadList();
+      });
+      box.querySelectorAll("[data-tog]").forEach((b) => b.addEventListener("click", () => {
+        const id = b.dataset.tog, v = byId[id], wasOpen = open.has(id) || ((isLive(v) || isPlanned(v)) && !closed.has(id));
+        if (wasOpen) { open.delete(id); closed.add(id); } else { open.add(id); closed.delete(id); }
+        loadList();
+      }));
+      box.querySelectorAll("[data-clear]").forEach((b) => sure(b, "Silinsin?", async () => {
+        const { error } = await sb.from("video_joins").update({ away_n: 0, away_sec: 0 }).eq("lesson_id", b.dataset.clear);
+        error ? toast(translateError(error), "err") : toast("Xəbərdarlıqlar silindi ✓", "ok");
+      }));
+      box.querySelectorAll("[data-del]").forEach((b) => sure(b, "Silinsin?", async () => {
+        const { error } = await sb.from("video_lessons").delete().eq("id", b.dataset.del);
+        error ? toast(translateError(error), "err") : toast("Dərs siyahıdan silindi ✓", "ok");
+      }));
+      if ($("clear-all")) sure($("clear-all"), "Əminsiniz? Yenə basın", async () => {
+        const { error } = await sb.from("video_joins").update({ away_n: 0, away_sec: 0 }).gt("away_n", 0);
+        error ? toast(translateError(error), "err") : toast("Bütün xəbərdarlıqlar silindi ✓", "ok");
+      });
+      if ($("del-done")) sure($("del-done"), "Əminsiniz? Yenə basın", async () => {
+        const { error } = await sb.from("video_lessons").delete().in("id", done.map((v) => v.id));
+        error ? toast(translateError(error), "err") : toast("Bitmiş dərslər silindi ✓", "ok");
+      });
       box.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
         const v = byId[b.dataset.copy];
         const link = new URL(`lesson.html?id=${v.id}`, location.href).href;
@@ -121,7 +165,7 @@
           <ol>
             <li>"Dərsi başlat" basırsınız — seçilən uşaqlara bildiriş gedir, portallarında qırmızı <b>"Dərsə qoşul"</b> düyməsi çıxır.</li>
             <li>Siz aşağıdakı siyahıdan <b>"🎥 Dərsə gir"</b> basırsınız — dərs Wordora-nın içində açılır. Siz bütün şagirdləri görürsünüz, şagirdlər sizi görür və hamı bir-birini eşidir.</li>
-            <li>Uşaq dərs vaxtı <b>başqa proqrama (Instagram və s.) və ya başqa sayta keçsə</b>, sizdə dərhal səsli xəbərdarlıq çıxır və onun pəncərəsi qırmızı olur. Neçə dəfə və nə qədər çıxdığı aşağıdakı siyahıda yazılır.</li>
+            <li>Uşaq dərs vaxtı <b>başqa proqrama (Instagram və s.) və ya başqa sayta keçsə</b>, sizdə dərhal səsli xəbərdarlıq çıxır və onun pəncərəsi qırmızı olur. Uşaqların PDF və ya başqa sayt açması lazımdırsa, dərsdə <b>🔒</b> düyməsini basın (🔓 olur) — o vaxt xəbərdarlıq gəlmir. Yenə basanda qadağa qayıdır.</li>
             <li>Uşaqlar dərsə mikrofonu <b>bağlı</b> girir. Danışmaq istəyən <b>✋ əl qaldırır</b> — sizdə xəbər çıxır. 🔕 düyməsi hamının mikrofonunu bağlayır. Dərsdə 💬 chat da var.</li>
             <li><b>📄 düyməsi</b> — PDF və ya şəkil seçin, uşaqların ekranında açılır; ◀ ▶ ilə səhifələri çevirin. Telefonda da işləyir. Kompüterdən girsəniz, <b>🖥</b> ilə bütün ekranınızı da paylaşa bilərsiniz.</li>
             <li>Qoşulan uşaqlar həmin gün avtomatik <b>davamiyyətdə "iştirak etdi"</b> olur.</li>

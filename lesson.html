@@ -58,6 +58,8 @@
     .slide-bar .cb { width: 42px; height: 42px; font-size: 1rem; }
     .slide-bar .cb.end { width: auto; }
     .self.nocam::after { content: "📷 bağlı"; position: absolute; inset: 0; display: grid; place-items: center; color: #aab0d0; font-size: .8rem; background: #161c35; }
+    .perm { background: #12925c; color: #fff; font-size: .85rem; font-weight: 600; padding: .45rem 14px; text-align: center; }
+    .perm[hidden] { display: none; }
     .mates { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 0; }
     .mate { font-size: .78rem; background: #1a2040; border-radius: 99px; padding: .2rem .6rem; color: #c4c7de; }
     .mate.hand { background: #f5b400; color: #2a1d00; font-weight: 700; }
@@ -87,7 +89,7 @@
     .pre .hint { font-size: .85rem; color: #aab0d0; }
     .pre h1 { font-family: var(--display); font-size: 1.4rem; margin: 0; }
     .unmute { position: fixed; left: 50%; top: 70px; transform: translateX(-50%); z-index: 10; }
-    .r-toast { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); background: #f5b400; color: #2a1d00; padding: .5rem 1rem; border-radius: 99px; font-weight: 600; z-index: 20; box-shadow: 0 6px 20px rgba(0, 0, 0, .4); }
+    .r-toast { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); background: #f5b400; color: #2a1d00; padding: .5rem 1rem; border-radius: 99px; font-weight: 600; z-index: 20; box-shadow: 0 6px 20px rgba(0, 0, 0, .4); width: max-content; max-width: calc(100vw - 32px); text-align: center; }
     .card-dark { background: #141a33; border: 1px solid #262e55; border-radius: 18px; padding: 24px; max-width: 460px; margin: 60px auto; text-align: center; }
     @media (max-width: 600px) {
       .cb { width: 46px; height: 46px; font-size: 1.15rem; }
@@ -109,7 +111,7 @@
     const lessonId = new URLSearchParams(location.search).get("id");
     const myKey = `${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
     let info, ch, local = null, screenStream = null, iceServers, wakeLock = null, startedAt = Date.now(), facing = "user";
-    const st = { mic: true, cam: true, hand: false, screen: false };
+    const st = { mic: true, cam: true, hand: false, screen: false, allow: false };
     const peers = new Map();   // key -> peer
     let people = {};           // key -> meta (presence)
     const chatMsgs = [];
@@ -119,7 +121,9 @@
     const awayAlerted = new Set(), byes = new Set(), seen = new Set();   // müəllim: hansı şagirdlər üçün artıq xəbərdarlıq çıxıb
     window.__wd = { peers, get people() { return people; }, get local() { return local; } };   // yoxlama üçün
 
-    const myMeta = () => ({ key: myKey, uid: info.uid, name: info.name, teacher: info.teacher, mic: st.mic && !!local?.getAudioTracks().length, cam: st.cam && !!local?.getVideoTracks().length, hand: st.hand, screen: st.screen, away: !!awayAt });
+    const myMeta = () => ({ key: myKey, uid: info.uid, name: info.name, teacher: info.teacher, mic: st.mic && !!local?.getAudioTracks().length, cam: st.cam && !!local?.getVideoTracks().length, hand: st.hand, screen: st.screen, away: !!awayAt, allow: info.teacher && st.allow });
+    // Müəllim "çıxmağa icazə" veribsə (məs. uşaqlar PDF açsın) — xəbərdarlıq olmur
+    const awayAllowed = () => (info.teacher ? st.allow : Object.values(people).some((m) => m.teacher && m.allow));
     const initial = (n) => (n || "?").trim().charAt(0).toUpperCase();
     const studentCount = () => Object.values(people).filter((p) => !p.teacher && p.key !== myKey).length;
 
@@ -377,7 +381,7 @@
       p.el.classList.toggle("hand", !!m.hand);
       p.el.classList.toggle("screen", !!m.screen);
       p.el.classList.toggle("bad", !!p.bad);
-      p.el.classList.toggle("away", !!m.away);
+      p.el.classList.toggle("away", !!m.away && !awayAllowed());
       return p.el;
     }
     const blocked = (e) => { if (e?.name === "NotAllowedError") needUnmute(); };   // yalnız brauzer səsi bloklayanda
@@ -423,6 +427,8 @@
       if ($("b-hand")) $("b-hand").classList.toggle("on", st.hand);
       if ($("b-scr")) $("b-scr").classList.toggle("on", st.screen && !slides);
       if ($("b-file")) $("b-file").classList.toggle("on", !!slides);
+      if ($("b-allow")) { $("b-allow").classList.toggle("on", st.allow); $("b-allow").textContent = st.allow ? "🔓" : "🔒"; }
+      if ($("perm")) $("perm").hidden = !awayAllowed();
     }
 
     function updateMe() { ch?.track(myMeta()); people[myKey] = myMeta(); render(); }
@@ -511,7 +517,7 @@
       try { navigator.vibrate?.([120, 60, 120]); } catch {}
     }
     function awayAlert(key, m) {
-      if (awayAlerted.has(key)) return;
+      if (awayAlerted.has(key) || awayAllowed()) return;
       awayAlerted.add(key);
       flash(`⚠️ ${m.name} dərsdən çıxdı — başqa proqrama/sayta keçdi`); beep();
       sysLog(`${m.name} dərs ekranından çıxdı (başqa proqram və ya sayt)`);
@@ -520,7 +526,7 @@
 
     // Şagird: dərs ekranından çıxanda (başqa proqram, Instagram, başqa sayt) müəllimə xəbər
     function goAway() {
-      if (awayAt || left || info.teacher) return;
+      if (awayAt || left || info.teacher || awayAllowed()) return;
       awayAt = Date.now();
       send("away", { from: myKey, away: true });
       updateMe();
@@ -567,7 +573,7 @@
       const canShare = info.teacher && typeof navigator.mediaDevices?.getDisplayMedia === "function";   // Android telefonlarda yoxdur — orada 📄 var
       app.innerHTML = `<div class="r-wrap">
         <div class="r-top"><span class="r-live">● CANLI</span><span class="t">${esc(info.title)}</span><span class="r-time" id="tm"></span>${info.teacher ? '<button class="r-alert" id="b-alert" hidden title="Xəbərdarlıqlar">⚠️ 0</button>' : ""}<span class="r-cnt" id="cnt">👥 1</span></div>
-        ${info.teacher ? "" : '<div class="mates" id="mates"></div>'}
+        ${info.teacher ? "" : '<div class="perm" id="perm" hidden>🔓 Müəllim icazə verib — başqa proqrama və ya sayta keçə bilərsən</div><div class="mates" id="mates"></div>'}
         <div class="r-stage" id="stage-wrap"><div id="stage" style="height:100%"></div>
           <div class="self" id="self"><video id="self-v" autoplay playsinline muted></video></div>
           <div class="slide-bar" id="slide-bar" hidden><button class="cb" id="sl-p" aria-label="Əvvəlki">◀</button><b id="sl-n">1 / 1</b><button class="cb" id="sl-x2" aria-label="Növbəti">▶</button><button class="cb end" id="sl-x">✕ Bağla</button></div>
@@ -583,7 +589,7 @@
           ${canShare ? '<button class="cb" id="b-scr" title="Ekranı paylaş">🖥</button>' : ""}
           ${info.teacher ? '<button class="cb" id="b-file" title="PDF və ya şəkil göstər">📄</button><input type="file" id="f-file" accept="application/pdf,image/*" multiple hidden>' : ""}
           <button class="cb" id="b-chat" title="Chat">💬<span class="dot"></span></button>
-          ${info.teacher ? '<button class="cb" id="b-muteall" title="Hamının səsini bağla">🔕</button>' : ""}
+          ${info.teacher ? '<button class="cb" id="b-muteall" title="Hamının səsini bağla">🔕</button><button class="cb" id="b-allow" title="Uşaqlara dərsdən çıxmağa icazə ver (məs. PDF açsınlar)">🔒</button>' : ""}
           <button class="cb end" id="b-end">${info.teacher ? "⏹ Dərsi bitir" : "🚪 Çıx"}</button>
         </div></div>`;
       $("self-v").srcObject = local;
@@ -605,6 +611,13 @@
         const text = $("chat-i").value.trim().slice(0, 300); if (!text) return;
         const m = { key: myKey, name: info.name, teacher: info.teacher, text };
         send("chat", m); addChat(m); $("chat-i").value = "";
+      };
+      if ($("b-allow")) $("b-allow").onclick = () => {
+        st.allow = !st.allow;
+        send("ctl", { cmd: "allow", on: st.allow, from: myKey });
+        if (st.allow) { awayAlerted.clear(); for (const m of Object.values(people)) if (!m.teacher) m.away = false; }
+        flash(st.allow ? "🔓 Uşaqlar başqa proqrama/sayta keçə bilər — xəbərdarlıq gəlməyəcək" : "🔒 İcazə bağlandı — çıxanlar yenə qeyd olunacaq");
+        updateMe();
       };
       if ($("b-muteall")) $("b-muteall").onclick = () => { send("ctl", { cmd: "mute", from: myKey }); flash("🔕 Bütün şagirdlərin mikrofonu bağlandı"); };
       $("b-end").onclick = async () => {
@@ -629,6 +642,7 @@
         if (!from?.teacher || info.teacher) return;
         if (payload.cmd === "mute" && st.mic) { setMic(false); flash("🔇 Müəllim mikrofonunu bağladı"); }
         if (payload.cmd === "lower" && payload.to === myKey) { st.hand = false; updateMe(); }
+        if (payload.cmd === "allow") { if (people[payload.from]) people[payload.from].allow = payload.on; flash(payload.on ? "🔓 Müəllim icazə verdi: başqa proqrama/sayta keçə bilərsən" : "🔒 İcazə bitdi — artıq dərsdən çıxma"); render(); }
         if (payload.cmd === "end") { const { data } = await sb.rpc("video_alive", { p_id: info.id }); if (data === false) lessonOver(); }
       });
       ch.on("broadcast", { event: "away" }, ({ payload }) => {
@@ -661,7 +675,7 @@
         if (info.teacher) {
           for (const [k, m] of Object.entries(before)) if (!people[k] && !m.teacher && k !== myKey && !byes.has(k) && !left) {
             setTimeout(() => {   // internet bir anlıq kəsilibsə, səhv xəbərdarlıq olmasın
-              if (people[k] || byes.has(k) || left || peers.get(k)?.pc.connectionState === "connected") return;
+              if (people[k] || byes.has(k) || left || awayAllowed() || peers.get(k)?.pc.connectionState === "connected") return;
               flash(`⚠️ ${m.name} dərsdən çıxdı`); beep(); sysLog(`${m.name} dərsdən çıxdı (səhifəni bağladı və ya interneti kəsildi)`);
             }, 8000);
           }
@@ -701,7 +715,7 @@
         <div class="self-pre"><video id="pv" autoplay playsinline muted></video><div class="wait hidden" id="pv-no" style="position:absolute;inset:0">📷 Kamera tapılmadı</div></div>
         <div class="row"><button class="cb" id="p-mic">🎤</button><button class="cb" id="p-cam">📷</button></div>
         <button class="btn btn-primary" id="go" style="width:100%">Dərsə daxil ol</button>
-        <p class="hint">Brauzer kamera və mikrofon icazəsi istəyəndə <b>"İcazə ver" / "Allow"</b> basın.<br>${info.teacher ? "Dərsi Wi-Fi ilə keçirmək daha yaxşıdır." : "Mikrofonun bağlıdır — danışmaq üçün 🎤 düyməsinə bas.<br><b>⚠️ Dərs vaxtı başqa proqrama (Instagram, oyun və s.) və ya başqa sayta keçsən, müəllimə dərhal xəbər gedir.</b>"}</p>
+        <p class="hint">Brauzer kamera və mikrofon icazəsi istəyəndə <b>"İcazə ver" / "Allow"</b> basın.<br>${info.teacher ? "Dərsi Wi-Fi ilə keçirmək daha yaxşıdır." : "Mikrofonun bağlıdır — danışmaq üçün 🎤 düyməsinə bas.<br><b>⚠️ Dərs vaxtı başqa proqrama (Instagram, oyun və s.) və ya başqa sayta keçsən, müəllimə dərhal xəbər gedir</b> — müəllim icazə verməyibsə."}</p>
       </div>`;
       local = await getMedia(true);
       if (!local) {
