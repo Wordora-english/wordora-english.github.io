@@ -727,3 +727,15 @@ body[data-group="mag"] .group-switch button.on { color: #8a5a00; }
 .bank-card .fl { font-size: 1.9rem; }
 .bank-card .tx { flex: 1; }
 .bank-card .tx small { display: block; color: var(--muted); }
+
+/* Görüntülü canlı dərs */
+.vid-live { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; border: 2px solid var(--bad); background: var(--bad-bg); margin-bottom: 14px; }
+.vid-live .vid-txt { flex: 1 1 180px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.vid-live .vid-txt b { color: var(--bad); letter-spacing: .06em; font-size: .8rem; }
+.vid-live .vid-txt span { font-family: var(--display); font-weight: 600; font-size: 1.15rem; }
+.vid-live .btn { flex: 0 0 auto; }
+.vid-dot { width: 14px; height: 14px; border-radius: 50%; background: var(--bad); flex: none; animation: vidpulse 1.4s infinite; }
+@keyframes vidpulse { 0% { box-shadow: 0 0 0 0 rgba(198, 47, 69, .55); } 70% { box-shadow: 0 0 0 12px rgba(198, 47, 69, 0); } 100% { box-shadow: 0 0 0 0 rgba(198, 47, 69, 0); } }
+@media (prefers-reduced-motion: reduce) { .vid-dot { animation: none; } }
+.vid-plan { margin-bottom: 12px; font-size: .95rem; }
+@media (max-width: 520px) { .vid-live .btn { width: 100%; } }

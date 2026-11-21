@@ -30,6 +30,7 @@
   </main>
 
   <script type="module">
+    import { renderVideoBox } from "./assets/js/video.js";
     import { tierOf, flame, nextText, ord } from "./assets/js/streak.js";
     import { examCountdown } from "./assets/js/countdown.js";
     import { downloadMaterial } from "./assets/js/materials.js";
@@ -305,6 +306,13 @@
       ["🎯", "Snayper", (s) => s.perfect >= 1, "Bir oyunda bütün suallara düzgün cavab ver (ən azı 5 sual)"],
       ["👑", "Ayın çempionu", (s) => s.champion_months >= 1 || s.champion?.me, "Ay ərzində viktorinalarda ən çox bal topla"],
     ];
+    // Görüntülü canlı dərs: hər 45 saniyədən bir yoxla
+    async function loadVideo() {
+      const box = document.getElementById("video");
+      await renderVideoBox(box);
+      if (!loadVideo.t) loadVideo.t = setInterval(() => document.visibilityState === "visible" && renderVideoBox(box), 45000);
+    }
+
     async function loadLiveMe() {
       const box = document.getElementById("live-me");
       const { data: s, error } = await sb.rpc("my_live_stats");
@@ -480,6 +488,7 @@
       const firstName = me.full_name.split(" ")[0];
       app.innerHTML = `
         <div id="daily-void"></div>
+        <div id="video"></div>
         <section class="welcome">
           <span class="star">${STAR_SVG}</span>
           ${me.class_name === "Magistratura" ? '<span class="mag-chip">🎓 Magistratura bölməsi</span>' : ""}
@@ -543,7 +552,7 @@
       examCountdown(document.getElementById("exam-cd"));
       renderInstall();
       loadWotd();
-      loadQuick(); loadGroups(); loadLiveMe(); loadDaily(); loadBank(); loadTopics(); loadPush();
+      loadQuick(); loadGroups(); loadLiveMe(); loadVideo(); loadDaily(); loadBank(); loadTopics(); loadPush();
       if (me.class_name !== "Magistratura") loadRank();   // magistrantlar üçün reytinq yoxdur
       addEventListener("wd-installable", renderInstall);
       loadTests();
