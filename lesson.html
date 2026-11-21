@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="az">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Canlı dərs — Wordora</title>
+  <meta name="theme-color" content="#0b0f1f">
+  <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/img/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+  <style>
+    html, body { height: 100%; }
+    body.room { background: #0b0f1f; color: #e9eaf5; margin: 0; overflow: hidden; }
+    .r-wrap { position: fixed; inset: 0; display: flex; flex-direction: column; }
+    .r-top { display: flex; align-items: center; gap: 10px; padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top)); background: #11162b; border-bottom: 1px solid #1f2642; }
+    .r-top .t { font-family: var(--display); font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .r-live { background: #c62f45; color: #fff; font-size: .7rem; font-weight: 700; padding: .15rem .5rem; border-radius: 99px; letter-spacing: .05em; }
+    .r-cnt, .r-time { font-size: .85rem; color: #aab0d0; white-space: nowrap; }
+    .r-stage { flex: 1; min-height: 0; position: relative; padding: 10px; overflow: auto; }
+    .grid { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); align-content: start; }
+    .tile { position: relative; background: #161c35; border-radius: 14px; overflow: hidden; aspect-ratio: 4 / 3; }
+    .tile video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
+    .tile.screen video { object-fit: contain; }
+    .tile .nm { position: absolute; left: 8px; bottom: 8px; background: rgba(0, 0, 0, .55); color: #fff; font-size: .8rem; padding: .15rem .5rem; border-radius: 8px; max-width: calc(100% - 16px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tile .av { position: absolute; inset: 0; display: none; place-items: center; }
+    .tile .av span { width: 72px; height: 72px; border-radius: 50%; background: linear-gradient(135deg, #3a32b5, #7b4fe0); display: grid; place-items: center; font-family: var(--display); font-size: 2rem; font-weight: 700; color: #fff; }
+    .tile.nocam .av { display: grid; }
+    .tile.nocam video { visibility: hidden; }
+    .tile .hand { position: absolute; top: 8px; right: 8px; font-size: 1.6rem; display: none; cursor: pointer; animation: wave 1s ease-in-out infinite alternate; }
+    .tile.hand .hand { display: block; }
+    .tile.hand { outline: 3px solid #f5b400; }
+    .tile .warn { position: absolute; top: 8px; left: 8px; font-size: .72rem; background: rgba(198, 47, 69, .85); color: #fff; padding: .1rem .45rem; border-radius: 6px; display: none; }
+    .tile.bad .warn { display: block; }
+    @keyframes wave { from { transform: rotate(-12deg); } to { transform: rotate(12deg); } }
+    @media (prefers-reduced-motion: reduce) { .tile .hand { animation: none; } }
+    .main-tile { aspect-ratio: auto; height: 100%; min-height: 200px; }
+    .main-tile video { object-fit: contain; }
+    .self { position: absolute; right: 14px; bottom: 14px; width: min(30vw, 180px); aspect-ratio: 3 / 4; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 6px 20px rgba(0, 0, 0, .5); z-index: 3; border: 2px solid #2a3157; }
+    .self video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    .self.screen video { transform: none; object-fit: contain; }
+    .self.nocam::after { content: "📷 bağlı"; position: absolute; inset: 0; display: grid; place-items: center; color: #aab0d0; font-size: .8rem; background: #161c35; }
+    .mates { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 0; }
+    .mate { font-size: .78rem; background: #1a2040; border-radius: 99px; padding: .2rem .6rem; color: #c4c7de; }
+    .mate.hand { background: #f5b400; color: #2a1d00; font-weight: 700; }
+    .r-bar { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; padding: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); background: #11162b; border-top: 1px solid #1f2642; }
+    .cb { width: 52px; height: 52px; border-radius: 50%; border: 0; background: #232a4d; color: #fff; font-size: 1.3rem; cursor: pointer; display: grid; place-items: center; position: relative; }
+    .cb:hover { background: #2f3866; }
+    .cb:disabled { opacity: .35; cursor: not-allowed; }
+    .cb.off { background: #c62f45; }
+    .cb.on { background: #f5b400; color: #2a1d00; }
+    .cb.end { background: #c62f45; width: auto; border-radius: 99px; padding: 0 18px; font-size: .95rem; font-weight: 600; }
+    .cb .dot { position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; border-radius: 50%; background: #f5b400; display: none; }
+    .cb.unread .dot { display: block; }
+    .cb[hidden] { display: none; }
+    .chat { position: absolute; right: 10px; top: 10px; bottom: 10px; width: min(340px, calc(100% - 20px)); background: #141a33; border: 1px solid #262e55; border-radius: 16px; display: flex; flex-direction: column; z-index: 5; }
+    .chat[hidden] { display: none; }
+    .chat-h { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid #262e55; font-weight: 600; }
+    .chat-l { flex: 1; overflow: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+    .chat-l .m b { color: #b9b0ff; font-size: .8rem; display: block; }
+    .chat-l .m.t b { color: #f5b400; }
+    .chat-f { display: flex; gap: 6px; padding: 10px; border-top: 1px solid #262e55; }
+    .chat-f input { flex: 1; min-width: 0; background: #0f1430; color: #fff; border: 1px solid #2a3157; }
+    .wait { height: 100%; display: grid; place-items: center; text-align: center; color: #aab0d0; padding: 20px; }
+    .pre { max-width: 460px; margin: 0 auto; padding: 24px 16px; text-align: center; }
+    .pre .self-pre { position: relative; width: 100%; aspect-ratio: 4 / 3; border-radius: 16px; overflow: hidden; background: #161c35; margin: 14px 0; }
+    .pre .self-pre video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    .pre .row { display: flex; gap: 10px; justify-content: center; margin-bottom: 14px; }
+    .pre .hint { font-size: .85rem; color: #aab0d0; }
+    .pre h1 { font-family: var(--display); font-size: 1.4rem; margin: 0; }
+    .unmute { position: fixed; left: 50%; top: 70px; transform: translateX(-50%); z-index: 10; }
+    .r-toast { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); background: #f5b400; color: #2a1d00; padding: .5rem 1rem; border-radius: 99px; font-weight: 600; z-index: 20; box-shadow: 0 6px 20px rgba(0, 0, 0, .4); }
+    .card-dark { background: #141a33; border: 1px solid #262e55; border-radius: 18px; padding: 24px; max-width: 460px; margin: 60px auto; text-align: center; }
+    @media (max-width: 600px) {
+      .cb { width: 46px; height: 46px; font-size: 1.15rem; }
+      .r-bar { gap: 6px; }
+      .grid { grid-template-columns: repeat(2, 1fr); }
+      .r-time { display: none; }
+    }
+  </style>
+</head>
+<body class="room">
+  <div id="app"><div class="spinner" style="margin-top:80px"></div></div>
+  <audio id="ping" preload="auto" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="></audio>
+
+  <script type="module">
+    import { sb, configured, getMyProfile, esc, translateError } from "./assets/js/app.js";
+
+    const app = document.getElementById("app");
+    const $ = (id) => document.getElementById(id);
+    const lessonId = new URLSearchParams(location.search).get("id");
+    const myKey = `${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+    let info, ch, local = null, screenStream = null, iceServers, wakeLock = null, startedAt = Date.now(), facing = "user";
+    const st = { mic: true, cam: true, hand: false, screen: false };
+    const peers = new Map();   // key -> peer
+    let people = {};           // key -> meta (presence)
+    const chatMsgs = [];
+    let left = false;
+    window.__wd = { peers, get people() { return people; }, get local() { return local; } };   // yoxlama üçün
+
+    const myMeta = () => ({ key: myKey, uid: info.uid, name: info.name, teacher: info.teacher, mic: st.mic && !!local?.getAudioTracks().length, cam: st.cam && !!local?.getVideoTracks().length, hand: st.hand, screen: st.screen });
+    const initial = (n) => (n || "?").trim().charAt(0).toUpperCase();
+    const studentCount = () => Object.values(people).filter((p) => !p.teacher && p.key !== myKey).length;
+
+    function flash(msg) {
+      const d = document.createElement("div"); d.className = "r-toast"; d.textContent = msg; document.body.appendChild(d);
+      setTimeout(() => d.remove(), 3500);
+    }
+    function fail(msg, back = true) {
+      app.innerHTML = `<div class="card-dark"><div style="font-size:2.5rem">🎥</div><p>${esc(msg)}</p>${back ? `<a class="btn btn-primary" href="${info?.teacher ? "video-admin.html" : "portal.html"}">Geri qayıt</a>` : ""}</div>`;
+    }
+
+    // ---------- Kamera / mikrofon ----------
+    async function getMedia(video = true) {
+      const vc = info.teacher
+        ? { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24, max: 24 }, facingMode: facing }
+        : { width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 15 }, facingMode: facing };
+      const audio = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+      try { return await navigator.mediaDevices.getUserMedia({ audio, video: video ? vc : false }); }
+      catch (e) {
+        if (video) { try { return await navigator.mediaDevices.getUserMedia({ audio }); } catch {} }
+        try { return await navigator.mediaDevices.getUserMedia({ video: vc }); } catch {}
+        return null;
+      }
+    }
+
+    // ---------- Əlaqə (WebRTC, "perfect negotiation") ----------
+    // Supabase saniyədə ~10 mesaj qəbul edir — növbə ilə göndəririk
+    const outq = []; let pumping = false;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    function send(event, payload) { outq.push({ event, payload }); pump(); }
+    async function pump() {
+      if (pumping) return; pumping = true;
+      while (outq.length && ch && !left) {
+        const m = outq.shift();
+        let r; try { r = await ch.send({ type: "broadcast", event: m.event, payload: m.payload }); } catch { r = "error"; }
+        if (r === "rate limited") { outq.unshift(m); await sleep(400); } else await sleep(110);
+      }
+      pumping = false;
+    }
+
+    function createPeer(meta, initiator = false) {
+      const pc = new RTCPeerConnection({ iceServers });
+      const p = { key: meta.key, meta, pc, polite: myKey > meta.key, makingOffer: false, ignoreOffer: false, stream: new MediaStream(), cands: [], t: null, restarted: false };
+      peers.set(meta.key, p);
+      const withVideo = info.teacher || meta.teacher;
+      p.video = withVideo;
+      const at = local?.getAudioTracks()[0];
+      const vt = screenStream?.getVideoTracks()[0] || local?.getVideoTracks()[0];
+      if (at) pc.addTrack(at, local);
+      if (withVideo && vt) pc.addTrack(vt, local);
+      if (initiator) {   // göndərəcək heç nə yoxdursa da əlaqə qurulsun
+        if (!at) pc.addTransceiver("audio", { direction: "recvonly" });
+        if (withVideo && !vt) pc.addTransceiver("video", { direction: "recvonly" });
+      }
+      pc.onnegotiationneeded = async () => {
+        try { p.makingOffer = true; await pc.setLocalDescription(); send("sig", { to: p.key, from: myKey, meta: myMeta(), description: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } }); }
+        catch (e) { console.warn(e); } finally { p.makingOffer = false; }
+      };
+      pc.onicecandidate = ({ candidate }) => {
+        if (!candidate) return;
+        p.cands.push(candidate.toJSON());
+        clearTimeout(p.t);
+        p.t = setTimeout(() => { const c = p.cands.splice(0); if (c.length) send("sig", { to: p.key, from: myKey, candidates: c }); }, 300);
+      };
+      pc.ontrack = ({ track }) => {
+        p.stream.addTrack(track);
+        // bəzi brauzerlər sonradan əlavə olunan treki görmür — mənbəni yeniləyirik
+        for (const el of [p.el?.querySelector("video"), p.audio]) if (el) { el.srcObject = null; el.srcObject = p.stream; el.play().catch(blocked); }
+        track.onunmute = () => render();
+        render();
+      };
+      pc.onconnectionstatechange = () => {
+        const s = pc.connectionState;
+        if (s === "connected") { p.bad = false; tuneBitrate(p); }
+        if (s === "failed") {
+          p.bad = true;
+          if (!p.restarted) { p.restarted = true; pc.restartIce(); }
+        }
+        if (s === "disconnected") p.bad = true;
+        render();
+      };
+      return p;
+    }
+
+    async function tuneBitrate(p) {
+      for (const s of p.pc.getSenders()) {
+        if (s.track?.kind !== "video") continue;
+        const prm = s.getParameters();
+        if (!prm.encodings?.length) prm.encodings = [{}];
+        prm.encodings[0].maxBitrate = info.teacher ? (st.screen ? 900e3 : studentCount() > 8 ? 250e3 : 450e3) : 150e3;
+        try { await s.setParameters(prm); } catch {}
+      }
+    }
+
+    async function onSig({ to, from, meta, description, candidates }) {
+      if (to !== myKey || left) return;
+      if (meta) people[from] = { ...(people[from] || {}), ...meta };
+      let p = peers.get(from);
+      if (!p) p = createPeer(meta || people[from] || { key: from });
+      const pc = p.pc;
+      try {
+        if (description) {
+          const collision = description.type === "offer" && (p.makingOffer || pc.signalingState !== "stable");
+          p.ignoreOffer = !p.polite && collision;
+          if (p.ignoreOffer) return;
+          await pc.setRemoteDescription(description);
+          if (description.type === "offer") {
+            await pc.setLocalDescription();
+            send("sig", { to: from, from: myKey, meta: myMeta(), description: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } });
+          }
+        }
+        for (const c of candidates || []) {
+          try { await pc.addIceCandidate(c); } catch (e) { if (!p.ignoreOffer) console.warn(e); }
+        }
+      } catch (e) { console.warn(e); }
+    }
+
+    function dropPeer(key) {
+      const p = peers.get(key); if (!p) return;
+      try { p.pc.close(); } catch {}
+      p.el?.remove(); p.audio?.remove();
+      peers.delete(key);
+    }
+
+    function syncPeers() {
+      const present = new Set(Object.keys(people));
+      for (const key of present) {
+        if (key === myKey) continue;
+        const m = people[key];
+        // tələbə ilə tələbə arasında yalnız səs; müəllimlə hər kəs arasında səs + görüntü
+        if (!peers.has(key) && myKey < key) {   // hər cüt üçün bir tərəf başlayır
+          createPeer(m, true);
+        }
+      }
+      for (const key of [...peers.keys()]) if (!present.has(key)) dropPeer(key);
+      render();
+    }
+
+    // ---------- Görünüş ----------
+    function tileFor(p) {
+      if (!p.el) {
+        p.el = document.createElement("div");
+        p.el.className = "tile";
+        p.el.innerHTML = `<video autoplay playsinline></video><div class="av"><span></span></div><div class="nm"></div><div class="hand" title="Əli endir">✋</div><div class="warn">Bağlantı zəifdir…</div>`;
+        const v = p.el.querySelector("video");
+        v.srcObject = p.stream;
+        v.play().catch(blocked);
+        p.el.querySelector(".hand").addEventListener("click", () => { if (info.teacher) send("ctl", { cmd: "lower", to: p.key, from: myKey }); });
+      }
+      const m = people[p.key] || p.meta || {};
+      const hasVideo = p.stream.getVideoTracks().some((t) => t.readyState === "live" && !t.muted);
+      p.el.querySelector(".nm").textContent = `${m.mic === false ? "🔇 " : ""}${m.name || "…"}${m.teacher ? " · müəllim" : ""}`;
+      p.el.querySelector(".av span").textContent = initial(m.name);
+      p.el.classList.toggle("nocam", !hasVideo || m.cam === false);
+      p.el.classList.toggle("hand", !!m.hand);
+      p.el.classList.toggle("screen", !!m.screen);
+      p.el.classList.toggle("bad", !!p.bad);
+      return p.el;
+    }
+    function audioFor(p) {
+      if (!p.audio) {
+        p.audio = document.createElement("audio");
+        p.audio.autoplay = true; p.audio.srcObject = p.stream;
+        document.body.appendChild(p.audio);
+        p.audio.play().catch(blocked);
+      }
+    }
+    const blocked = (e) => { if (e?.name === "NotAllowedError") needUnmute(); };   // yalnız brauzer səsi bloklayanda
+    function needUnmute() {
+      if ($("unmute")) return;
+      const b = document.createElement("button");
+      b.id = "unmute"; b.className = "btn btn-primary unmute"; b.textContent = "🔊 Səsi aç";
+      b.onclick = () => { document.querySelectorAll("video:not(#self-v), audio").forEach((x) => x.play().catch(() => {})); b.remove(); };
+      document.body.appendChild(b);
+    }
+
+    function render() {
+      const stage = $("stage"); if (!stage) return;
+      const n = Object.keys(people).length || 1;
+      $("cnt").textContent = `👥 ${n}`;
+      if (info.teacher) {
+        let grid = $("grid");
+        if (!grid) { stage.innerHTML = '<div class="grid" id="grid"></div><div class="wait hidden" id="empty">Şagirdlərin qoşulmasını gözləyin…<br>Onlar portalda qırmızı "Dərsə qoşul" düyməsini görür.</div>'; grid = $("grid"); }
+        const list = [...peers.values()].sort((a, b) => (people[b.key]?.hand - people[a.key]?.hand) || (people[a.key]?.name || "").localeCompare(people[b.key]?.name || "", "az"));
+        // elementi yerindən tərpətmirik (video dayanar) — sıranı CSS "order" ilə veririk
+        list.forEach((p, i) => { const el = tileFor(p); el.style.order = i; if (el.parentNode !== grid) grid.appendChild(el); });
+        $("empty").classList.toggle("hidden", list.length > 0);
+      } else {
+        const tp = [...peers.values()].find((p) => (people[p.key] || p.meta).teacher);
+        let main = $("main");
+        if (!main) { stage.innerHTML = '<div id="main" style="height:100%"></div>'; main = $("main"); }
+        if (tp) {
+          const el = tileFor(tp); el.classList.add("main-tile");
+          if (el.parentNode !== main) { main.innerHTML = ""; main.appendChild(el); }
+        } else if (!main.querySelector(".wait")) {
+          main.innerHTML = '<div class="wait"><div><div style="font-size:2.5rem">⏳</div>Müəllimin qoşulması gözlənilir…</div></div>';
+        }
+        for (const p of peers.values()) if (!(people[p.key] || p.meta).teacher) audioFor(p);
+        const mates = Object.values(people).filter((m) => !m.teacher && m.key !== myKey).sort((a, b) => (a.name || "").localeCompare(b.name || "", "az"));
+        $("mates").innerHTML = mates.map((m) => `<span class="mate${m.hand ? " hand" : ""}">${m.hand ? "✋ " : ""}${m.mic === false ? "🔇 " : "🎤 "}${esc(m.name || "")}</span>`).join("");
+      }
+      const self = $("self");
+      self.classList.toggle("nocam", !st.screen && (!st.cam || !local?.getVideoTracks().length));
+      self.classList.toggle("screen", st.screen);
+      $("b-mic").classList.toggle("off", !st.mic); $("b-mic").textContent = st.mic ? "🎤" : "🔇";
+      $("b-cam").classList.toggle("off", !st.cam); $("b-cam").textContent = st.cam ? "📷" : "🚫";
+      $("b-mic").disabled = !local?.getAudioTracks().length;
+      $("b-cam").disabled = !local?.getVideoTracks().length;
+      if ($("b-hand")) $("b-hand").classList.toggle("on", st.hand);
+      if ($("b-scr")) $("b-scr").classList.toggle("on", st.screen);
+    }
+
+    function updateMe() { ch?.track(myMeta()); people[myKey] = myMeta(); render(); }
+
+    // ---------- Düymələr ----------
+    function setMic(on) { st.mic = on; local?.getAudioTracks().forEach((t) => (t.enabled = on)); updateMe(); }
+    function setCam(on) { st.cam = on; local?.getVideoTracks().forEach((t) => (t.enabled = on)); updateMe(); }
+
+    async function replaceVideo(track) {
+      for (const p of peers.values()) {
+        const s = p.pc.getSenders().find((x) => x.track?.kind === "video" || (x.track === null && p.video));
+        if (s) { try { await s.replaceTrack(track); } catch {} }
+        else if (p.video && track) p.pc.addTrack(track, local || new MediaStream([track]));
+        tuneBitrate(p);
+      }
+    }
+    async function toggleScreen() {
+      if (st.screen) return stopScreen();
+      try { screenStream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 10 }, audio: false }); }
+      catch { return; }
+      const t = screenStream.getVideoTracks()[0];
+      t.contentHint = "detail";
+      t.onended = stopScreen;
+      st.screen = true;
+      $("self-v").srcObject = screenStream;
+      await replaceVideo(t);
+      updateMe();
+    }
+    async function stopScreen() {
+      if (!screenStream) return;
+      screenStream.getTracks().forEach((t) => t.stop()); screenStream = null; st.screen = false;
+      $("self-v").srcObject = local;
+      await replaceVideo(local?.getVideoTracks()[0] || null);
+      updateMe();
+    }
+    async function flipCam() {
+      if (!local?.getVideoTracks().length) return;
+      facing = facing === "user" ? "environment" : "user";
+      const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: info.teacher ? 640 : 320 }, height: { ideal: info.teacher ? 480 : 240 } } }).catch(() => null);
+      if (!s) return;
+      const nt = s.getVideoTracks()[0]; nt.enabled = st.cam;
+      const old = local.getVideoTracks()[0];
+      local.removeTrack(old); old.stop(); local.addTrack(nt);
+      if (!st.screen) { $("self-v").srcObject = local; await replaceVideo(nt); }
+      $("self-v").style.transform = facing === "user" ? "" : "none";
+    }
+
+    function addChat(m) {
+      chatMsgs.push(m);
+      const l = $("chat-l"); if (!l) return;
+      l.insertAdjacentHTML("beforeend", `<div class="m${m.teacher ? " t" : ""}"><b>${esc(m.name)}</b>${esc(m.text)}</div>`);
+      l.scrollTop = l.scrollHeight;
+      if ($("chat").hidden && m.key !== myKey) $("b-chat").classList.add("unread");
+    }
+
+    async function leave(go = true) {
+      if (left) return; left = true;
+      for (const k of [...peers.keys()]) dropPeer(k);
+      try { await ch?.untrack(); } catch {}
+      try { sb.removeChannel(ch); } catch {}
+      local?.getTracks().forEach((t) => t.stop()); screenStream?.getTracks().forEach((t) => t.stop());
+      try { wakeLock?.release(); } catch {}
+      if (go) location.href = info.teacher ? "video-admin.html" : "portal.html";
+    }
+    async function lessonOver() {
+      await leave(false);
+      fail("Dərs bitdi. İştirak etdiyin üçün təşəkkürlər! 👋");
+    }
+
+    // ---------- Otaq ----------
+    async function enterRoom() {
+      document.querySelector(".pre button#go")?.setAttribute("disabled", "");
+      try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
+      const canShare = info.teacher && !!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad/i.test(navigator.userAgent);
+      app.innerHTML = `<div class="r-wrap">
+        <div class="r-top"><span class="r-live">● CANLI</span><span class="t">${esc(info.title)}</span><span class="r-time" id="tm"></span><span class="r-cnt" id="cnt">👥 1</span></div>
+        ${info.teacher ? "" : '<div class="mates" id="mates"></div>'}
+        <div class="r-stage" id="stage-wrap"><div id="stage" style="height:100%"></div>
+          <div class="self" id="self"><video id="self-v" autoplay playsinline muted></video></div>
+          <div class="chat" id="chat" hidden><div class="chat-h">💬 Dərs chatı <button class="btn btn-ghost btn-sm" id="chat-x">✕</button></div>
+            <div class="chat-l" id="chat-l"></div>
+            <form class="chat-f" id="chat-f"><input id="chat-i" maxlength="300" placeholder="Mesaj yaz…" autocomplete="off"><button class="btn btn-primary btn-sm">➤</button></form></div>
+        </div>
+        <div class="r-bar">
+          <button class="cb" id="b-mic" title="Mikrofon">🎤</button>
+          <button class="cb" id="b-cam" title="Kamera">📷</button>
+          <button class="cb" id="b-flip" title="Kameranı çevir" hidden>🔄</button>
+          ${info.teacher ? "" : '<button class="cb" id="b-hand" title="Əl qaldır">✋</button>'}
+          ${canShare ? '<button class="cb" id="b-scr" title="Ekranı paylaş">🖥</button>' : ""}
+          <button class="cb" id="b-chat" title="Chat">💬<span class="dot"></span></button>
+          ${info.teacher ? '<button class="cb" id="b-muteall" title="Hamının səsini bağla">🔕</button>' : ""}
+          <button class="cb end" id="b-end">${info.teacher ? "⏹ Dərsi bitir" : "🚪 Çıx"}</button>
+        </div></div>`;
+      $("self-v").srcObject = local;
+      $("b-mic").onclick = () => setMic(!st.mic);
+      $("b-cam").onclick = () => setCam(!st.cam);
+      if ($("b-hand")) $("b-hand").onclick = () => { st.hand = !st.hand; updateMe(); if (st.hand) flash("✋ Müəllim əlini qaldırdığını görür"); };
+      if ($("b-scr")) $("b-scr").onclick = toggleScreen;
+      $("b-chat").onclick = () => { const c = $("chat"); c.hidden = !c.hidden; $("b-chat").classList.remove("unread"); if (!c.hidden) $("chat-i").focus(); };
+      $("chat-x").onclick = () => ($("chat").hidden = true);
+      $("chat-f").onsubmit = (e) => {
+        e.preventDefault();
+        const text = $("chat-i").value.trim().slice(0, 300); if (!text) return;
+        const m = { key: myKey, name: info.name, teacher: info.teacher, text };
+        send("chat", m); addChat(m); $("chat-i").value = "";
+      };
+      if ($("b-muteall")) $("b-muteall").onclick = () => { send("ctl", { cmd: "mute", from: myKey }); flash("🔕 Bütün şagirdlərin mikrofonu bağlandı"); };
+      $("b-end").onclick = async () => {
+        const b = $("b-end");
+        if (info.teacher) {
+          if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "Əminsiniz? Yenə basın"; setTimeout(() => { b.dataset.sure = ""; b.textContent = "⏹ Dərsi bitir"; }, 4000); return; }
+          await sb.rpc("admin_video_end", { p_id: info.id });
+          send("ctl", { cmd: "end", from: myKey });
+        }
+        leave();
+      };
+      navigator.mediaDevices?.enumerateDevices?.().then((ds) => { if (ds.filter((d) => d.kind === "videoinput").length > 1 && local?.getVideoTracks().length) { $("b-flip").hidden = false; $("b-flip").onclick = flipCam; } }).catch(() => {});
+
+      startedAt = new Date(info.starts_at).getTime();
+      setInterval(() => { const s = Math.max(0, Math.floor((Date.now() - startedAt) / 1000)); $("tm") && ($("tm").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`); }, 1000);
+
+      ch = sb.channel(`vid-${info.room}`, { config: { broadcast: { self: false }, presence: { key: myKey } } });
+      ch.on("broadcast", { event: "sig" }, ({ payload }) => onSig(payload));
+      ch.on("broadcast", { event: "chat" }, ({ payload }) => addChat(payload));
+      ch.on("broadcast", { event: "ctl" }, async ({ payload }) => {
+        const from = people[payload.from];
+        if (!from?.teacher || info.teacher) return;
+        if (payload.cmd === "mute" && st.mic) { setMic(false); flash("🔇 Müəllim mikrofonunu bağladı"); }
+        if (payload.cmd === "lower" && payload.to === myKey) { st.hand = false; updateMe(); }
+        if (payload.cmd === "end") { const { data } = await sb.rpc("video_alive", { p_id: info.id }); if (data === false) lessonOver(); }
+      });
+      ch.on("presence", { event: "sync" }, () => {
+        const before = people;
+        const stNow = ch.presenceState();
+        people = {};
+        for (const [key, arr] of Object.entries(stNow)) if (arr?.[0]) people[key] = arr[arr.length - 1];
+        people[myKey] = myMeta();
+        if (info.teacher) for (const [k, m] of Object.entries(people)) if (m.hand && !before[k]?.hand && k !== myKey) { flash(`✋ ${m.name} əl qaldırdı`); try { navigator.vibrate?.(120); } catch {} }
+        for (const p of peers.values()) if (people[p.key]) p.meta = people[p.key];
+        syncPeers();
+      });
+      ch.subscribe(async (status) => {
+        if (status === "SUBSCRIBED") { await ch.track(myMeta()); people[myKey] = myMeta(); render(); }
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") flash("Bağlantı problemi — yenidən qoşulur…");
+      });
+      render();
+      // Müəllim dərsi admin səhifəsindən bitirərsə
+      setInterval(async () => { if (left) return; const { data } = await sb.rpc("video_alive", { p_id: info.id }); if (data === false) lessonOver(); }, 60000);
+      addEventListener("pagehide", () => leave(false));
+    }
+
+    async function prejoin() {
+      app.innerHTML = `<div class="pre">
+        <h1>🎥 ${esc(info.title)}</h1>
+        <div class="self-pre"><video id="pv" autoplay playsinline muted></video><div class="wait hidden" id="pv-no" style="position:absolute;inset:0">📷 Kamera tapılmadı</div></div>
+        <div class="row"><button class="cb" id="p-mic">🎤</button><button class="cb" id="p-cam">📷</button></div>
+        <button class="btn btn-primary" id="go" style="width:100%">Dərsə daxil ol</button>
+        <p class="hint">Brauzer kamera və mikrofon icazəsi istəyəndə <b>"İcazə ver" / "Allow"</b> basın.<br>${info.teacher ? "Dərsi Wi-Fi ilə keçirmək daha yaxşıdır." : "Mikrofonun bağlıdır — danışmaq üçün 🎤 düyməsinə bas."}</p>
+      </div>`;
+      local = await getMedia(true);
+      if (!local) {
+        $("pv-no").classList.remove("hidden"); $("pv-no").textContent = "Kamera və mikrofon icazəsi verilmədi — yalnız izləyə və eşidə bilərsən";
+      } else {
+        $("pv").srcObject = local;
+        if (!local.getVideoTracks().length) $("pv-no").classList.remove("hidden");
+      }
+      if (!info.teacher) st.mic = false;   // sinifdə səs-küy olmasın — danışanda açır
+      const upd = () => {
+        $("p-mic").classList.toggle("off", !st.mic); $("p-mic").textContent = st.mic ? "🎤" : "🔇";
+        $("p-cam").classList.toggle("off", !st.cam); $("p-cam").textContent = st.cam ? "📷" : "🚫";
+        local?.getAudioTracks().forEach((t) => (t.enabled = st.mic));
+        local?.getVideoTracks().forEach((t) => (t.enabled = st.cam));
+      };
+      $("p-mic").onclick = () => { st.mic = !st.mic; upd(); };
+      $("p-cam").onclick = () => { st.cam = !st.cam; upd(); };
+      upd();
+      $("go").onclick = enterRoom;
+    }
+
+    async function start() {
+      if (!configured) return fail("Sayt bazaya qoşulmayıb.", false);
+      const me = await getMyProfile().catch(() => null);
+      if (!me) { location.href = "login.html"; return; }
+      if (!lessonId) return fail("Dərs tapılmadı.");
+      if (!window.RTCPeerConnection || !navigator.mediaDevices) return fail("Bu brauzer görüntülü dərsi dəstəkləmir. Chrome və ya Safari-nin yeni versiyası ilə açın.");
+      const { data, error } = await sb.rpc("video_join", { p_id: lessonId });
+      if (error) return fail(/video_join|function/i.test(error.message) && !/dərs/i.test(error.message) ? "Görüntülü dərs hələ quraşdırılmayıb (40-video-room.sql)." : translateError(error));
+      info = data;
+      if (info.url) { location.href = info.url; return; }   // köhnə: müəllimin öz linki
+      if (!info.uid) return fail("Əvvəlcə 40-video-room.sql faylını Supabase-də işə salın.");
+      const { data: ice } = await sb.rpc("video_ice");
+      iceServers = [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"] }, { urls: "stun:stun.cloudflare.com:3478" }, ...(Array.isArray(ice) ? ice : [])];
+      prejoin();
+    }
+    start();
+  </script>
+</body>
+</html>

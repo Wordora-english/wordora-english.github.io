@@ -43,7 +43,6 @@
 
   <script type="module">
     import { sb, configured, getMyProfile, esc, toast, translateError, CLASSES, classLabel, loadStudyGroups, studyGroupLabel } from "./assets/js/app.js";
-    import { meetUrl } from "./assets/js/video.js";
 
     const app = document.getElementById("app");
     const $ = (id) => document.getElementById(id);
@@ -70,20 +69,16 @@
         const st = isLive(v) ? '<span class="pill live">● CANLI</span>' : isPlanned(v) ? '<span class="pill">📅 Planlaşdırılıb</span>' : '<span class="pill">Bitib</span>';
         const j = (v.video_joins || []).sort((a, b) => (names[a.user_id] || "").localeCompare(names[b.user_id] || "", "az"));
         const acts = !v.ended_at && (isLive(v) || isPlanned(v)) ? `<div class="vl-acts">
-            <button class="btn btn-primary btn-sm" data-enter="${v.id}">🎥 Dərsə gir</button>
+            <a class="btn btn-primary btn-sm" href="lesson.html?id=${v.id}">🎥 Dərsə gir</a>
             <button class="btn btn-ghost btn-sm" data-copy="${v.id}">🔗 Linki kopyala</button>
             <button class="btn btn-ghost btn-sm" data-end="${v.id}">⏹ Dərsi bitir</button></div>` : "";
-        return `<div class="vl"><div class="vl-h">${st}<b>${esc(v.title)}</b><span class="muted small">${fmt(v.starts_at)} · ${esc(audience(v))}${v.ext_url ? " · öz link" : ""}</span></div>
+        return `<div class="vl"><div class="vl-h">${st}<b>${esc(v.title)}</b><span class="muted small">${fmt(v.starts_at)} · ${esc(audience(v))}</span></div>
           <div class="who">Qoşulanlar: <b>${j.length}</b> ${j.map((x) => `<span title="${fmt(x.first_at)}">${esc(names[x.user_id] || "?")}</span>`).join("")}</div>${acts}</div>`;
       }).join("");
       const byId = Object.fromEntries(data.map((v) => [v.id, v]));
-      box.querySelectorAll("[data-enter]").forEach((b) => b.addEventListener("click", () => {
-        const v = byId[b.dataset.enter];
-        window.open(meetUrl({ room: v.room, url: v.ext_url, name: me.full_name, teacher: true, title: v.title }), "_blank", "noopener");
-      }));
       box.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
         const v = byId[b.dataset.copy];
-        const link = v.ext_url || `https://meet.jit.si/${v.room}`;
+        const link = new URL(`lesson.html?id=${v.id}`, location.href).href;
         try { await navigator.clipboard.writeText(link); toast("Link kopyalandı ✓", "ok"); } catch { prompt("Linki kopyalayın:", link); }
       }));
       box.querySelectorAll("[data-end]").forEach((b) => b.addEventListener("click", async () => {
@@ -115,8 +110,6 @@
             <div class="muted small" style="margin-top:4px">Heç nə seçməsəniz — bütün şagirdlər görəcək.</div></div>
           <div class="when" id="when"><button type="button" class="btn btn-ghost on" data-w="now">▶ İndi başlat</button><button type="button" class="btn btn-ghost" data-w="later">📅 Vaxtını planlaşdır</button></div>
           <div class="field hidden" id="at-f"><label for="at">Başlama vaxtı</label><input id="at" type="datetime-local"><div class="muted small">Uşaqlara bildiriş dərsdən 15 dəqiqə əvvəl gedəcək.</div></div>
-          <details style="margin:4px 0 12px"><summary>Öz Zoom / Google Meet linkimi istifadə etmək istəyirəm</summary>
-            <div class="field" style="margin-top:8px"><input id="url" placeholder="https://..." inputmode="url"><div class="muted small">Boş qalsa, pulsuz Jitsi Meet otağı avtomatik yaradılır.</div></div></details>
           <button class="btn btn-primary" type="submit" id="go">▶ Dərsi başlat</button>
         </form>
 
@@ -124,10 +117,11 @@
           <b>Necə işləyir?</b>
           <ol>
             <li>"Dərsi başlat" basırsınız — seçilən uşaqlara bildiriş gedir, portallarında qırmızı <b>"Dərsə qoşul"</b> düyməsi çıxır.</li>
-            <li>Siz aşağıdakı siyahıdan <b>"🎥 Dərsə gir"</b> basırsınız. Jitsi ilk dəfə <b>"I am the host / Log in"</b> soruşacaq — Google hesabınızla bir dəfə daxil olun, dərs başlayır.</li>
-            <li>Ekran paylaşmaq üçün aşağıdakı 🖥 düyməsi, uşaqların səsini bağlamaq üçün "Mute everyone".</li>
+            <li>Siz aşağıdakı siyahıdan <b>"🎥 Dərsə gir"</b> basırsınız — dərs Wordora-nın içində açılır. Siz bütün şagirdləri görürsünüz, şagirdlər sizi görür və hamı bir-birini eşidir.</li>
+            <li>Uşaqlar dərsə mikrofonu <b>bağlı</b> girir. Danışmaq istəyən <b>✋ əl qaldırır</b> — sizdə xəbər çıxır. 🔕 düyməsi hamının mikrofonunu bağlayır. Dərsdə 💬 chat da var.</li>
+            <li>Kompüterdən girsəniz, 🖥 düyməsi ilə ekranınızı (slayd, PDF) paylaşa bilərsiniz.</li>
             <li>Qoşulan uşaqlar həmin gün avtomatik <b>davamiyyətdə "iştirak etdi"</b> olur.</li>
-            <li>Pulsuz Jitsi-də bir görüş ən çox <b>95 dəqiqə</b> davam edir. Uzun dərs üçün bitirib yenisini başladın.</li>
+            <li>Görüntü birbaşa sizinlə uşaqlar arasında gedir, ona görə <b>sizin internetiniz</b> vacibdir: Wi-Fi ilə, bir dərsdə təxminən <b>15 şagirdə qədər</b> rahat işləyir.</li>
           </ol>
         </div>
 
@@ -149,15 +143,13 @@
           at = new Date($("at").value + ":00+04:00");
           if (at < Date.now() - 60e3) return toast("Keçmiş vaxt seçmək olmaz", "err");
         }
-        const url = $("url").value.trim();
-        if (url && !/^https:\/\//.test(url)) return toast("Link https:// ilə başlamalıdır", "err");
         $("go").disabled = true;
         const { error } = await sb.rpc("admin_video_start", {
           p_title: $("t").value.trim(),
           p_classes: [...document.querySelectorAll("#cls input:checked")].map((i) => i.value),
           p_groups: [...document.querySelectorAll("#grp input:checked")].map((i) => i.value),
           p_starts_at: at ? at.toISOString() : null,
-          p_url: url || null,
+          p_url: null,
         });
         $("go").disabled = false;
         if (error) return toast(/admin_video_start/.test(error.message) ? "Əvvəlcə 39-video.sql faylını Supabase-də işə salın" : translateError(error), "err");
