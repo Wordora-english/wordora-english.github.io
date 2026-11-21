@@ -47,9 +47,16 @@
     @media (prefers-reduced-motion: reduce) { .tile .hand { animation: none; } }
     .main-tile { aspect-ratio: auto; height: 100%; min-height: 200px; }
     .main-tile video { object-fit: contain; }
+    .main-tile.screen::after { content: "⛶ Böyütmək üçün toxun"; position: absolute; right: 8px; top: 8px; background: rgba(0, 0, 0, .55); color: #fff; font-size: .75rem; padding: .15rem .5rem; border-radius: 8px; pointer-events: none; }
+    .main-tile:fullscreen::after { display: none; }
     .self { position: absolute; right: 14px; bottom: 14px; width: min(30vw, 180px); aspect-ratio: 3 / 4; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 6px 20px rgba(0, 0, 0, .5); z-index: 3; border: 2px solid #2a3157; }
     .self video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
     .self.screen video { transform: none; object-fit: contain; }
+    .slide-bar { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; background: rgba(17, 22, 43, .92); border: 1px solid #262e55; padding: 8px 10px; border-radius: 99px; z-index: 4; }
+    .slide-bar[hidden] { display: none; }
+    .slide-bar b { min-width: 64px; text-align: center; }
+    .slide-bar .cb { width: 42px; height: 42px; font-size: 1rem; }
+    .slide-bar .cb.end { width: auto; }
     .self.nocam::after { content: "📷 bağlı"; position: absolute; inset: 0; display: grid; place-items: center; color: #aab0d0; font-size: .8rem; background: #161c35; }
     .mates { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 0; }
     .mate { font-size: .78rem; background: #1a2040; border-radius: 99px; padding: .2rem .6rem; color: #c4c7de; }
@@ -355,12 +362,18 @@
         const v = p.el.querySelector("video");
         if (p.vstream) { v.srcObject = p.vstream; v.play().catch(() => {}); }
         p.el.querySelector(".hand").addEventListener("click", () => { if (info.teacher) send("ctl", { cmd: "lower", to: p.key, from: myKey }); });
+        if (!info.teacher) p.el.addEventListener("click", () => {   // şagird: müəllimin ekranına toxun — tam ekran, telefon üfüqi
+          const v = p.el.querySelector("video");
+          if (document.fullscreenElement) return document.exitFullscreen?.();
+          const r = p.el.requestFullscreen?.() || v.webkitEnterFullscreen?.();
+          Promise.resolve(r).then(() => screen.orientation?.lock?.("landscape")).catch(() => {});
+        });
       }
       const m = people[p.key] || p.meta || {};
       const hasVideo = p.stream.getVideoTracks().some((t) => t.readyState === "live" && !t.muted);
       p.el.querySelector(".nm").textContent = `${m.mic === false ? "🔇 " : ""}${m.name || "…"}${m.teacher ? " · müəllim" : ""}`;
       p.el.querySelector(".av span").textContent = initial(m.name);
-      p.el.classList.toggle("nocam", !hasVideo || m.cam === false);
+      p.el.classList.toggle("nocam", !hasVideo || (m.cam === false && !m.screen));   // ekran paylaşanda kamera bağlı olsa da göstər
       p.el.classList.toggle("hand", !!m.hand);
       p.el.classList.toggle("screen", !!m.screen);
       p.el.classList.toggle("bad", !!p.bad);
@@ -408,7 +421,8 @@
       $("b-mic").disabled = !local?.getAudioTracks().length;
       $("b-cam").disabled = !local?.getVideoTracks().length;
       if ($("b-hand")) $("b-hand").classList.toggle("on", st.hand);
-      if ($("b-scr")) $("b-scr").classList.toggle("on", st.screen);
+      if ($("b-scr")) $("b-scr").classList.toggle("on", st.screen && !slides);
+      if ($("b-file")) $("b-file").classList.toggle("on", !!slides);
     }
 
     function updateMe() { ch?.track(myMeta()); people[myKey] = myMeta(); render(); }
@@ -417,13 +431,35 @@
     function setMic(on) { st.mic = on; local?.getAudioTracks().forEach((t) => (t.enabled = on)); updateMe(); }
     function setCam(on) { st.cam = on; local?.getVideoTracks().forEach((t) => (t.enabled = on)); updateMe(); }
 
+    // Görüntü kanalını tap (kamera olmasa da, şagirdin kamerası üçün yaranmış kanal ola bilər)
     async function replaceVideo(track) {
       for (const p of peers.values()) {
-        const s = p.pc.getSenders().find((x) => x.track?.kind === "video" || (x.track === null && p.video));
-        if (s) { try { await s.replaceTrack(track); } catch {} }
-        else if (p.video && track) p.pc.addTrack(track, local || new MediaStream([track]));
+        if (!p.video) continue;
+        const tc = p.pc.getTransceivers().find((t) => t.receiver.track?.kind === "video" && t.currentDirection !== "stopped" && !t.stopped);
+        if (tc) {
+          try { await tc.sender.replaceTrack(track); } catch (e) { console.warn(e); }
+          if (track && !/send/.test(tc.direction)) tc.direction = tc.direction === "inactive" ? "sendonly" : "sendrecv";   // yenidən razılaşma özü başlayır
+        } else if (track) p.pc.addTrack(track, local || new MediaStream([track]));
         tuneBitrate(p);
       }
+    }
+    // PDF / şəkil göstər — telefonda da işləyir
+    let slides = null;
+    async function startSlides(files) {
+      if (!files?.length) return;
+      flash("📄 Fayl açılır…");
+      let sl;
+      try { sl = await (await import("./assets/js/slides.js")).openSlides([...files]); }
+      catch (e) { flash("Fayl açılmadı: " + (e.message || e)); return; }
+      if (st.screen) await stopScreen();
+      slides = sl; screenStream = sl.stream; st.screen = true;
+      $("self-v").srcObject = sl.stream;
+      await replaceVideo(sl.track);
+      showSlideBar(); updateMe();
+    }
+    function showSlideBar() {
+      const b = $("slide-bar"); b.hidden = !slides;
+      if (slides) $("sl-n").textContent = `${slides.page} / ${slides.pages}`;
     }
     async function toggleScreen() {
       if (st.screen) return stopScreen();
@@ -440,6 +476,7 @@
     async function stopScreen() {
       if (!screenStream) return;
       screenStream.getTracks().forEach((t) => t.stop()); screenStream = null; st.screen = false;
+      if (slides) { slides.stop(); slides = null; $("slide-bar").hidden = true; }
       $("self-v").srcObject = local;
       await replaceVideo(local?.getVideoTracks()[0] || null);
       updateMe();
@@ -527,12 +564,13 @@
     async function enterRoom() {
       document.querySelector(".pre button#go")?.setAttribute("disabled", "");
       try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
-      const canShare = info.teacher && !!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad/i.test(navigator.userAgent);
+      const canShare = info.teacher && typeof navigator.mediaDevices?.getDisplayMedia === "function";   // Android telefonlarda yoxdur — orada 📄 var
       app.innerHTML = `<div class="r-wrap">
         <div class="r-top"><span class="r-live">● CANLI</span><span class="t">${esc(info.title)}</span><span class="r-time" id="tm"></span>${info.teacher ? '<button class="r-alert" id="b-alert" hidden title="Xəbərdarlıqlar">⚠️ 0</button>' : ""}<span class="r-cnt" id="cnt">👥 1</span></div>
         ${info.teacher ? "" : '<div class="mates" id="mates"></div>'}
         <div class="r-stage" id="stage-wrap"><div id="stage" style="height:100%"></div>
           <div class="self" id="self"><video id="self-v" autoplay playsinline muted></video></div>
+          <div class="slide-bar" id="slide-bar" hidden><button class="cb" id="sl-p" aria-label="Əvvəlki">◀</button><b id="sl-n">1 / 1</b><button class="cb" id="sl-x2" aria-label="Növbəti">▶</button><button class="cb end" id="sl-x">✕ Bağla</button></div>
           <div class="rchat" id="chat" hidden><div class="rchat-h">💬 Dərs chatı <button class="cb" id="chat-x" style="width:34px;height:34px;font-size:1rem" aria-label="Bağla">✕</button></div>
             <div class="rchat-l" id="chat-l"></div>
             <form class="rchat-f" id="chat-f"><input id="chat-i" maxlength="300" placeholder="Mesaj yaz…" autocomplete="off"><button class="btn btn-primary btn-sm">➤</button></form></div>
@@ -543,6 +581,7 @@
           <button class="cb" id="b-flip" title="Kameranı çevir" hidden>🔄</button>
           ${info.teacher ? "" : '<button class="cb" id="b-hand" title="Əl qaldır">✋</button>'}
           ${canShare ? '<button class="cb" id="b-scr" title="Ekranı paylaş">🖥</button>' : ""}
+          ${info.teacher ? '<button class="cb" id="b-file" title="PDF və ya şəkil göstər">📄</button><input type="file" id="f-file" accept="application/pdf,image/*" multiple hidden>' : ""}
           <button class="cb" id="b-chat" title="Chat">💬<span class="dot"></span></button>
           ${info.teacher ? '<button class="cb" id="b-muteall" title="Hamının səsini bağla">🔕</button>' : ""}
           <button class="cb end" id="b-end">${info.teacher ? "⏹ Dərsi bitir" : "🚪 Çıx"}</button>
@@ -552,6 +591,13 @@
       $("b-cam").onclick = () => setCam(!st.cam);
       if ($("b-hand")) $("b-hand").onclick = () => { st.hand = !st.hand; updateMe(); if (st.hand) flash("✋ Müəllim əlini qaldırdığını görür"); };
       if ($("b-scr")) $("b-scr").onclick = toggleScreen;
+      if ($("b-file")) {
+        $("b-file").onclick = () => (slides ? stopScreen() : $("f-file").click());
+        $("f-file").onchange = (e) => { const fs = [...e.target.files]; e.target.value = ""; startSlides(fs); };
+        $("sl-p").onclick = async () => { await slides?.prev(); showSlideBar(); };
+        $("sl-x2").onclick = async () => { await slides?.next(); showSlideBar(); };
+        $("sl-x").onclick = stopScreen;
+      }
       $("b-chat").onclick = () => { const c = $("chat"); c.hidden = !c.hidden; $("b-chat").classList.remove("unread"); if (!c.hidden) $("chat-i").focus(); };
       $("chat-x").onclick = () => ($("chat").hidden = true);
       $("chat-f").onsubmit = (e) => {
