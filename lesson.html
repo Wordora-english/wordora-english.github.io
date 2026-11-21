@@ -36,6 +36,13 @@
     .tile.hand { outline: 3px solid #f5b400; }
     .tile .warn { position: absolute; top: 8px; left: 8px; font-size: .72rem; background: rgba(198, 47, 69, .85); color: #fff; padding: .1rem .45rem; border-radius: 6px; display: none; }
     .tile.bad .warn { display: block; }
+    .tile .away-b { position: absolute; inset: auto 0 0 0; top: 0; display: none; place-items: center; background: rgba(198, 47, 69, .55); color: #fff; font-weight: 700; font-size: 1rem; text-align: center; }
+    .tile.away .away-b { display: grid; }
+    .tile.away { outline: 3px solid #c62f45; }
+    .r-alert { background: #c62f45; color: #fff; border: 0; border-radius: 99px; font-weight: 700; font-size: .8rem; padding: .25rem .65rem; cursor: pointer; }
+    .r-alert[hidden] { display: none; }
+    .rchat-l .m.sys { background: rgba(198, 47, 69, .15); border-left: 3px solid #c62f45; padding: 4px 8px; border-radius: 6px; font-size: .85rem; }
+    .rchat-l .m.sys.ok { background: rgba(18, 146, 92, .15); border-color: #12925c; }
     @keyframes wave { from { transform: rotate(-12deg); } to { transform: rotate(12deg); } }
     @media (prefers-reduced-motion: reduce) { .tile .hand { animation: none; } }
     .main-tile { aspect-ratio: auto; height: 100%; min-height: 200px; }
@@ -57,14 +64,14 @@
     .cb .dot { position: absolute; top: 6px; right: 6px; width: 10px; height: 10px; border-radius: 50%; background: #f5b400; display: none; }
     .cb.unread .dot { display: block; }
     .cb[hidden] { display: none; }
-    .chat { position: absolute; right: 10px; top: 10px; bottom: 10px; width: min(340px, calc(100% - 20px)); background: #141a33; border: 1px solid #262e55; border-radius: 16px; display: flex; flex-direction: column; z-index: 5; }
-    .chat[hidden] { display: none; }
-    .chat-h { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid #262e55; font-weight: 600; }
-    .chat-l { flex: 1; overflow: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
-    .chat-l .m b { color: #b9b0ff; font-size: .8rem; display: block; }
-    .chat-l .m.t b { color: #f5b400; }
-    .chat-f { display: flex; gap: 6px; padding: 10px; border-top: 1px solid #262e55; }
-    .chat-f input { flex: 1; min-width: 0; background: #0f1430; color: #fff; border: 1px solid #2a3157; }
+    .rchat { position: absolute; right: 10px; top: 10px; bottom: 10px; width: min(340px, calc(100% - 20px)); background: #141a33; border: 1px solid #262e55; border-radius: 16px; display: flex; flex-direction: column; z-index: 5; }
+    .rchat[hidden] { display: none; }
+    .rchat-h { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid #262e55; font-weight: 600; }
+    .rchat-l { flex: 1; overflow: auto; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+    .rchat-l .m b { color: #b9b0ff; font-size: .8rem; display: block; }
+    .rchat-l .m.t b { color: #f5b400; }
+    .rchat-f { display: flex; gap: 6px; padding: 10px; border-top: 1px solid #262e55; }
+    .rchat-f input { flex: 1; min-width: 0; background: #0f1430; color: #fff; border: 1px solid #2a3157; }
     .wait { height: 100%; display: grid; place-items: center; text-align: center; color: #aab0d0; padding: 20px; }
     .pre { max-width: 460px; margin: 0 auto; padding: 24px 16px; text-align: center; }
     .pre .self-pre { position: relative; width: 100%; aspect-ratio: 4 / 3; border-radius: 16px; overflow: hidden; background: #161c35; margin: 14px 0; }
@@ -100,9 +107,12 @@
     let people = {};           // key -> meta (presence)
     const chatMsgs = [];
     let left = false;
+    let relayOwners = [null, null];   // müəllim: hansı şagirdlərin səsi hamıya ötürülür
+    let awayAt = null, blurT = null, alerts = 0;
+    const awayAlerted = new Set();   // müəllim: hansı şagirdlər üçün artıq xəbərdarlıq çıxıb
     window.__wd = { peers, get people() { return people; }, get local() { return local; } };   // yoxlama üçün
 
-    const myMeta = () => ({ key: myKey, uid: info.uid, name: info.name, teacher: info.teacher, mic: st.mic && !!local?.getAudioTracks().length, cam: st.cam && !!local?.getVideoTracks().length, hand: st.hand, screen: st.screen });
+    const myMeta = () => ({ key: myKey, uid: info.uid, name: info.name, teacher: info.teacher, mic: st.mic && !!local?.getAudioTracks().length, cam: st.cam && !!local?.getVideoTracks().length, hand: st.hand, screen: st.screen, away: !!awayAt });
     const initial = (n) => (n || "?").trim().charAt(0).toUpperCase();
     const studentCount = () => Object.values(people).filter((p) => !p.teacher && p.key !== myKey).length;
 
@@ -153,6 +163,8 @@
       const vt = screenStream?.getVideoTracks()[0] || local?.getVideoTracks()[0];
       if (at) pc.addTrack(at, local);
       if (withVideo && vt) pc.addTrack(vt, local);
+      // Müəllim: hər şagirdə 2 əlavə səs kanalı — danışan şagirdlərin səsi bunlarla digərlərinə ötürülür
+      if (info.teacher) p.relay = [0, 1].map(() => pc.addTransceiver("audio", { direction: "sendonly" }).sender);
       if (initiator) {   // göndərəcək heç nə yoxdursa da əlaqə qurulsun
         if (!at) pc.addTransceiver("audio", { direction: "recvonly" });
         if (withVideo && !vt) pc.addTransceiver("video", { direction: "recvonly" });
@@ -169,8 +181,17 @@
       };
       pc.ontrack = ({ track }) => {
         p.stream.addTrack(track);
-        // bəzi brauzerlər sonradan əlavə olunan treki görmür — mənbəni yeniləyirik
-        for (const el of [p.el?.querySelector("video"), p.audio]) if (el) { el.srcObject = null; el.srcObject = p.stream; el.play().catch(blocked); }
+        if (track.kind === "audio") {   // hər səs üçün ayrıca element — hamısı eşidilsin
+          const a = document.createElement("audio");
+          a.autoplay = true; a.srcObject = new MediaStream([track]);
+          document.body.appendChild(a); (p.auds ||= []).push(a);
+          a.play().catch(blocked);
+          updateRelay();
+        } else {
+          p.vstream = new MediaStream([track]);
+          const v = p.el?.querySelector("video");
+          if (v) { v.srcObject = p.vstream; v.play().catch(() => {}); }
+        }
         track.onunmute = () => render();
         render();
       };
@@ -192,7 +213,13 @@
         if (s.track?.kind !== "video") continue;
         const prm = s.getParameters();
         if (!prm.encodings?.length) prm.encodings = [{}];
-        prm.encodings[0].maxBitrate = info.teacher ? (st.screen ? 900e3 : studentCount() > 8 ? 250e3 : 450e3) : 150e3;
+        const n = studentCount();
+        // sinif böyüdükcə keyfiyyət avtomatik azalır ki, hamı qoşula bilsin
+        const [br, sc] = info.teacher
+          ? (st.screen ? [n <= 8 ? 900e3 : n <= 16 ? 500e3 : 300e3, 1] : n <= 8 ? [450e3, 1] : n <= 16 ? [300e3, 1] : n <= 25 ? [200e3, 1.5] : [130e3, 2])
+          : (n <= 12 ? [150e3, 1] : n <= 25 ? [100e3, 1.34] : [60e3, 2]);
+        prm.encodings[0].maxBitrate = br;
+        prm.encodings[0].scaleResolutionDownBy = sc;
         try { await s.setParameters(prm); } catch {}
       }
     }
@@ -223,7 +250,7 @@
     function dropPeer(key) {
       const p = peers.get(key); if (!p) return;
       try { p.pc.close(); } catch {}
-      p.el?.remove(); p.audio?.remove();
+      p.el?.remove(); (p.auds || []).forEach((a) => a.remove());
       peers.delete(key);
     }
 
@@ -232,13 +259,31 @@
       for (const key of present) {
         if (key === myKey) continue;
         const m = people[key];
-        // tələbə ilə tələbə arasında yalnız səs; müəllimlə hər kəs arasında səs + görüntü
+        // Əlaqə yalnız müəllim ↔ şagird. Şagirdlər bir-birini müəllimin ötürdüyü səs ilə eşidir —
+        // belə olanda sinifdə çox şagird ola bilər.
+        if (!m || !!m.teacher === !!info.teacher) continue;
         if (!peers.has(key) && myKey < key) {   // hər cüt üçün bir tərəf başlayır
           createPeer(m, true);
         }
       }
       for (const key of [...peers.keys()]) if (!present.has(key)) dropPeer(key);
+      const n = studentCount();
+      if (n !== syncPeers.n) { syncPeers.n = n; for (const p of peers.values()) tuneBitrate(p); }
+      updateRelay();
       render();
+    }
+
+    // Müəllim: mikrofonu açıq olan (ən çox 2) şagirdin səsini digər şagirdlərə ötürür
+    function updateRelay() {
+      if (!info.teacher) return;
+      const speaking = Object.values(people).filter((m) => !m.teacher && m.mic && !m.away && peers.get(m.key)?.stream.getAudioTracks().length).map((m) => m.key);
+      relayOwners = relayOwners.map((k) => (speaking.includes(k) ? k : null));
+      for (const k of speaking) { if (relayOwners.includes(k)) continue; const i = relayOwners.indexOf(null); if (i < 0) break; relayOwners[i] = k; }
+      for (const p of peers.values()) (p.relay || []).forEach((snd, i) => {
+        const o = relayOwners[i];
+        const tr = o && o !== p.key ? peers.get(o)?.stream.getAudioTracks()[0] || null : null;
+        if (snd.track !== tr) snd.replaceTrack(tr).catch(() => {});
+      });
     }
 
     // ---------- Görünüş ----------
@@ -246,10 +291,9 @@
       if (!p.el) {
         p.el = document.createElement("div");
         p.el.className = "tile";
-        p.el.innerHTML = `<video autoplay playsinline></video><div class="av"><span></span></div><div class="nm"></div><div class="hand" title="Əli endir">✋</div><div class="warn">Bağlantı zəifdir…</div>`;
+        p.el.innerHTML = `<video autoplay playsinline muted></video><div class="av"><span></span></div><div class="nm"></div><div class="hand" title="Əli endir">✋</div><div class="warn">Bağlantı zəifdir…</div><div class="away-b">⚠️ Dərsdə deyil</div>`;
         const v = p.el.querySelector("video");
-        v.srcObject = p.stream;
-        v.play().catch(blocked);
+        if (p.vstream) { v.srcObject = p.vstream; v.play().catch(() => {}); }
         p.el.querySelector(".hand").addEventListener("click", () => { if (info.teacher) send("ctl", { cmd: "lower", to: p.key, from: myKey }); });
       }
       const m = people[p.key] || p.meta || {};
@@ -260,22 +304,15 @@
       p.el.classList.toggle("hand", !!m.hand);
       p.el.classList.toggle("screen", !!m.screen);
       p.el.classList.toggle("bad", !!p.bad);
+      p.el.classList.toggle("away", !!m.away);
       return p.el;
-    }
-    function audioFor(p) {
-      if (!p.audio) {
-        p.audio = document.createElement("audio");
-        p.audio.autoplay = true; p.audio.srcObject = p.stream;
-        document.body.appendChild(p.audio);
-        p.audio.play().catch(blocked);
-      }
     }
     const blocked = (e) => { if (e?.name === "NotAllowedError") needUnmute(); };   // yalnız brauzer səsi bloklayanda
     function needUnmute() {
       if ($("unmute")) return;
       const b = document.createElement("button");
       b.id = "unmute"; b.className = "btn btn-primary unmute"; b.textContent = "🔊 Səsi aç";
-      b.onclick = () => { document.querySelectorAll("video:not(#self-v), audio").forEach((x) => x.play().catch(() => {})); b.remove(); };
+      b.onclick = () => { document.querySelectorAll("audio[autoplay], .tile video").forEach((x) => x.play().catch(() => {})); b.remove(); };
       document.body.appendChild(b);
     }
 
@@ -300,9 +337,8 @@
         } else if (!main.querySelector(".wait")) {
           main.innerHTML = '<div class="wait"><div><div style="font-size:2.5rem">⏳</div>Müəllimin qoşulması gözlənilir…</div></div>';
         }
-        for (const p of peers.values()) if (!(people[p.key] || p.meta).teacher) audioFor(p);
         const mates = Object.values(people).filter((m) => !m.teacher && m.key !== myKey).sort((a, b) => (a.name || "").localeCompare(b.name || "", "az"));
-        $("mates").innerHTML = mates.map((m) => `<span class="mate${m.hand ? " hand" : ""}">${m.hand ? "✋ " : ""}${m.mic === false ? "🔇 " : "🎤 "}${esc(m.name || "")}</span>`).join("");
+        $("mates").innerHTML = mates.map((m) => `<span class="mate${m.hand ? " hand" : ""}">${m.hand ? "✋ " : ""}${m.mic ? "🎤 " : "🔇 "}${esc(m.name || "")}</span>`).join("");
       }
       const self = $("self");
       self.classList.toggle("nocam", !st.screen && (!st.cam || !local?.getVideoTracks().length));
@@ -360,6 +396,49 @@
       $("self-v").style.transform = facing === "user" ? "" : "none";
     }
 
+    // Müəllim üçün qeyd (chat pəncərəsində qırmızı sətir)
+    function sysLog(text, ok = false) {
+      const l = $("chat-l"); if (!l) return;
+      const t = new Date(Date.now() + 4 * 3600e3).toISOString().slice(11, 16);
+      l.insertAdjacentHTML("beforeend", `<div class="m sys${ok ? " ok" : ""}"><b>${t}</b>${esc(text)}</div>`);
+      l.scrollTop = l.scrollHeight;
+      if (!ok) { alerts++; const b = $("b-alert"); if (b) { b.hidden = false; b.textContent = `⚠️ ${alerts}`; } }
+    }
+    function beep() {
+      try {
+        const ac = beep.ac ||= new (window.AudioContext || window.webkitAudioContext)();
+        const o = ac.createOscillator(), g = ac.createGain();
+        o.frequency.value = 880; g.gain.setValueAtTime(.15, ac.currentTime); g.gain.exponentialRampToValueAtTime(.001, ac.currentTime + .35);
+        o.connect(g); g.connect(ac.destination); o.start(); o.stop(ac.currentTime + .35);
+      } catch {}
+      try { navigator.vibrate?.([120, 60, 120]); } catch {}
+    }
+    function awayAlert(key, m) {
+      if (awayAlerted.has(key)) return;
+      awayAlerted.add(key);
+      flash(`⚠️ ${m.name} dərsdən çıxdı — başqa proqrama/sayta keçdi`); beep();
+      sysLog(`${m.name} dərs ekranından çıxdı (başqa proqram və ya sayt)`);
+    }
+    const fmtSec = (sec) => sec >= 60 ? `${Math.floor(sec / 60)} dəq ${sec % 60} san` : `${sec} san`;
+
+    // Şagird: dərs ekranından çıxanda (başqa proqram, Instagram, başqa sayt) müəllimə xəbər
+    function goAway() {
+      if (awayAt || left || info.teacher) return;
+      awayAt = Date.now();
+      send("away", { from: myKey, away: true });
+      updateMe();
+    }
+    function comeBack() {
+      clearTimeout(blurT);
+      if (!awayAt || left) return;
+      const sec = Math.max(1, Math.round((Date.now() - awayAt) / 1000));
+      awayAt = null;
+      send("away", { from: myKey, away: false, sec });
+      updateMe();
+      sb.rpc("video_away", { p_id: info.id, p_sec: sec }).then(() => {}, () => {});
+      flash(`⚠️ Dərsdən çıxdığın müəllimə bildirildi (${fmtSec(sec)})`);
+    }
+
     function addChat(m) {
       chatMsgs.push(m);
       const l = $("chat-l"); if (!l) return;
@@ -368,8 +447,10 @@
       if ($("chat").hidden && m.key !== myKey) $("b-chat").classList.add("unread");
     }
 
-    async function leave(go = true) {
-      if (left) return; left = true;
+    async function leave(go = true, bye = true) {
+      if (left) return;
+      if (bye && ch && !info.teacher) { try { await ch.send({ type: "broadcast", event: "bye", payload: { from: myKey } }); } catch {} }
+      left = true;
       for (const k of [...peers.keys()]) dropPeer(k);
       try { await ch?.untrack(); } catch {}
       try { sb.removeChannel(ch); } catch {}
@@ -388,13 +469,13 @@
       try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
       const canShare = info.teacher && !!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad/i.test(navigator.userAgent);
       app.innerHTML = `<div class="r-wrap">
-        <div class="r-top"><span class="r-live">● CANLI</span><span class="t">${esc(info.title)}</span><span class="r-time" id="tm"></span><span class="r-cnt" id="cnt">👥 1</span></div>
+        <div class="r-top"><span class="r-live">● CANLI</span><span class="t">${esc(info.title)}</span><span class="r-time" id="tm"></span>${info.teacher ? '<button class="r-alert" id="b-alert" hidden title="Xəbərdarlıqlar">⚠️ 0</button>' : ""}<span class="r-cnt" id="cnt">👥 1</span></div>
         ${info.teacher ? "" : '<div class="mates" id="mates"></div>'}
         <div class="r-stage" id="stage-wrap"><div id="stage" style="height:100%"></div>
           <div class="self" id="self"><video id="self-v" autoplay playsinline muted></video></div>
-          <div class="chat" id="chat" hidden><div class="chat-h">💬 Dərs chatı <button class="btn btn-ghost btn-sm" id="chat-x">✕</button></div>
-            <div class="chat-l" id="chat-l"></div>
-            <form class="chat-f" id="chat-f"><input id="chat-i" maxlength="300" placeholder="Mesaj yaz…" autocomplete="off"><button class="btn btn-primary btn-sm">➤</button></form></div>
+          <div class="rchat" id="chat" hidden><div class="rchat-h">💬 Dərs chatı <button class="cb" id="chat-x" style="width:34px;height:34px;font-size:1rem" aria-label="Bağla">✕</button></div>
+            <div class="rchat-l" id="chat-l"></div>
+            <form class="rchat-f" id="chat-f"><input id="chat-i" maxlength="300" placeholder="Mesaj yaz…" autocomplete="off"><button class="btn btn-primary btn-sm">➤</button></form></div>
         </div>
         <div class="r-bar">
           <button class="cb" id="b-mic" title="Mikrofon">🎤</button>
@@ -444,6 +525,18 @@
         if (payload.cmd === "lower" && payload.to === myKey) { st.hand = false; updateMe(); }
         if (payload.cmd === "end") { const { data } = await sb.rpc("video_alive", { p_id: info.id }); if (data === false) lessonOver(); }
       });
+      ch.on("broadcast", { event: "away" }, ({ payload }) => {
+        if (!info.teacher) return;
+        const m = people[payload.from]; if (!m) return;
+        m.away = payload.away;
+        if (payload.away) awayAlert(payload.from, m);
+        else if (awayAlerted.delete(payload.from)) sysLog(`${m.name} qayıtdı — ${fmtSec(payload.sec || 0)} kənarda idi`, true);
+        render();
+      });
+      ch.on("broadcast", { event: "bye" }, ({ payload }) => {
+        const m = people[payload.from];
+        if (info.teacher && m) { m.bye = true; sysLog(`${m.name} "Çıx" basıb dərsi tərk etdi`); }
+      });
       ch.on("presence", { event: "sync" }, () => {
         const before = people;
         const stNow = ch.presenceState();
@@ -451,6 +544,17 @@
         for (const [key, arr] of Object.entries(stNow)) if (arr?.[0]) people[key] = arr[arr.length - 1];
         people[myKey] = myMeta();
         if (info.teacher) for (const [k, m] of Object.entries(people)) if (m.hand && !before[k]?.hand && k !== myKey) { flash(`✋ ${m.name} əl qaldırdı`); try { navigator.vibrate?.(120); } catch {} }
+        if (info.teacher) {
+          for (const [k, m] of Object.entries(before)) if (!people[k] && !m.teacher && k !== myKey && !m.bye && !left) {
+            flash(`⚠️ ${m.name} dərsdən çıxdı`); beep(); sysLog(`${m.name} dərsdən çıxdı (səhifəni bağladı və ya interneti kəsildi)`);
+          }
+          for (const [k, m] of Object.entries(people)) {
+            if (k === myKey || m.teacher) continue;
+            if (m.away) awayAlert(k, m);   // bildiriş itibsə, vəziyyətdən bilirik
+            else if (awayAlerted.delete(k)) sysLog(`${m.name} dərsə qayıtdı`, true);
+            if (!before[k] && Object.keys(before).length) sysLog(`${m.name} dərsə qoşuldu`, true);
+          }
+        }
         for (const p of peers.values()) if (people[p.key]) p.meta = people[p.key];
         syncPeers();
       });
@@ -459,9 +563,16 @@
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") flash("Bağlantı problemi — yenidən qoşulur…");
       });
       render();
+      if (!info.teacher) {
+        document.addEventListener("visibilitychange", () => (document.hidden ? goAway() : comeBack()));
+        addEventListener("blur", () => { clearTimeout(blurT); blurT = setTimeout(goAway, 4000); });   // kompüterdə başqa pəncərəyə keçəndə
+        addEventListener("focus", comeBack);
+      } else {
+        $("b-alert").onclick = () => { $("chat").hidden = false; $("b-chat").classList.remove("unread"); };
+      }
       // Müəllim dərsi admin səhifəsindən bitirərsə
       setInterval(async () => { if (left) return; const { data } = await sb.rpc("video_alive", { p_id: info.id }); if (data === false) lessonOver(); }, 60000);
-      addEventListener("pagehide", () => leave(false));
+      addEventListener("pagehide", () => leave(false, false));   // səhifəni bağlayanda müəllimə "dərsdən çıxdı" xəbərdarlığı gedir
     }
 
     async function prejoin() {
@@ -470,7 +581,7 @@
         <div class="self-pre"><video id="pv" autoplay playsinline muted></video><div class="wait hidden" id="pv-no" style="position:absolute;inset:0">📷 Kamera tapılmadı</div></div>
         <div class="row"><button class="cb" id="p-mic">🎤</button><button class="cb" id="p-cam">📷</button></div>
         <button class="btn btn-primary" id="go" style="width:100%">Dərsə daxil ol</button>
-        <p class="hint">Brauzer kamera və mikrofon icazəsi istəyəndə <b>"İcazə ver" / "Allow"</b> basın.<br>${info.teacher ? "Dərsi Wi-Fi ilə keçirmək daha yaxşıdır." : "Mikrofonun bağlıdır — danışmaq üçün 🎤 düyməsinə bas."}</p>
+        <p class="hint">Brauzer kamera və mikrofon icazəsi istəyəndə <b>"İcazə ver" / "Allow"</b> basın.<br>${info.teacher ? "Dərsi Wi-Fi ilə keçirmək daha yaxşıdır." : "Mikrofonun bağlıdır — danışmaq üçün 🎤 düyməsinə bas.<br><b>⚠️ Dərs vaxtı başqa proqrama (Instagram, oyun və s.) və ya başqa sayta keçsən, müəllimə dərhal xəbər gedir.</b>"}</p>
       </div>`;
       local = await getMedia(true);
       if (!local) {

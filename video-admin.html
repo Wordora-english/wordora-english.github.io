@@ -27,6 +27,7 @@
     .pill.live { background: var(--bad); color: #fff; }
     .who { font-size: .85rem; color: var(--muted); margin-top: 6px; }
     .who span { display: inline-block; background: var(--ok-bg); color: var(--ok); border-radius: 99px; padding: .1rem .55rem; margin: 2px 3px 0 0; }
+    .who span.aw { background: var(--bad-bg); color: var(--bad); }
     .tip { background: var(--soft); border-radius: 14px; padding: 12px 14px; font-size: .9rem; }
     .tip li { margin: .3rem 0 .3rem 1.1rem; }
     details summary { cursor: pointer; font-weight: 600; }
@@ -59,7 +60,9 @@
 
     async function loadList() {
       const box = $("list");
-      const { data, error } = await sb.from("video_lessons").select("*, video_joins(user_id, first_at, n)").order("starts_at", { ascending: false }).limit(40);
+      const q = (cols) => sb.from("video_lessons").select(`*, video_joins(${cols})`).order("starts_at", { ascending: false }).limit(40);
+      let { data, error } = await q("user_id, first_at, n, away_n, away_sec");
+      if (error && /away/.test(error.message)) ({ data, error } = await q("user_id, first_at, n"));   // 41-ci SQL hələ işə salınmayıb
       if (error) {
         box.innerHTML = `<div class="empty">${/video_lessons/.test(error.message) ? "Əvvəlcə <b>39-video.sql</b> faylını Supabase-də işə salın (SETUP.md-ə baxın)." : esc(translateError(error))}</div>`;
         return;
@@ -73,7 +76,7 @@
             <button class="btn btn-ghost btn-sm" data-copy="${v.id}">🔗 Linki kopyala</button>
             <button class="btn btn-ghost btn-sm" data-end="${v.id}">⏹ Dərsi bitir</button></div>` : "";
         return `<div class="vl"><div class="vl-h">${st}<b>${esc(v.title)}</b><span class="muted small">${fmt(v.starts_at)} · ${esc(audience(v))}</span></div>
-          <div class="who">Qoşulanlar: <b>${j.length}</b> ${j.map((x) => `<span title="${fmt(x.first_at)}">${esc(names[x.user_id] || "?")}</span>`).join("")}</div>${acts}</div>`;
+          <div class="who">Qoşulanlar: <b>${j.length}</b> ${j.map((x) => `<span title="${fmt(x.first_at)}"${x.away_n ? ' class="aw"' : ""}>${esc(names[x.user_id] || "?")}${x.away_n ? ` · ⚠️ ${x.away_n} dəfə çıxıb (${x.away_sec >= 60 ? Math.round(x.away_sec / 60) + " dəq" : x.away_sec + " san"})` : ""}</span>`).join("")}</div>${acts}</div>`;
       }).join("");
       const byId = Object.fromEntries(data.map((v) => [v.id, v]));
       box.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", async () => {
@@ -118,10 +121,11 @@
           <ol>
             <li>"Dərsi başlat" basırsınız — seçilən uşaqlara bildiriş gedir, portallarında qırmızı <b>"Dərsə qoşul"</b> düyməsi çıxır.</li>
             <li>Siz aşağıdakı siyahıdan <b>"🎥 Dərsə gir"</b> basırsınız — dərs Wordora-nın içində açılır. Siz bütün şagirdləri görürsünüz, şagirdlər sizi görür və hamı bir-birini eşidir.</li>
+            <li>Uşaq dərs vaxtı <b>başqa proqrama (Instagram və s.) və ya başqa sayta keçsə</b>, sizdə dərhal səsli xəbərdarlıq çıxır və onun pəncərəsi qırmızı olur. Neçə dəfə və nə qədər çıxdığı aşağıdakı siyahıda yazılır.</li>
             <li>Uşaqlar dərsə mikrofonu <b>bağlı</b> girir. Danışmaq istəyən <b>✋ əl qaldırır</b> — sizdə xəbər çıxır. 🔕 düyməsi hamının mikrofonunu bağlayır. Dərsdə 💬 chat da var.</li>
             <li>Kompüterdən girsəniz, 🖥 düyməsi ilə ekranınızı (slayd, PDF) paylaşa bilərsiniz.</li>
             <li>Qoşulan uşaqlar həmin gün avtomatik <b>davamiyyətdə "iştirak etdi"</b> olur.</li>
-            <li>Görüntü birbaşa sizinlə uşaqlar arasında gedir, ona görə <b>sizin internetiniz</b> vacibdir: Wi-Fi ilə, bir dərsdə təxminən <b>15 şagirdə qədər</b> rahat işləyir.</li>
+            <li>Görüntü birbaşa sizinlə uşaqlar arasında gedir, ona görə <b>sizin internetiniz</b> vacibdir: Sinif böyüdükcə görüntü keyfiyyəti avtomatik azalır ki, hamı sığsın: kompüter + Wi-Fi ilə <b>30–40 şagirdə qədər</b>, telefonla <b>15–20 şagirdə qədər</b>.</li>
           </ol>
         </div>
 
