@@ -109,7 +109,7 @@
     let left = false;
     let relayOwners = [null, null];   // müəllim: hansı şagirdlərin səsi hamıya ötürülür
     let awayAt = null, blurT = null, alerts = 0;
-    const awayAlerted = new Set();   // müəllim: hansı şagirdlər üçün artıq xəbərdarlıq çıxıb
+    const awayAlerted = new Set(), byes = new Set(), seen = new Set();   // müəllim: hansı şagirdlər üçün artıq xəbərdarlıq çıxıb
     window.__wd = { peers, get people() { return people; }, get local() { return local; } };   // yoxlama üçün
 
     const myMeta = () => ({ key: myKey, uid: info.uid, name: info.name, teacher: info.teacher, mic: st.mic && !!local?.getAudioTracks().length, cam: st.cam && !!local?.getVideoTracks().length, hand: st.hand, screen: st.screen, away: !!awayAt });
@@ -155,7 +155,8 @@
 
     function createPeer(meta, initiator = false) {
       const pc = new RTCPeerConnection({ iceServers });
-      const p = { key: meta.key, meta, pc, polite: myKey > meta.key, makingOffer: false, ignoreOffer: false, stream: new MediaStream(), cands: [], t: null, restarted: false };
+      const p = { key: meta.key, meta, pc, polite: myKey > meta.key, makingOffer: false, ignoreOffer: false, stream: new MediaStream(), cands: [], t: null, restarted: false,
+                  sid: Math.random().toString(36).slice(2, 10), rsid: null, born: Date.now(), okAt: 0 };
       peers.set(meta.key, p);
       const withVideo = info.teacher || meta.teacher;
       p.video = withVideo;
@@ -170,14 +171,14 @@
         if (withVideo && !vt) pc.addTransceiver("video", { direction: "recvonly" });
       }
       pc.onnegotiationneeded = async () => {
-        try { p.makingOffer = true; await pc.setLocalDescription(); send("sig", { to: p.key, from: myKey, meta: myMeta(), description: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } }); }
+        try { p.makingOffer = true; await pc.setLocalDescription(); send("sig", { to: p.key, from: myKey, sid: p.sid, rsid: p.rsid, meta: myMeta(), description: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } }); }
         catch (e) { console.warn(e); } finally { p.makingOffer = false; }
       };
       pc.onicecandidate = ({ candidate }) => {
         if (!candidate) return;
         p.cands.push(candidate.toJSON());
         clearTimeout(p.t);
-        p.t = setTimeout(() => { const c = p.cands.splice(0); if (c.length) send("sig", { to: p.key, from: myKey, candidates: c }); }, 300);
+        p.t = setTimeout(() => { const c = p.cands.splice(0); if (c.length) send("sig", { to: p.key, from: myKey, sid: p.sid, rsid: p.rsid, candidates: c }); }, 300);
       };
       pc.ontrack = ({ track }) => {
         p.stream.addTrack(track);
@@ -224,11 +225,21 @@
       }
     }
 
-    async function onSig({ to, from, meta, description, candidates }) {
+    async function onSig({ to, from, sid, rsid, meta, description, candidates }) {
       if (to !== myKey || left) return;
       if (meta) people[from] = { ...(people[from] || {}), ...meta };
       let p = peers.get(from);
-      if (!p) p = createPeer(meta || people[from] || { key: from });
+      const isOffer = description?.type === "offer";
+      // Qarşı tərəf əlaqəni yenidən başladıbsa (və ya mesaj köhnə əlaqəyə aiddirsə) — köhnəni at, yenisini qur
+      if (p && ((rsid && rsid !== p.sid) || (sid && p.rsid && p.rsid !== sid))) {
+        if (!isOffer) return;
+        dropPeer(from); p = null;
+      }
+      if (!p) {
+        if (!isOffer) return;
+        p = createPeer(meta || people[from] || { key: from });
+      }
+      if (sid) p.rsid = sid;
       const pc = p.pc;
       try {
         if (description) {
@@ -238,7 +249,7 @@
           await pc.setRemoteDescription(description);
           if (description.type === "offer") {
             await pc.setLocalDescription();
-            send("sig", { to: from, from: myKey, meta: myMeta(), description: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } });
+            send("sig", { to: from, from: myKey, sid: p.sid, rsid: p.rsid, meta: myMeta(), description: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } });
           }
         }
         for (const c of candidates || []) {
@@ -266,11 +277,60 @@
           createPeer(m, true);
         }
       }
-      for (const key of [...peers.keys()]) if (!present.has(key)) dropPeer(key);
       const n = studentCount();
       if (n !== syncPeers.n) { syncPeers.n = n; for (const p of peers.values()) tuneBitrate(p); }
       updateRelay();
       render();
+    }
+
+    // Gözətçi: hər 4 saniyədən bir əlaqələri yoxlayır, qırılanı özü yenidən qurur
+    const asked = {};
+    function watchdog() {
+      if (left || !ch) return;
+      const now = Date.now();
+      // internet kəsilib qayıdanda adımız siyahıdan düşübsə — yenidən yazılırıq
+      if (!ch.presenceState()?.[myKey] && (!watchdog.tr || now - watchdog.tr > 10000)) { watchdog.tr = now; ch.track(myMeta()).catch?.(() => {}); }
+      for (const p of [...peers.values()]) {
+        const s = p.pc.connectionState, present = !!people[p.key];
+        if (s === "connected") { p.okAt = now; continue; }
+        const since = now - Math.max(p.okAt, p.born);
+        if (!present) { if (since > 6000) dropPeer(p.key); continue; }   // dərsdən çıxıb
+        if (s === "failed" || s === "closed" || since > 15000) {
+          if (myKey < p.key) { dropPeer(p.key); createPeer(people[p.key], true); }
+          else if (!asked[p.key] || now - asked[p.key] > 8000) { asked[p.key] = now; send("reset", { to: p.key, from: myKey }); }
+        }
+      }
+      // qarşı tərəf buradadır, amma əlaqə yoxdur — başlayan tərəfdən xahiş et
+      for (const [k, m] of Object.entries(people)) {
+        if (k === myKey || peers.has(k) || !!m.teacher === !!info.teacher) continue;
+        if (myKey < k) createPeer(m, true);
+        else if (!asked[k] || now - asked[k] > 8000) { asked[k] = now; send("reset", { to: k, from: myKey }); }
+      }
+      render();
+    }
+
+    // Telefon arxa plana keçəndə kamera/mikrofon dayana bilər — qayıdanda yenidən aç
+    async function reviveMedia() {
+      try { if (!wakeLock || wakeLock.released) wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
+      if (!local) return;
+      const deadV = local.getVideoTracks().some((t) => t.readyState === "ended");
+      const deadA = local.getAudioTracks().some((t) => t.readyState === "ended");
+      if (!deadV && !deadA) return;
+      const fresh = await getMedia(deadV);
+      if (!fresh) return;
+      for (const t of fresh.getTracks()) {
+        if ((t.kind === "video" && !deadV) || (t.kind === "audio" && !deadA)) { t.stop(); continue; }
+        const old = local.getTracks().find((x) => x.kind === t.kind);
+        if (old) local.removeTrack(old);
+        local.addTrack(t);
+        t.enabled = t.kind === "audio" ? st.mic : st.cam;
+        if (t.kind === "video" && st.screen) continue;
+        for (const p of peers.values()) {
+          const snd = p.pc.getSenders().find((x) => x.track && (x.track === old || (x.track.kind === t.kind && x.track.readyState === "ended")));
+          if (snd) snd.replaceTrack(t).catch(() => {});
+        }
+      }
+      if (!st.screen) $("self-v").srcObject = local;
     }
 
     // Müəllim: mikrofonu açıq olan (ən çox 2) şagirdin səsini digər şagirdlərə ötürür
@@ -535,7 +595,15 @@
       });
       ch.on("broadcast", { event: "bye" }, ({ payload }) => {
         const m = people[payload.from];
-        if (info.teacher && m) { m.bye = true; sysLog(`${m.name} "Çıx" basıb dərsi tərk etdi`); }
+        if (info.teacher && m) { m.bye = true; byes.add(payload.from); sysLog(`${m.name} "Çıx" basıb dərsi tərk etdi`); }
+        dropPeer(payload.from); render();
+      });
+      ch.on("broadcast", { event: "reset" }, ({ payload }) => {
+        if (payload.to !== myKey || left || !(myKey < payload.from)) return;
+        const p = peers.get(payload.from);
+        if (p && p.pc.connectionState === "connected" && Date.now() - p.born < 5000) return;
+        dropPeer(payload.from);
+        createPeer(people[payload.from] || { key: payload.from }, true);
       });
       ch.on("presence", { event: "sync" }, () => {
         const before = people;
@@ -545,21 +613,25 @@
         people[myKey] = myMeta();
         if (info.teacher) for (const [k, m] of Object.entries(people)) if (m.hand && !before[k]?.hand && k !== myKey) { flash(`✋ ${m.name} əl qaldırdı`); try { navigator.vibrate?.(120); } catch {} }
         if (info.teacher) {
-          for (const [k, m] of Object.entries(before)) if (!people[k] && !m.teacher && k !== myKey && !m.bye && !left) {
-            flash(`⚠️ ${m.name} dərsdən çıxdı`); beep(); sysLog(`${m.name} dərsdən çıxdı (səhifəni bağladı və ya interneti kəsildi)`);
+          for (const [k, m] of Object.entries(before)) if (!people[k] && !m.teacher && k !== myKey && !byes.has(k) && !left) {
+            setTimeout(() => {   // internet bir anlıq kəsilibsə, səhv xəbərdarlıq olmasın
+              if (people[k] || byes.has(k) || left || peers.get(k)?.pc.connectionState === "connected") return;
+              flash(`⚠️ ${m.name} dərsdən çıxdı`); beep(); sysLog(`${m.name} dərsdən çıxdı (səhifəni bağladı və ya interneti kəsildi)`);
+            }, 8000);
           }
           for (const [k, m] of Object.entries(people)) {
             if (k === myKey || m.teacher) continue;
             if (m.away) awayAlert(k, m);   // bildiriş itibsə, vəziyyətdən bilirik
             else if (awayAlerted.delete(k)) sysLog(`${m.name} dərsə qayıtdı`, true);
-            if (!before[k] && Object.keys(before).length) sysLog(`${m.name} dərsə qoşuldu`, true);
+            if (!before[k] && Object.keys(before).length > 0 && !seen.has(k)) sysLog(`${m.name} dərsə qoşuldu`, true);
+            seen.add(k);
           }
         }
         for (const p of peers.values()) if (people[p.key]) p.meta = people[p.key];
         syncPeers();
       });
       ch.subscribe(async (status) => {
-        if (status === "SUBSCRIBED") { await ch.track(myMeta()); people[myKey] = myMeta(); render(); }
+        if (status === "SUBSCRIBED") { await ch.track(myMeta()); people[myKey] = myMeta(); render(); }   // yenidən qoşulanda da
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") flash("Bağlantı problemi — yenidən qoşulur…");
       });
       render();
@@ -570,6 +642,8 @@
       } else {
         $("b-alert").onclick = () => { $("chat").hidden = false; $("b-chat").classList.remove("unread"); };
       }
+      setInterval(watchdog, 4000);
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) reviveMedia(); });
       // Müəllim dərsi admin səhifəsindən bitirərsə
       setInterval(async () => { if (left) return; const { data } = await sb.rpc("video_alive", { p_id: info.id }); if (data === false) lessonOver(); }, 60000);
       addEventListener("pagehide", () => leave(false, false));   // səhifəni bağlayanda müəllimə "dərsdən çıxdı" xəbərdarlığı gedir
