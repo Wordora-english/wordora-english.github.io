@@ -32,6 +32,7 @@
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
       <div><h1 style="font-size:1.6rem">Admin panel</h1><p class="muted" id="hello"></p></div>
       <div style="display:flex;gap:.4rem;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm hidden" id="owner-btn">👑 Adminlər</button>
         <a class="btn btn-ghost btn-sm" href="attendance.html">✅ Davamiyyət</a>
         <a class="btn btn-ghost btn-sm" href="report.html">📊 Aylıq hesabat</a>
         <button class="btn btn-ghost btn-sm" id="backup-btn">💾 Ehtiyat nüsxə</button>
@@ -53,6 +54,7 @@
     </div>
 
     <div class="tabs" role="tablist">
+      <button class="tab hidden" data-tab="owner" id="tab-owner">👑 Adminlər</button>
       <button class="tab active" data-tab="pending">Yeni qeydiyyatlar <span class="badge" id="badge-pending">0</span></button>
       <button class="tab" data-tab="approved">Şagirdlər</button>
       <button class="tab" data-tab="blocked">Bloklanan / məzun</button>
@@ -67,7 +69,6 @@
       <button class="tab" data-tab="viol">Pozuntular <span class="badge zero" id="badge-viol">0</span></button>
       <button class="tab" data-tab="mat">Materiallar</button>
       <button class="tab" data-tab="ann">Elanlar</button>
-      <button class="tab hidden" data-tab="owner" id="tab-owner">👑 Adminlər</button>
     </div>
 
     <section data-panel="pending">
@@ -1622,7 +1623,13 @@ What is the past of &quot;go&quot;?  [x2]
 
       app.innerHTML = document.getElementById("tpl-admin").innerHTML;
       document.getElementById("hello").textContent = `Xoş gəldin, ${me.full_name}.`;
-      sb.rpc("is_owner").then(({ data }) => { if (data === true) document.getElementById("tab-owner")?.classList.remove("hidden"); }, () => {});
+      sb.rpc("is_owner").then(({ data }) => {
+        if (data !== true) return;
+        const tab = document.getElementById("tab-owner"), btn = document.getElementById("owner-btn");
+        tab?.classList.remove("hidden");
+        if (btn) { btn.classList.remove("hidden"); btn.onclick = () => { tab.click(); tab.scrollIntoView({ block: "nearest", inline: "start" }); }; }
+        if (location.hash === "#owner") tab?.click();
+      }, () => {});
       setTimeout(autoCleanTests, 4000);   // bitmiş sınaqların köhnə faylları (vaxtı çatıbsa)
 
       setupGroup();
