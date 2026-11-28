@@ -16,9 +16,12 @@ create table if not exists public.owners (
 alter table public.owners enable row level security;   -- heç bir qayda yoxdur → saytdan heç kim oxuya/yaza bilməz
 revoke all on public.owners from anon, authenticated;
 
--- İlk baş admin: hazırkı (ən köhnə) admin — Gülnar Salayeva
+-- İlk baş admin yalnız cədvəl boşdursa təyin olunur (fayl təkrar işə salınanda dəyişmir).
+-- Hazırda baş admin: Əli Qurbanov (aliqurbanovfh) — saytın qurucusu.
 insert into public.owners (user_id)
-select id from public.profiles where role = 'admin' and status = 'approved' order by created_at limit 1
+select id from public.profiles
+ where username = 'aliqurbanovfh' and role = 'admin' and status = 'approved'
+   and not exists (select 1 from public.owners)
 on conflict do nothing;
 
 create or replace function public.is_owner()
