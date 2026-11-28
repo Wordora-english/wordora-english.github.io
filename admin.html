@@ -67,6 +67,7 @@
       <button class="tab" data-tab="viol">Pozuntular <span class="badge zero" id="badge-viol">0</span></button>
       <button class="tab" data-tab="mat">Materiallar</button>
       <button class="tab" data-tab="ann">Elanlar</button>
+      <button class="tab hidden" data-tab="owner" id="tab-owner">👑 Adminlər</button>
     </div>
 
     <section data-panel="pending">
@@ -281,6 +282,20 @@ What is the past of &quot;go&quot;?  [x2]
       </form>
       <div class="grid" id="ann-list"></div>
     </section>
+
+    <!-- Yalnız baş admin görür -->
+    <section data-panel="owner" class="hidden">
+      <div class="card" style="margin-bottom:16px">
+        <h2 style="font-size:1.15rem">👑 Adminlər</h2>
+        <p class="muted small" style="margin:.2rem 0 .8rem">Bu bölməni yalnız siz görürsünüz. Admin olan şəxs bütün paneli görür və idarə edir, amma sizi və digər adminləri dəyişə bilmir.</p>
+        <div id="own-list"><div class="spinner"></div></div>
+      </div>
+      <div class="card">
+        <h2 style="font-size:1.05rem">Yeni admin təyin et</h2>
+        <div class="field"><input id="own-q" placeholder="Şagirdin adı və ya istifadəçi adı…" autocomplete="off"></div>
+        <div id="own-found" class="muted small">Ən azı 2 hərf yazın.</div>
+      </div>
+    </section>
   </template>
 
   <script type="module">
@@ -444,6 +459,48 @@ What is the past of &quot;go&quot;?  [x2]
       if (error) { toast(translateError(error), "err"); return; }
       toast("Sinif dəyişdirildi", "ok");
       loadPeople();
+    }
+
+    // ---- Baş admin: adminləri idarə et ----
+    const ownRow = (p, btn) => `<div class="own-row"><div><b>${esc(p.full_name || "—")}</b> <span class="muted small">@${esc(p.username || "")}${p.class_name ? " · " + esc(classLabel(p.class_name)) : ""}</span></div>${btn}</div>`;
+    async function ownerSet(b, id, on) {
+      if (b.dataset.sure !== "1") {
+        const old = b.textContent; b.dataset.sure = "1"; b.textContent = "Əminsiniz? Yenə basın"; b.classList.add("btn-bad");
+        setTimeout(() => { if (b.isConnected) { b.dataset.sure = ""; b.textContent = old; b.classList.remove("btn-bad"); } }, 4000);
+        return;
+      }
+      b.disabled = true;
+      const { error } = await sb.rpc("owner_set_admin", { p_user: id, p_admin: on });
+      if (error) { b.disabled = false; return toast(translateError(error), "err"); }
+      toast(on ? "Admin edildi ✓ Növbəti girişdə admin paneli açılacaq" : "Adminlikdən çıxarıldı ✓", "ok");
+      document.getElementById("own-q").value = ""; document.getElementById("own-found").textContent = "Ən azı 2 hərf yazın.";
+      loadOwner();
+    }
+    async function loadOwner() {
+      const box = document.getElementById("own-list");
+      const { data, error } = await sb.rpc("owner_admins");
+      if (error) { box.innerHTML = `<div class="muted">${esc(translateError(error))}</div>`; return; }
+      box.innerHTML = data.map((p) => ownRow(p, p.owner
+        ? `<span class="pill">${p.me ? "Siz · baş admin" : "baş admin"}</span>`
+        : `<button class="btn btn-ghost btn-sm" data-own-off="${p.id}">Adminlikdən çıxar</button>`)).join("");
+      box.querySelectorAll("[data-own-off]").forEach((b) => b.addEventListener("click", () => ownerSet(b, b.dataset.ownOff, false)));
+      const q = document.getElementById("own-q");
+      if (!q.dataset.bound) {
+        q.dataset.bound = "1";
+        let t;
+        q.addEventListener("input", () => { clearTimeout(t); t = setTimeout(ownerSearch, 300); });
+      }
+    }
+    async function ownerSearch() {
+      const v = document.getElementById("own-q").value.trim().replace(/[%,()]/g, "");
+      const out = document.getElementById("own-found");
+      if (v.length < 2) { out.textContent = "Ən azı 2 hərf yazın."; return; }
+      const { data, error } = await sb.from("profiles").select("id, full_name, username, class_name")
+        .eq("role", "student").or(`full_name.ilike.%${v}%,username.ilike.%${v}%`).order("full_name").limit(10);
+      if (error) { out.textContent = translateError(error); return; }
+      if (!data.length) { out.textContent = "Tapılmadı."; return; }
+      out.innerHTML = data.map((p) => ownRow(p, `<button class="btn btn-primary btn-sm" data-own-on="${p.id}">👑 Admin et</button>`)).join("");
+      out.querySelectorAll("[data-own-on]").forEach((b) => b.addEventListener("click", () => ownerSet(b, b.dataset.ownOn, true)));
     }
 
     async function loadAnnouncements() {
@@ -1565,6 +1622,7 @@ What is the past of &quot;go&quot;?  [x2]
 
       app.innerHTML = document.getElementById("tpl-admin").innerHTML;
       document.getElementById("hello").textContent = `Xoş gəldin, ${me.full_name}.`;
+      sb.rpc("is_owner").then(({ data }) => { if (data === true) document.getElementById("tab-owner")?.classList.remove("hidden"); }, () => {});
       setTimeout(autoCleanTests, 4000);   // bitmiş sınaqların köhnə faylları (vaxtı çatıbsa)
 
       setupGroup();
@@ -1579,6 +1637,7 @@ What is the past of &quot;go&quot;?  [x2]
         app.querySelectorAll(".tab").forEach((x) => x.classList.toggle("active", x === t));
         app.querySelectorAll("[data-panel]").forEach((s) => s.classList.toggle("hidden", s.dataset.panel !== t.dataset.tab));
         if (t.dataset.tab === "ann") loadAnnouncements();
+        if (t.dataset.tab === "owner") loadOwner();
         if (t.dataset.tab === "mat") loadMaterials();
         if (t.dataset.tab === "viol") { loadViolations(); loadSettings(); loadErrors(); }
         if (t.dataset.tab === "tests") loadTests();

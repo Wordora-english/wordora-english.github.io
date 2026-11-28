@@ -739,3 +739,7 @@ body[data-group="mag"] .group-switch button.on { color: #8a5a00; }
 @media (prefers-reduced-motion: reduce) { .vid-dot { animation: none; } }
 .vid-plan { margin-bottom: 12px; font-size: .95rem; }
 @media (max-width: 520px) { .vid-live .btn { width: 100%; } }
+
+/* Baş admin: adminlər siyahısı */
+.own-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.own-row:last-child { border-bottom: 0; }

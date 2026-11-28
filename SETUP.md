@@ -101,6 +101,7 @@ Supabase → **SQL Editor** → **New query** → aşağıdakı faylları **ard�
 36. `supabase/40-video-room.sql` — görüntülü dərs saytın öz içində (Wordora sinif otağı)
 37. `supabase/41-video-away.sql` — görüntülü dərsdə şagird başqa proqrama/sayta keçəndə qeyd (neçə dəfə, nə qədər)
 38. `supabase/42-hardening.sql` — əlavə təhlükəsizlik: daxil olmamış adamın (açıq açarla) cədvəllərə qalan köhnə icazələri silinir
+39. `supabase/43-owner.sql` — gizli baş admin: Admin panel → 👑 Adminlər bölməsindən istənilən şagirdi admin etmək / adminlikdən çıxarmaq (bu bölməni yalnız baş admin görür)
 
 Hər dəfə: GitHub-da faylı aç → **Copy raw file** → Supabase-ə yapışdır → **Run** → "Success".
 
